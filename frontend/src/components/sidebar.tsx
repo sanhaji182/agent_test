@@ -9,11 +9,17 @@ import {
   FolderOpen,
   Settings,
   Zap,
+  Calendar,
+  Bell,
+  Tag,
 } from "lucide-react";
 
 const nav = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/runs", label: "Test Runs", icon: PlayCircle },
+  { href: "/monitoring", label: "Schedules", icon: Calendar },
+  { href: "/releases", label: "Releases", icon: Tag },
+  { href: "/alerts", label: "Alerts", icon: Bell },
   { href: "/projects", label: "Projects", icon: FolderOpen },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

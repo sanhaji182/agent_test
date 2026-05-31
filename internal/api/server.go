@@ -13,8 +13,12 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/config"
 	"github.com/go-go-golems/gotest-agent/internal/db"
 	"github.com/go-go-golems/gotest-agent/internal/events"
+	"github.com/go-go-golems/gotest-agent/internal/metrics"
+	"github.com/go-go-golems/gotest-agent/internal/notify"
 	"github.com/go-go-golems/gotest-agent/internal/recordings"
+	"github.com/go-go-golems/gotest-agent/internal/release"
 	"github.com/go-go-golems/gotest-agent/internal/report"
+	"github.com/go-go-golems/gotest-agent/internal/schedule"
 	"github.com/go-go-golems/gotest-agent/internal/visual"
 	"github.com/go-go-golems/gotest-agent/internal/webhook"
 	"github.com/google/uuid"
@@ -27,6 +31,9 @@ type Server struct {
 	events     *events.Store
 	recordings *recordings.Store
 	visuals    *visual.Store
+	schedules  *schedule.Store
+	releases   *release.Store
+	notifs     *notify.Store
 }
 
 func NewServer(cfg *config.Config, store db.RunStore) *Server {
@@ -43,6 +50,9 @@ func NewServer(cfg *config.Config, store db.RunStore) *Server {
 		events:     events.NewStore(),
 		recordings: recordings.NewStore(),
 		visuals:    visual.NewStore(),
+		schedules:  schedule.NewStore(),
+		releases:   release.NewStore(),
+		notifs:     notify.NewStore(),
 	}
 	s.routes()
 	return s
@@ -51,6 +61,9 @@ func NewServer(cfg *config.Config, store db.RunStore) *Server {
 func (s *Server) Events() *events.Store         { return s.events }
 func (s *Server) Recordings() *recordings.Store  { return s.recordings }
 func (s *Server) Visuals() *visual.Store         { return s.visuals }
+func (s *Server) Schedules() *schedule.Store     { return s.schedules }
+func (s *Server) Releases() *release.Store       { return s.releases }
+func (s *Server) Notifications() *notify.Store   { return s.notifs }
 
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -70,6 +83,7 @@ func (s *Server) routes() {
 
 	s.router.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.apiKeyAuth)
+		// Runs
 		r.Post("/runs", s.handleCreateRun)
 		r.Get("/runs", s.handleListRuns)
 		r.Get("/runs/{id}", s.handleGetRun)
@@ -82,6 +96,26 @@ func (s *Server) routes() {
 		r.Get("/runs/{id}/visual", s.handleGetVisualArtifacts)
 		r.Delete("/runs/{id}", s.handleDeleteRun)
 		r.Get("/recordings", s.handleListAllRecordings)
+		// Schedules
+		r.Post("/schedules", s.handleCreateSchedule)
+		r.Get("/schedules", s.handleListSchedules)
+		r.Get("/schedules/{id}", s.handleGetSchedule)
+		r.Patch("/schedules/{id}", s.handleUpdateSchedule)
+		r.Delete("/schedules/{id}", s.handleDeleteSchedule)
+		r.Post("/schedules/{id}/run-now", s.handleRunNow)
+		// Releases
+		r.Post("/releases", s.handleCreateRelease)
+		r.Get("/releases", s.handleListReleases)
+		r.Get("/releases/{id}", s.handleGetRelease)
+		r.Patch("/releases/{id}", s.handleUpdateRelease)
+		r.Get("/releases/{id}/summary", s.handleReleaseSummary)
+		// Notifications
+		r.Get("/notifications", s.handleListNotifications)
+		// Metrics
+		r.Get("/metrics/summary", s.handleMetricsSummary)
+		r.Get("/metrics/hotspots", s.handleMetricsHotspots)
+		r.Get("/metrics/flaky", s.handleMetricsFlaky)
+		r.Get("/metrics/trend", s.handleMetricsTrend)
 	})
 
 	wh := webhook.NewGitHubHandler(s.cfg.APIKey, func(event webhook.PushEvent) { _ = event })
@@ -329,4 +363,253 @@ func (s *Server) apiKeyAuth(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// --- Schedule handlers ---
+
+func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
+	var sch schedule.Schedule
+	if err := json.NewDecoder(r.Body).Decode(&sch); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if sch.Enabled {
+		sch.NextRunAt = schedule.CalcNextRun(sch.Frequency, sch.CronExpr, time.Now())
+	}
+	result := s.schedules.Create(&sch)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) handleListSchedules(w http.ResponseWriter, r *http.Request) {
+	list := s.schedules.List()
+	if list == nil {
+		list = []*schedule.Schedule{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(list)
+}
+
+func (s *Server) handleGetSchedule(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	sch, ok := s.schedules.Get(id)
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sch)
+}
+
+func (s *Server) handleUpdateSchedule(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var patch map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	ok := s.schedules.Update(id, func(sch *schedule.Schedule) {
+		if v, ok := patch["enabled"]; ok {
+			sch.Enabled = v.(bool)
+		}
+		if v, ok := patch["name"]; ok {
+			sch.Name = v.(string)
+		}
+		if v, ok := patch["webhook_url"]; ok {
+			sch.WebhookURL = v.(string)
+		}
+		if v, ok := patch["notify_on_fail"]; ok {
+			sch.NotifyOnFail = v.(bool)
+		}
+		if v, ok := patch["environment"]; ok {
+			sch.Environment = v.(string)
+		}
+		if v, ok := patch["base_url"]; ok {
+			sch.BaseURL = v.(string)
+		}
+	})
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	sch, _ := s.schedules.Get(id)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sch)
+}
+
+func (s *Server) handleDeleteSchedule(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if !s.schedules.Delete(id) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleRunNow(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	sch, ok := s.schedules.Get(id)
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	// Create a run from the schedule config
+	run := &agent.TestRun{
+		ID: uuid.New().String(), ProjectPath: sch.ProjectPath,
+		Requirements: sch.Requirements, Mode: sch.Mode, State: agent.StateIdle,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := s.store.CreateRun(r.Context(), run); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Update schedule last run
+	now := time.Now()
+	s.schedules.Update(id, func(sc *schedule.Schedule) {
+		sc.LastRunAt = &now
+		sc.LastRunID = run.ID
+		sc.LastRunStatus = string(run.State)
+		sc.NextRunAt = schedule.CalcNextRun(sc.Frequency, sc.CronExpr, now)
+	})
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{"run_id": run.ID, "state": string(run.State)})
+}
+
+// --- Release handlers ---
+
+func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
+	var rel release.Release
+	if err := json.NewDecoder(r.Body).Decode(&rel); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	result := s.releases.Create(&rel)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) handleListReleases(w http.ResponseWriter, r *http.Request) {
+	list := s.releases.List()
+	if list == nil {
+		list = []*release.Release{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(list)
+}
+
+func (s *Server) handleGetRelease(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	rel, ok := s.releases.Get(id)
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rel)
+}
+
+func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var patch map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	ok := s.releases.Update(id, func(rel *release.Release) {
+		if v, ok := patch["status"]; ok {
+			rel.Status = v.(string)
+		}
+		if v, ok := patch["name"]; ok {
+			rel.Name = v.(string)
+		}
+	})
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	rel, _ := s.releases.Get(id)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rel)
+}
+
+func (s *Server) handleReleaseSummary(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	rel, ok := s.releases.Get(id)
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	// Gather runs for this release
+	var runs []*agent.TestRun
+	for _, rid := range rel.RunIDs {
+		if run, err := s.store.GetRun(r.Context(), rid); err == nil {
+			runs = append(runs, run)
+		}
+	}
+	sum := release.Summarize(rel, runs)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sum)
+}
+
+// --- Notification handlers ---
+
+func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request) {
+	list := s.notifs.List()
+	if list == nil {
+		list = []notify.Notification{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(list)
+}
+
+// --- Metrics handlers ---
+
+func (s *Server) handleMetricsSummary(w http.ResponseWriter, r *http.Request) {
+	runs, _ := s.store.ListRuns(r.Context(), 1000, 0)
+	sum := metrics.ComputeSummary(runs)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sum)
+}
+
+func (s *Server) handleMetricsHotspots(w http.ResponseWriter, r *http.Request) {
+	runs, _ := s.store.ListRuns(r.Context(), 1000, 0)
+	// Need full run data for hotspots
+	var fullRuns []*agent.TestRun
+	for _, run := range runs {
+		if full, err := s.store.GetRun(r.Context(), run.ID); err == nil {
+			fullRuns = append(fullRuns, full)
+		}
+	}
+	hotspots := metrics.ComputeHotspots(fullRuns, 10)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(hotspots)
+}
+
+func (s *Server) handleMetricsFlaky(w http.ResponseWriter, r *http.Request) {
+	runs, _ := s.store.ListRuns(r.Context(), 1000, 0)
+	var fullRuns []*agent.TestRun
+	for _, run := range runs {
+		if full, err := s.store.GetRun(r.Context(), run.ID); err == nil {
+			fullRuns = append(fullRuns, full)
+		}
+	}
+	flaky := metrics.DetectFlaky(fullRuns)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(flaky)
+}
+
+func (s *Server) handleMetricsTrend(w http.ResponseWriter, r *http.Request) {
+	runs, _ := s.store.ListRuns(r.Context(), 1000, 0)
+	var fullRuns []*agent.TestRun
+	for _, run := range runs {
+		if full, err := s.store.GetRun(r.Context(), run.ID); err == nil {
+			fullRuns = append(fullRuns, full)
+		}
+	}
+	trend := metrics.ComputeTrend(fullRuns)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(trend)
 }

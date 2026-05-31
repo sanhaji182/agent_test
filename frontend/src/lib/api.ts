@@ -194,3 +194,116 @@ export interface CompareResult {
 export async function compareRuns(idA: string, idB: string): Promise<CompareResult> {
   return apiFetch<CompareResult>(`/api/v1/runs/${idA}/compare/${idB}`);
 }
+
+// --- Schedules ---
+export interface Schedule {
+  id: string;
+  name: string;
+  project_path: string;
+  requirements: string;
+  mode: string;
+  environment: string;
+  base_url: string;
+  frequency: string;
+  enabled: boolean;
+  next_run_at: string;
+  last_run_at?: string;
+  last_run_id?: string;
+  last_run_status?: string;
+  notify_on_fail: boolean;
+  webhook_url?: string;
+  created_at: string;
+}
+
+export async function getSchedules(): Promise<Schedule[]> {
+  return apiFetch<Schedule[]>("/api/v1/schedules");
+}
+
+export async function createSchedule(data: Partial<Schedule>): Promise<Schedule> {
+  return apiFetch("/api/v1/schedules", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function updateSchedule(id: string, data: Partial<Schedule>): Promise<Schedule> {
+  return apiFetch(`/api/v1/schedules/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function deleteSchedule(id: string): Promise<void> {
+  await fetch(`${API_BASE}/api/v1/schedules/${id}`, { method: "DELETE" });
+}
+
+export async function runScheduleNow(id: string): Promise<{ run_id: string }> {
+  return apiFetch(`/api/v1/schedules/${id}/run-now`, { method: "POST" });
+}
+
+// --- Releases ---
+export interface Release {
+  id: string;
+  name: string;
+  version: string;
+  project_id: string;
+  status: string;
+  run_ids: string[];
+  created_at: string;
+}
+
+export interface ReleaseSummary {
+  release_id: string;
+  total_runs: number;
+  passed_runs: number;
+  failed_runs: number;
+  pass_rate: number;
+  total_tests: number;
+  total_passed: number;
+  total_failed: number;
+  latest_status: string;
+}
+
+export async function getReleases(): Promise<Release[]> {
+  return apiFetch<Release[]>("/api/v1/releases");
+}
+
+export async function getReleaseSummary(id: string): Promise<ReleaseSummary> {
+  return apiFetch<ReleaseSummary>(`/api/v1/releases/${id}/summary`);
+}
+
+// --- Notifications ---
+export interface Notification {
+  id: string;
+  run_id: string;
+  schedule_id?: string;
+  type: string;
+  message: string;
+  delivered: boolean;
+  created_at: string;
+}
+
+export async function getNotifications(): Promise<Notification[]> {
+  return apiFetch<Notification[]>("/api/v1/notifications");
+}
+
+// --- Metrics ---
+export interface MetricsSummary {
+  total_runs: number;
+  pass_rate: number;
+  total_tests: number;
+  total_passed: number;
+  total_failed: number;
+}
+
+export interface Hotspot {
+  test_name: string;
+  fail_count: number;
+  fail_rate: number;
+}
+
+export async function getMetricsSummary(): Promise<MetricsSummary> {
+  return apiFetch<MetricsSummary>("/api/v1/metrics/summary");
+}
+
+export async function getMetricsHotspots(): Promise<Hotspot[]> {
+  return apiFetch<Hotspot[]>("/api/v1/metrics/hotspots");
+}
+
+export async function getMetricsTrend(): Promise<{ date: string; pass_rate: number; fail_count: number }[]> {
+  return apiFetch("/api/v1/metrics/trend");
+}

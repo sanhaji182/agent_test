@@ -241,6 +241,21 @@ func postNoBody(srv *api.Server, path string) *httptest.ResponseRecorder {
 	return w
 }
 
+func patch(srv *api.Server, path, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("PATCH", path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	return w
+}
+
+func del(srv *api.Server, path string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("DELETE", path, nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	return w
+}
+
 func assertStatus(t *testing.T, w *httptest.ResponseRecorder, expected int) {
 	t.Helper()
 	if w.Code != expected {
