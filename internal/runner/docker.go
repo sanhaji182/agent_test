@@ -11,12 +11,16 @@ import (
 	"strings"
 
 	"github.com/go-go-golems/gotest-agent/internal/agent"
+	"github.com/go-go-golems/gotest-agent/internal/execution"
+	"github.com/go-go-golems/gotest-agent/internal/reporter"
 )
 
 // DockerRunner menjalankan Playwright test di dalam Docker container
 type DockerRunner struct {
 	image   string // Docker image Playwright
 	timeout int    // Timeout dalam detik
+	exec    *execution.Context
+	runID   string // Set sebelum Run() dipanggil
 }
 
 // NewDockerRunner membuat runner baru dengan timeout tertentu
@@ -25,6 +29,12 @@ func NewDockerRunner(timeout int) *DockerRunner {
 		image:   "mcr.microsoft.com/playwright:v1.40.0-jammy",
 		timeout: timeout,
 	}
+}
+
+// SetExecContext mengatur execution context untuk emit events
+func (r *DockerRunner) SetExecContext(exec *execution.Context, runID string) {
+	r.exec = exec
+	r.runID = runID
 }
 
 // Run menjalankan test files di Docker container dan mengembalikan hasil
@@ -67,6 +77,12 @@ export default defineConfig({
 
 	// Parse hasil dari JSON reporter
 	resultsPath := filepath.Join(tmpDir, "results.json")
+
+	// Emit step-level events dari Playwright report
+	if r.exec != nil && r.runID != "" {
+		reporter.ParseAndEmit(r.exec, r.runID, resultsPath)
+	}
+
 	return parsePlaywrightResults(resultsPath, string(output))
 }
 

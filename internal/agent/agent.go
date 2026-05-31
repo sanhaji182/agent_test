@@ -6,6 +6,9 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/go-go-golems/gotest-agent/internal/events"
+	"github.com/go-go-golems/gotest-agent/internal/execution"
 )
 
 // State merepresentasikan status dari sebuah test run
@@ -93,16 +96,11 @@ type ScreenshotCapturer interface {
 	Capture(ctx context.Context, runID string, label string) (string, error)
 }
 
-// EventEmitter adalah interface untuk mengirim step-level events
-type EventEmitter interface {
-	Emit(runID string, eventType string, phase, message string, metadata map[string]string)
-}
-
 // AgentConfig menyimpan dependensi opsional untuk agent
 type AgentConfig struct {
 	Sidecar       *SidecarClient
 	Screenshotter ScreenshotCapturer
-	Events        EventEmitter
+	Exec          *execution.Context
 }
 
 // Agent adalah orchestrator utama yang menjalankan seluruh alur testing
@@ -112,7 +110,7 @@ type Agent struct {
 	maxFixAttempts int
 	sidecar        *SidecarClient
 	screenshotter  ScreenshotCapturer
-	events         EventEmitter
+	exec           *execution.Context
 }
 
 // New membuat Agent baru dengan konfigurasi minimal
@@ -128,7 +126,7 @@ func NewWithConfig(llm LLM, runner Runner, maxFixes int, cfg AgentConfig) *Agent
 		maxFixAttempts: maxFixes,
 		sidecar:        cfg.Sidecar,
 		screenshotter:  cfg.Screenshotter,
-		events:         cfg.Events,
+		exec:           cfg.Exec,
 	}
 }
 
@@ -229,6 +227,14 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 	a.emit(run.ID, "script_generated", "writing_tests", fmt.Sprintf("Generated %d test files", len(files)), nil)
 
 	// Langkah 4: Jalankan test + fix loop (maks 3x percobaan)
+	// Set execution context pada runner jika didukung
+	type execSetter interface {
+		SetExecContext(exec *execution.Context, runID string)
+	}
+	if es, ok := a.runner.(execSetter); ok && a.exec != nil {
+		es.SetExecContext(a.exec, run.ID)
+	}
+
 	for {
 		run.State = StateRunning
 		a.emit(run.ID, "test_started", "running", "Executing tests", nil)
@@ -278,7 +284,7 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 	return nil
 }
 
-// captureFailureScreenshots mengambil screenshot untuk setiap test yang gagal
+// captureFailureScreenshots mengambil screenshot dan otomatis membuat recording + visual artifact
 func (a *Agent) captureFailureScreenshots(ctx context.Context, run *TestRun, result *RunResult) {
 	if a.screenshotter == nil {
 		return
@@ -291,14 +297,17 @@ func (a *Agent) captureFailureScreenshots(ctx context.Context, run *TestRun, res
 		}
 		result.Failures[i].Screenshot = url
 		run.Screenshots = append(run.Screenshots, url)
-		a.emit(run.ID, "screenshot_captured", "running", "Screenshot captured", map[string]string{"url": url, "test": f.Test})
+		// RecordScreenshot membuat recording + visual artifact + emit event
+		if a.exec != nil {
+			a.exec.RecordScreenshot(run.ID, f.Test, label, url)
+		}
 	}
 }
 
-// emit mengirim event jika EventEmitter dikonfigurasi
+// emit mengirim event jika execution context dikonfigurasi
 func (a *Agent) emit(runID, eventType, phase, message string, metadata map[string]string) {
-	if a.events != nil {
-		a.events.Emit(runID, eventType, phase, message, metadata)
+	if a.exec != nil && a.exec.Events != nil {
+		a.exec.Events.Emit(runID, events.EventType(eventType), phase, message, metadata)
 	}
 }
 
