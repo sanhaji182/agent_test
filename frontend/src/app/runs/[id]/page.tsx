@@ -130,7 +130,7 @@ export default function RunConsolePage() {
       {/* Tabbed console */}
       <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-[var(--shadow-sm)] p-5">
         <Tabs tabs={[
-          { id: "video", label: "Video", content: <VideoPlayer run={run} /> },
+          { id: "video", label: "Video", content: <VideoPlayer run={run} events={liveEvents} /> },
           { id: "events", label: "Live Events", count: liveEvents.length, content: <EventsView events={liveEvents} /> },
           { id: "steps", label: "Steps", count: stepCount(run), content: <StepsView run={run} /> },
           { id: "files", label: "Files", count: run.test_files?.length, content: <FilesView run={run} /> },
@@ -293,7 +293,7 @@ function FailuresView({ run }: { run: TestRun }) {
 
 // Visual artifacts view
 // Video player with failure highlight, step markers, and inspection controls
-function VideoPlayer({ run }: { run: TestRun }) {
+function VideoPlayer({ run, events: runEvents }: { run: TestRun; events: RunEvent[] }) {
   const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = React.useState(0);
@@ -332,11 +332,26 @@ function VideoPlayer({ run }: { run: TestRun }) {
   const failureAt = run.video_failure_marker_at || 0;
   const duration = run.video_duration || 0;
 
-  // Approximate step markers from test plan (evenly distributed across duration)
-  const steps = run.test_plan?.scenarios?.flatMap((s) => s.steps) || [];
-  const stepMarkers = duration > 0 && steps.length > 0
-    ? steps.map((step, i) => ({ label: step, time: (duration / (steps.length + 1)) * (i + 1) }))
-    : [];
+  // Use precise step timestamps from events if available, otherwise approximate
+  const stepMarkers = React.useMemo(() => {
+    // Try precise timestamps from step_started events
+    const preciseMarkers = runEvents
+      .filter((e) => e.type === "step_started" && e.metadata?.timestamp_ms)
+      .map((e) => ({
+        label: e.metadata?.step || e.message,
+        time: parseInt(e.metadata!.timestamp_ms!) / 1000,
+        precise: true,
+      }));
+
+    if (preciseMarkers.length > 0) return preciseMarkers;
+
+    // Fallback: approximate from test plan
+    const steps = run.test_plan?.scenarios?.flatMap((s) => s.steps) || [];
+    if (duration > 0 && steps.length > 0) {
+      return steps.map((step, i) => ({ label: step, time: (duration / (steps.length + 1)) * (i + 1), precise: false }));
+    }
+    return [];
+  }, [runEvents, run.test_plan, duration]);
 
   const seekTo = (time: number) => {
     if (videoRef.current) {
@@ -435,7 +450,7 @@ function VideoPlayer({ run }: { run: TestRun }) {
       {/* Controls bar */}
       <div className="flex items-center gap-4 text-[11px] text-[var(--text-muted)]">
         {duration > 0 && <span>{currentTime.toFixed(1)}s / {duration.toFixed(1)}s</span>}
-        {stepMarkers.length > 0 && <span className="text-[var(--text-muted)]">~{stepMarkers.length} steps (approximate)</span>}
+        {stepMarkers.length > 0 && <span className="text-[var(--text-muted)]">{stepMarkers.length} steps ({stepMarkers[0]?.precise ? "precise" : "approximate"})</span>}
         <a href={videoSrc} download className="ml-auto text-[var(--accent)] hover:underline">Download video</a>
       </div>
     </div>

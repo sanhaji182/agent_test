@@ -258,9 +258,21 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 		if result.VideoPath != "" {
 			run.VideoURL = result.VideoPath
 			run.VideoStatus = "ready"
-			if result.Failed > 0 {
-				// Marker di 80% durasi sebagai estimasi failure point
-				run.VideoFailureMarkerAt = run.VideoDuration * 0.8
+			// Cari timestamp failure dari events (precise dari Playwright report)
+			if result.Failed > 0 && a.exec != nil {
+				for _, evt := range a.exec.Events.GetEvents(run.ID) {
+					if string(evt.Type) == "step_completed" && evt.Metadata["status"] == "failed" {
+						if ts := evt.Metadata["timestamp_ms"]; ts != "" {
+							// Convert ms to seconds
+							ms := 0
+							for _, c := range ts {
+								ms = ms*10 + int(c-'0')
+							}
+							run.VideoFailureMarkerAt = float64(ms) / 1000.0
+							break
+						}
+					}
+				}
 			}
 		}
 

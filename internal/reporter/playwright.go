@@ -63,33 +63,47 @@ func ParseAndEmit(ctx *execution.Context, runID, reportPath string) error {
 		return nil
 	}
 
+	cumulativeMs := 0 // Track cumulative time across all steps
+
 	for _, suite := range report.Suites {
 		for _, spec := range suite.Specs {
 			// Emit test_started
-			ctx.EmitEvent(runID, events.TestStarted, "running", "Test: "+spec.Title, map[string]string{"test": spec.Title, "suite": suite.Title})
+			ctx.EmitEvent(runID, events.TestStarted, "running", "Test: "+spec.Title, map[string]string{"test": spec.Title, "suite": suite.Title, "timestamp_ms": itoa(cumulativeMs)})
 
 			for _, test := range spec.Tests {
 				for _, result := range test.Results {
-					// Emit per-step events
+					// Emit per-step events with precise timestamps
 					for _, step := range result.Steps {
-						ctx.EmitEvent(runID, events.StepStarted, "running", step.Title, map[string]string{"test": spec.Title, "step": step.Title})
+						startMs := cumulativeMs
+						ctx.EmitEvent(runID, events.StepStarted, "running", step.Title, map[string]string{
+							"test": spec.Title, "step": step.Title,
+							"timestamp_ms": itoa(startMs),
+						})
 
+						cumulativeMs += step.Duration
+
+						status := "passed"
+						msg := "OK"
 						if step.Error != nil {
-							ctx.EmitEvent(runID, events.StepCompleted, "running", "FAILED: "+step.Error.Message, map[string]string{"test": spec.Title, "step": step.Title, "status": "failed"})
-						} else {
-							ctx.EmitEvent(runID, events.StepCompleted, "running", "OK", map[string]string{"test": spec.Title, "step": step.Title, "status": "passed"})
+							status = "failed"
+							msg = "FAILED: " + step.Error.Message
 						}
+						ctx.EmitEvent(runID, events.StepCompleted, "running", msg, map[string]string{
+							"test": spec.Title, "step": step.Title,
+							"status": status, "duration_ms": itoa(step.Duration),
+							"timestamp_ms": itoa(cumulativeMs),
+						})
 					}
 
 					// Emit assertion result
 					if result.Status == "passed" || result.Status == "expected" {
-						ctx.EmitEvent(runID, events.AssertionPassed, "running", spec.Title+" passed", map[string]string{"test": spec.Title})
+						ctx.EmitEvent(runID, events.AssertionPassed, "running", spec.Title+" passed", map[string]string{"test": spec.Title, "timestamp_ms": itoa(cumulativeMs)})
 					} else {
 						msg := ""
 						if result.Error != nil {
 							msg = result.Error.Message
 						}
-						ctx.EmitEvent(runID, events.AssertionFailed, "running", spec.Title+" failed: "+msg, map[string]string{"test": spec.Title})
+						ctx.EmitEvent(runID, events.AssertionFailed, "running", spec.Title+" failed: "+msg, map[string]string{"test": spec.Title, "timestamp_ms": itoa(cumulativeMs)})
 					}
 				}
 			}
@@ -97,4 +111,16 @@ func ParseAndEmit(ctx *execution.Context, runID, reportPath string) error {
 	}
 
 	return nil
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	s := ""
+	for n > 0 {
+		s = string(rune('0'+n%10)) + s
+		n /= 10
+	}
+	return s
 }
