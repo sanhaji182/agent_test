@@ -12,12 +12,18 @@ import {
   Calendar,
   Bell,
   Tag,
+  Shield,
+  ClipboardCheck,
+  Layers,
 } from "lucide-react";
 
 const nav = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/runs", label: "Test Runs", icon: PlayCircle },
   { href: "/monitoring", label: "Schedules", icon: Calendar },
+  { href: "/risk", label: "Risk & Intel", icon: Shield },
+  { href: "/reviews", label: "Reviews", icon: ClipboardCheck },
+  { href: "/suites", label: "Suites", icon: Layers },
   { href: "/releases", label: "Releases", icon: Tag },
   { href: "/alerts", label: "Alerts", icon: Bell },
   { href: "/projects", label: "Projects", icon: FolderOpen },

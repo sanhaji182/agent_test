@@ -345,6 +345,10 @@ export async function getReleaseConfidence(id: string): Promise<ConfidenceScore>
   return apiFetch<ConfidenceScore>(`/api/v1/releases/${id}/confidence`);
 }
 
+export async function getReleaseExplanation(id: string): Promise<{ confidence: ConfidenceScore; factors: { factor: string; value: number; impact: string; detail: string }[] }> {
+  return apiFetch(`/api/v1/releases/${id}/explanation`);
+}
+
 // --- Reviews ---
 export interface Review {
   id: string;
@@ -358,6 +362,10 @@ export interface Review {
 
 export async function getRunReviews(runId: string): Promise<Review[]> {
   return apiFetch<Review[]>(`/api/v1/runs/${runId}/reviews`);
+}
+
+export async function getAllReviews(): Promise<Review[]> {
+  return apiFetch<Review[]>("/api/v1/reviews");
 }
 
 export async function approveReview(id: string, reviewer: string, comment: string): Promise<Review> {

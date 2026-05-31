@@ -127,12 +127,15 @@ func (s *Server) routes() {
 		// Intelligence
 		r.Get("/releases/{id}/confidence", s.handleReleaseConfidence)
 		r.Get("/releases/{id}/risk", s.handleReleaseRisk)
+		r.Get("/releases/{id}/explanation", s.handleReleaseExplanation)
 		r.Post("/suite-selection", s.handleSuiteSelection)
 		// Reviews
 		r.Post("/reviews", s.handleCreateReview)
 		r.Get("/runs/{id}/reviews", s.handleGetRunReviews)
 		r.Post("/reviews/{id}/approve", s.handleApproveReview)
 		r.Post("/reviews/{id}/reject", s.handleRejectReview)
+		r.Post("/reviews/{id}/request-changes", s.handleRequestChangesReview)
+		r.Get("/reviews", s.handleListAllReviews)
 		// Suites
 		r.Post("/suites", s.handleCreateSuite)
 		r.Get("/suites", s.handleListSuites)
@@ -701,6 +704,42 @@ func (s *Server) handleReleaseRisk(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(risks)
 }
 
+func (s *Server) handleReleaseExplanation(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	rel, ok := s.releases.Get(id)
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	var runs []*agent.TestRun
+	for _, rid := range rel.RunIDs {
+		if run, err := s.store.GetRun(r.Context(), rid); err == nil {
+			runs = append(runs, run)
+		}
+	}
+	allRuns := s.getAllRuns(r)
+	risks := intelligence.ComputeRisk(allRuns, nil)
+	conf := intelligence.ComputeConfidence(runs, risks)
+
+	// Build explanation factors
+	factors := []map[string]interface{}{}
+	factors = append(factors, map[string]interface{}{"factor": "pass_rate", "value": conf.PassRate, "impact": "positive", "detail": fmt.Sprintf("%.0f%% of runs passed", conf.PassRate*100)})
+	if conf.RiskScore > 0.5 {
+		factors = append(factors, map[string]interface{}{"factor": "risk_score", "value": conf.RiskScore, "impact": "negative", "detail": "High risk tests detected"})
+	}
+	if conf.Freshness < 0.5 {
+		factors = append(factors, map[string]interface{}{"factor": "freshness", "value": conf.Freshness, "impact": "negative", "detail": "Test data is stale (>36h old)"})
+	} else {
+		factors = append(factors, map[string]interface{}{"factor": "freshness", "value": conf.Freshness, "impact": "positive", "detail": "Recent test data available"})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"confidence": conf,
+		"factors":    factors,
+	})
+}
+
 func (s *Server) handleSuiteSelection(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Mode      string   `json:"mode"`
@@ -772,6 +811,37 @@ func (s *Server) handleRejectReview(w http.ResponseWriter, r *http.Request) {
 	rev, _ := s.reviews.Get(id)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(rev)
+}
+
+func (s *Server) handleRequestChangesReview(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Reviewer string `json:"reviewer"`
+		Comment  string `json:"comment"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if !s.reviews.Reject(id, req.Reviewer, "Changes requested: "+req.Comment) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	rev, _ := s.reviews.Get(id)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rev)
+}
+
+func (s *Server) handleListAllReviews(w http.ResponseWriter, r *http.Request) {
+	// Return all reviews across all runs (for review queue)
+	allRuns, _ := s.store.ListRuns(r.Context(), 100, 0)
+	var all []*workflow.Review
+	for _, run := range allRuns {
+		revs := s.reviews.ByRun(run.ID)
+		all = append(all, revs...)
+	}
+	if all == nil {
+		all = []*workflow.Review{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(all)
 }
 
 // --- Suite handlers ---
