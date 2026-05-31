@@ -30,7 +30,7 @@ export default function RunsPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="h-8 w-48 rounded-lg bg-[var(--bg-secondary)] animate-pulse" />
+        <div className="h-8 w-48 rounded-lg bg-[var(--bg-subtle)] animate-pulse" />
         <LoadingSkeleton rows={8} />
       </div>
     );
@@ -64,7 +64,7 @@ export default function RunsPage() {
           placeholder="Filter by ID, state, or requirements..."
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]/50 focus:ring-1 focus:ring-[var(--accent)]/20"
+          className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]/50 focus:ring-1 focus:ring-[var(--accent)]/20"
         />
       </div>
 
@@ -79,7 +79,7 @@ export default function RunsPage() {
         <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-[var(--border)] bg-[var(--bg-secondary)]">
+              <tr className="border-b border-[var(--border)] bg-[var(--bg-subtle)]">
                 <th className="text-left px-4 py-3 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Run ID</th>
                 <th className="text-left px-4 py-3 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Status</th>
                 <th className="text-left px-4 py-3 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Result</th>
@@ -92,7 +92,7 @@ export default function RunsPage() {
               {filtered.map((run) => (
                 <tr
                   key={run.id}
-                  className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--bg-card-hover)] transition-colors"
+                  className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--bg-hover)] transition-colors"
                 >
                   <td className="px-4 py-3">
                     <Link
@@ -127,7 +127,7 @@ export default function RunsPage() {
                   <td className="px-4 py-3">
                     <Link
                       href={`/runs/${run.id}`}
-                      className="p-1.5 rounded-md hover:bg-[var(--bg-secondary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                      className="p-1.5 rounded-md hover:bg-[var(--bg-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
                     </Link>

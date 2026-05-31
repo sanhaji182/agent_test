@@ -46,7 +46,7 @@ export default function RunDetailPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="h-6 w-32 rounded bg-[var(--bg-secondary)] animate-pulse" />
+        <div className="h-6 w-32 rounded bg-[var(--bg-subtle)] animate-pulse" />
         <LoadingSkeleton rows={6} />
       </div>
     );
@@ -83,7 +83,7 @@ export default function RunDetailPage() {
           <a
             href={`${API}/api/v1/runs/${run.id}/report`}
             target="_blank"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border)] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent)]/30 transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border)] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent)]/30 transition-colors"
           >
             <FileText className="w-3.5 h-3.5" /> Report
           </a>
@@ -134,7 +134,7 @@ export default function RunDetailPage() {
           <p className="text-sm text-[var(--text-secondary)] mb-4">{run.test_plan.summary}</p>
           <div className="space-y-2">
             {run.test_plan.scenarios.map((s, i) => (
-              <div key={i} className="p-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border)]">
+              <div key={i} className="p-3 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border)]">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-xs font-medium text-[var(--text-primary)]">{s.name}</span>
                   <PriorityBadge priority={s.priority} />
@@ -156,11 +156,11 @@ export default function RunDetailPage() {
           <div className="space-y-2">
             {run.test_files.map((f, i) => (
               <details key={i} className="group rounded-lg border border-[var(--border)] overflow-hidden">
-                <summary className="flex items-center gap-2 px-4 py-2.5 cursor-pointer text-xs font-mono text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] transition-colors">
+                <summary className="flex items-center gap-2 px-4 py-2.5 cursor-pointer text-xs font-mono text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)] transition-colors">
                   <FileCode className="w-3.5 h-3.5 text-[var(--text-muted)]" />
                   {f.name}
                 </summary>
-                <pre className="px-4 py-3 text-[11px] leading-relaxed overflow-x-auto bg-[var(--bg-primary)] border-t border-[var(--border)] text-[var(--text-secondary)]">
+                <pre className="px-4 py-3 text-[11px] leading-relaxed overflow-x-auto bg-[var(--bg-subtle)] border-t border-[var(--border)] text-[var(--text-secondary)]">
                   {f.content}
                 </pre>
               </details>
@@ -174,7 +174,7 @@ export default function RunDetailPage() {
         <Section title="Screenshots">
           <div className="grid grid-cols-2 gap-2">
             {run.screenshots.map((url, i) => (
-              <a key={i} href={url} target="_blank" className="flex items-center gap-2 p-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border)] hover:border-[var(--accent)]/30 transition-colors">
+              <a key={i} href={url} target="_blank" className="flex items-center gap-2 p-3 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border)] hover:border-[var(--accent)]/30 transition-colors">
                 <Image className="w-4 h-4 text-[var(--text-muted)]" />
                 <span className="text-xs text-[var(--accent)] truncate">{url.split("/").pop()}</span>
               </a>

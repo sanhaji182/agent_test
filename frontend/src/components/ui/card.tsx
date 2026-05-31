@@ -12,8 +12,8 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5",
-        hover && "transition-colors hover:bg-[var(--bg-card-hover)] hover:border-[var(--border-subtle)]",
+        "rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 shadow-[var(--shadow-sm)]",
+        hover && "transition-shadow hover:shadow-[var(--shadow-md)]",
         className
       )}
     >
@@ -42,23 +42,28 @@ export function StatCard({
     warning: "text-[var(--warning)]",
     info: "text-[var(--info)]",
   };
+  const iconBg = {
+    default: "bg-[var(--bg-subtle)] text-[var(--text-secondary)]",
+    success: "bg-[var(--success-bg)] text-[var(--success)]",
+    danger: "bg-[var(--danger-bg)] text-[var(--danger)]",
+    warning: "bg-[var(--warning-bg)] text-[var(--warning)]",
+    info: "bg-[var(--info-bg)] text-[var(--info)]",
+  };
 
   return (
     <Card>
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wider text-[var(--text-muted)] mb-1">
+          <p className="text-xs font-medium uppercase tracking-wider text-[var(--text-muted)] mb-1.5">
             {label}
           </p>
-          <p className={cn("text-2xl font-bold", colors[color])}>{value}</p>
+          <p className={cn("text-2xl font-bold tracking-tight", colors[color])}>{value}</p>
           {trend && (
             <p className="text-xs text-[var(--text-secondary)] mt-1">{trend}</p>
           )}
         </div>
         {icon && (
-          <div className="p-2 rounded-lg bg-[var(--bg-secondary)] text-[var(--text-secondary)]">
-            {icon}
-          </div>
+          <div className={cn("p-2.5 rounded-lg", iconBg[color])}>{icon}</div>
         )}
       </div>
     </Card>

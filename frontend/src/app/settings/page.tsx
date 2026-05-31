@@ -42,7 +42,7 @@ function SettingRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between py-1">
       <dt className="text-[var(--text-secondary)]">{label}</dt>
-      <dd className="font-mono text-xs text-[var(--text-primary)] bg-[var(--bg-secondary)] px-2 py-1 rounded">{value}</dd>
+      <dd className="font-mono text-xs text-[var(--text-primary)] bg-[var(--bg-subtle)] px-2 py-1 rounded">{value}</dd>
     </div>
   );
 }
