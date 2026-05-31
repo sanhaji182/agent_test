@@ -1,143 +1,144 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getRuns, type TestRun } from "@/lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { getRuns, isActive, type TestRun } from "@/lib/api";
 import { StatusBadge } from "@/components/ui/badge";
 import { EmptyState, LoadingSkeleton } from "@/components/ui/section";
-import Link from "next/link";
-import { Search, Inbox, ExternalLink } from "lucide-react";
+import { RunInspector } from "@/components/console/inspector";
+import { Search, Inbox, ChevronDown } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+type Group = "all" | "active" | "passed" | "failed";
+type Sort = "newest" | "oldest";
 
 export default function RunsPage() {
   const [runs, setRuns] = useState<TestRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState("");
+  const [query, setQuery] = useState("");
+  const [group, setGroup] = useState<Group>("all");
+  const [sort, setSort] = useState<Sort>("newest");
+  const [selected, setSelected] = useState<TestRun | null>(null);
 
   useEffect(() => {
-    getRuns()
-      .then(setRuns)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+    getRuns().then(setRuns).catch((e) => setError(e.message)).finally(() => setLoading(false));
   }, []);
 
-  const filtered = runs.filter(
-    (r) =>
-      r.id.includes(filter) ||
-      r.state.includes(filter) ||
-      (r.requirements || "").toLowerCase().includes(filter.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    let list = runs.filter(
+      (r) =>
+        r.id.includes(query) ||
+        r.state.includes(query) ||
+        (r.requirements || "").toLowerCase().includes(query.toLowerCase())
+    );
+    if (group === "active") list = list.filter((r) => isActive(r.state));
+    if (group === "passed") list = list.filter((r) => r.state === "done");
+    if (group === "failed") list = list.filter((r) => r.state === "failed");
+    list = [...list].sort((a, b) => {
+      const d = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      return sort === "newest" ? -d : d;
+    });
+    return list;
+  }, [runs, query, group, sort]);
+
+  const counts = {
+    all: runs.length,
+    active: runs.filter((r) => isActive(r.state)).length,
+    passed: runs.filter((r) => r.state === "done").length,
+    failed: runs.filter((r) => r.state === "failed").length,
+  };
 
   if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="h-8 w-48 rounded-lg bg-[var(--bg-subtle)] animate-pulse" />
-        <LoadingSkeleton rows={8} />
-      </div>
-    );
+    return <div className="space-y-6"><div className="h-8 w-48 rounded-lg bg-[var(--bg-subtle)] animate-pulse" /><LoadingSkeleton rows={8} /></div>;
   }
-
   if (error) {
-    return (
-      <div className="rounded-xl border border-[var(--danger)]/20 bg-[var(--danger-bg)] p-5">
-        <p className="text-sm font-medium text-[var(--danger)]">Error: {error}</p>
-      </div>
-    );
+    return <div className="rounded-xl border border-[var(--danger)]/20 bg-[var(--danger-bg)] p-5 text-sm text-[var(--danger)]">Error: {error}</div>;
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-[var(--text-primary)]">Test Runs</h1>
-          <p className="text-sm text-[var(--text-secondary)] mt-0.5">
-            {runs.length} total runs
-          </p>
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-xl font-bold">Test Suites</h1>
+        <p className="text-sm text-[var(--text-secondary)] mt-0.5">Browse, inspect, and rerun your test sessions</p>
+      </div>
+
+      {/* Toolbar */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+          <input
+            type="text"
+            placeholder="Search by ID, state, or requirements..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]/50 focus:ring-2 focus:ring-[var(--accent)]/10"
+          />
+        </div>
+        <div className="relative">
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as Sort)}
+            className="appearance-none pl-3 pr-8 py-2.5 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm focus:outline-none focus:border-[var(--accent)]/50 cursor-pointer"
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+          </select>
+          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)] pointer-events-none" />
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-        <input
-          type="text"
-          placeholder="Filter by ID, state, or requirements..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]/50 focus:ring-1 focus:ring-[var(--accent)]/20"
-        />
+      {/* Status filter tabs */}
+      <div className="flex items-center gap-1 border-b border-[var(--border)]">
+        {(["all", "active", "passed", "failed"] as Group[]).map((g) => (
+          <button
+            key={g}
+            onClick={() => setGroup(g)}
+            className={cn(
+              "px-3 py-2 text-[13px] font-medium border-b-2 -mb-px capitalize transition-colors",
+              group === g ? "border-[var(--accent)] text-[var(--accent)]" : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            )}
+          >
+            {g} <span className="text-[var(--text-muted)]">({counts[g]})</span>
+          </button>
+        ))}
       </div>
 
-      {/* Table */}
+      {/* List */}
       {filtered.length === 0 ? (
-        <EmptyState
-          icon={<Inbox className="w-6 h-6" />}
-          title={filter ? "No matching runs" : "No test runs yet"}
-          description={filter ? "Try a different search term." : "Create a run via the API or MCP."}
-        />
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)]">
+          <EmptyState icon={<Inbox className="w-6 h-6" />} title={query ? "No matching runs" : "No runs in this group"} description={query ? "Try a different search." : "Runs will appear here."} />
+        </div>
       ) : (
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[var(--border)] bg-[var(--bg-subtle)]">
-                <th className="text-left px-4 py-3 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Run ID</th>
-                <th className="text-left px-4 py-3 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Status</th>
-                <th className="text-left px-4 py-3 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Result</th>
-                <th className="text-left px-4 py-3 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Fixes</th>
-                <th className="text-left px-4 py-3 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Created</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((run) => (
-                <tr
-                  key={run.id}
-                  className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--bg-hover)] transition-colors"
-                >
-                  <td className="px-4 py-3">
-                    <Link
-                      href={`/runs/${run.id}`}
-                      className="font-mono text-xs text-[var(--accent)] hover:text-[var(--accent-hover)]"
-                    >
-                      {run.id.slice(0, 8)}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge state={run.state} />
-                  </td>
-                  <td className="px-4 py-3 text-xs">
-                    {run.run_result ? (
-                      <span className="flex items-center gap-2">
-                        <span className="text-[var(--success)] font-medium">{run.run_result.passed}✓</span>
-                        <span className="text-[var(--danger)] font-medium">{run.run_result.failed}✗</span>
-                        <span className="text-[var(--text-muted)]">/ {run.run_result.total}</span>
-                      </span>
-                    ) : (
-                      <span className="text-[var(--text-muted)]">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-[var(--text-secondary)]">
-                    {run.fix_attempts > 0 ? run.fix_attempts : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-[11px] text-[var(--text-muted)]">
-                    {new Date(run.created_at).toLocaleString(undefined, {
-                      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-                    })}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Link
-                      href={`/runs/${run.id}`}
-                      className="p-1.5 rounded-md hover:bg-[var(--bg-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-[var(--shadow-sm)] overflow-hidden divide-y divide-[var(--border)]">
+          {filtered.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => setSelected(r)}
+              className={cn(
+                "w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-[var(--bg-hover)] transition-colors",
+                selected?.id === r.id && "bg-[var(--accent-bg)]"
+              )}
+            >
+              <StatusBadge state={r.state} />
+              <span className="font-mono text-xs text-[var(--accent)] w-16 shrink-0">{r.id.slice(0, 8)}</span>
+              <span className="text-sm text-[var(--text-secondary)] truncate flex-1">{r.requirements || "—"}</span>
+              {r.run_result && (
+                <span className="text-[11px] shrink-0 flex items-center gap-2">
+                  <span className="text-[var(--success)]">{r.run_result.passed}✓</span>
+                  <span className="text-[var(--danger)]">{r.run_result.failed}✗</span>
+                </span>
+              )}
+              <span className="text-[11px] text-[var(--text-muted)] shrink-0 w-28 text-right">
+                {new Date(r.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </span>
+            </button>
+          ))}
         </div>
       )}
+
+      {/* Inspector drawer + backdrop */}
+      {selected && <div className="fixed inset-0 z-30 bg-black/20" onClick={() => setSelected(null)} />}
+      <RunInspector run={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }

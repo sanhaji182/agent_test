@@ -79,6 +79,30 @@ export async function createRun(data: {
   });
 }
 
+// Rerun: buat run baru dari konfigurasi run lama
+export async function rerunRun(id: string): Promise<{ run_id: string; state: string }> {
+  return apiFetch(`/api/v1/runs/${id}/rerun`, { method: "POST" });
+}
+
+export function reportUrl(id: string): string {
+  return `${API_BASE}/api/v1/runs/${id}/report`;
+}
+
+// Urutan fase eksekusi untuk membangun timeline
+export const PHASES = [
+  "analyzing",
+  "plan_generated",
+  "writing_tests",
+  "running",
+  "fixing",
+  "done",
+] as const;
+
+// isActive: run masih berjalan (belum done/failed)
+export function isActive(state: string): boolean {
+  return !["done", "failed", "idle"].includes(state);
+}
+
 export function subscribeToRun(
   id: string,
   onEvent: (event: { type: string; data: Record<string, string> }) => void
