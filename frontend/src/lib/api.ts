@@ -307,3 +307,76 @@ export async function getMetricsHotspots(): Promise<Hotspot[]> {
 export async function getMetricsTrend(): Promise<{ date: string; pass_rate: number; fail_count: number }[]> {
   return apiFetch("/api/v1/metrics/trend");
 }
+
+// --- Intelligence ---
+export interface RiskItem {
+  name: string;
+  type: string;
+  risk_score: number;
+  reason: string;
+  environment?: string;
+}
+
+export interface Recommendation {
+  action: string;
+  target: string;
+  reason: string;
+  priority: number;
+}
+
+export interface ConfidenceScore {
+  score: number;
+  grade: string;
+  pass_rate: number;
+  risk_score: number;
+  freshness: number;
+  explanation: string;
+}
+
+export async function getMetricsRisk(): Promise<RiskItem[]> {
+  return apiFetch<RiskItem[]>("/api/v1/metrics/risk");
+}
+
+export async function getRecommendations(): Promise<Recommendation[]> {
+  return apiFetch<Recommendation[]>("/api/v1/metrics/recommendations");
+}
+
+export async function getReleaseConfidence(id: string): Promise<ConfidenceScore> {
+  return apiFetch<ConfidenceScore>(`/api/v1/releases/${id}/confidence`);
+}
+
+// --- Reviews ---
+export interface Review {
+  id: string;
+  run_id: string;
+  type: string;
+  status: string;
+  reviewer?: string;
+  comment?: string;
+  created_at: string;
+}
+
+export async function getRunReviews(runId: string): Promise<Review[]> {
+  return apiFetch<Review[]>(`/api/v1/runs/${runId}/reviews`);
+}
+
+export async function approveReview(id: string, reviewer: string, comment: string): Promise<Review> {
+  return apiFetch(`/api/v1/reviews/${id}/approve`, { method: "POST", body: JSON.stringify({ reviewer, comment }) });
+}
+
+export async function rejectReview(id: string, reviewer: string, comment: string): Promise<Review> {
+  return apiFetch(`/api/v1/reviews/${id}/reject`, { method: "POST", body: JSON.stringify({ reviewer, comment }) });
+}
+
+// --- Suites ---
+export interface Suite {
+  id: string;
+  name: string;
+  tags: string[];
+  pinned: boolean;
+  run_ids: string[];
+}
+
+export async function getSuites(): Promise<Suite[]> {
+  return apiFetch<Suite[]>("/api/v1/suites");
+}

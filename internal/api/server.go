@@ -13,6 +13,7 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/config"
 	"github.com/go-go-golems/gotest-agent/internal/db"
 	"github.com/go-go-golems/gotest-agent/internal/events"
+	"github.com/go-go-golems/gotest-agent/internal/intelligence"
 	"github.com/go-go-golems/gotest-agent/internal/metrics"
 	"github.com/go-go-golems/gotest-agent/internal/notify"
 	"github.com/go-go-golems/gotest-agent/internal/recordings"
@@ -21,6 +22,7 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/schedule"
 	"github.com/go-go-golems/gotest-agent/internal/visual"
 	"github.com/go-go-golems/gotest-agent/internal/webhook"
+	"github.com/go-go-golems/gotest-agent/internal/workflow"
 	"github.com/google/uuid"
 )
 
@@ -34,6 +36,8 @@ type Server struct {
 	schedules  *schedule.Store
 	releases   *release.Store
 	notifs     *notify.Store
+	reviews    *workflow.ReviewStore
+	suites     *workflow.SuiteStore
 }
 
 func NewServer(cfg *config.Config, store db.RunStore) *Server {
@@ -53,6 +57,8 @@ func NewServer(cfg *config.Config, store db.RunStore) *Server {
 		schedules:  schedule.NewStore(),
 		releases:   release.NewStore(),
 		notifs:     notify.NewStore(),
+		reviews:    workflow.NewReviewStore(),
+		suites:     workflow.NewSuiteStore(),
 	}
 	s.routes()
 	return s
@@ -116,6 +122,24 @@ func (s *Server) routes() {
 		r.Get("/metrics/hotspots", s.handleMetricsHotspots)
 		r.Get("/metrics/flaky", s.handleMetricsFlaky)
 		r.Get("/metrics/trend", s.handleMetricsTrend)
+		r.Get("/metrics/risk", s.handleMetricsRisk)
+		r.Get("/metrics/recommendations", s.handleMetricsRecommendations)
+		// Intelligence
+		r.Get("/releases/{id}/confidence", s.handleReleaseConfidence)
+		r.Get("/releases/{id}/risk", s.handleReleaseRisk)
+		r.Post("/suite-selection", s.handleSuiteSelection)
+		// Reviews
+		r.Post("/reviews", s.handleCreateReview)
+		r.Get("/runs/{id}/reviews", s.handleGetRunReviews)
+		r.Post("/reviews/{id}/approve", s.handleApproveReview)
+		r.Post("/reviews/{id}/reject", s.handleRejectReview)
+		// Suites
+		r.Post("/suites", s.handleCreateSuite)
+		r.Get("/suites", s.handleListSuites)
+		r.Get("/suites/{id}", s.handleGetSuite)
+		r.Delete("/suites/{id}", s.handleDeleteSuite)
+		// Alert rules
+		r.Post("/alert-rules/evaluate", s.handleEvaluateAlertRules)
 	})
 
 	wh := webhook.NewGitHubHandler(s.cfg.APIKey, func(event webhook.PushEvent) { _ = event })
@@ -612,4 +636,231 @@ func (s *Server) handleMetricsTrend(w http.ResponseWriter, r *http.Request) {
 	trend := metrics.ComputeTrend(fullRuns)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(trend)
+}
+
+// --- Intelligence handlers ---
+
+func (s *Server) handleMetricsRisk(w http.ResponseWriter, r *http.Request) {
+	runs := s.getAllRuns(r)
+	scheds := s.schedules.List()
+	risks := intelligence.ComputeRisk(runs, scheds)
+	if risks == nil {
+		risks = []intelligence.RiskItem{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(risks)
+}
+
+func (s *Server) handleMetricsRecommendations(w http.ResponseWriter, r *http.Request) {
+	runs := s.getAllRuns(r)
+	scheds := s.schedules.List()
+	risks := intelligence.ComputeRisk(runs, scheds)
+	recs := intelligence.GenerateRecommendations(risks)
+	if recs == nil {
+		recs = []intelligence.Recommendation{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(recs)
+}
+
+func (s *Server) handleReleaseConfidence(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	rel, ok := s.releases.Get(id)
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	var runs []*agent.TestRun
+	for _, rid := range rel.RunIDs {
+		if run, err := s.store.GetRun(r.Context(), rid); err == nil {
+			runs = append(runs, run)
+		}
+	}
+	allRuns := s.getAllRuns(r)
+	risks := intelligence.ComputeRisk(allRuns, nil)
+	conf := intelligence.ComputeConfidence(runs, risks)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(conf)
+}
+
+func (s *Server) handleReleaseRisk(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	rel, ok := s.releases.Get(id)
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	var runs []*agent.TestRun
+	for _, rid := range rel.RunIDs {
+		if run, err := s.store.GetRun(r.Context(), rid); err == nil {
+			runs = append(runs, run)
+		}
+	}
+	risks := intelligence.ComputeRisk(runs, nil)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(risks)
+}
+
+func (s *Server) handleSuiteSelection(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Mode      string   `json:"mode"`
+		AllTests  []string `json:"all_tests"`
+		FlakyTests []string `json:"flaky_tests"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	runs := s.getAllRuns(r)
+	risks := intelligence.ComputeRisk(runs, nil)
+	sel := intelligence.SelectSuite(intelligence.SelectionMode(req.Mode), req.AllTests, risks, req.FlakyTests)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sel)
+}
+
+// --- Review handlers ---
+
+func (s *Server) handleCreateReview(w http.ResponseWriter, r *http.Request) {
+	var rev workflow.Review
+	if err := json.NewDecoder(r.Body).Decode(&rev); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	result := s.reviews.Create(&rev)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) handleGetRunReviews(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	revs := s.reviews.ByRun(id)
+	if revs == nil {
+		revs = []*workflow.Review{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(revs)
+}
+
+func (s *Server) handleApproveReview(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Reviewer string `json:"reviewer"`
+		Comment  string `json:"comment"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if !s.reviews.Approve(id, req.Reviewer, req.Comment) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	rev, _ := s.reviews.Get(id)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rev)
+}
+
+func (s *Server) handleRejectReview(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Reviewer string `json:"reviewer"`
+		Comment  string `json:"comment"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if !s.reviews.Reject(id, req.Reviewer, req.Comment) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	rev, _ := s.reviews.Get(id)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rev)
+}
+
+// --- Suite handlers ---
+
+func (s *Server) handleCreateSuite(w http.ResponseWriter, r *http.Request) {
+	var suite workflow.Suite
+	if err := json.NewDecoder(r.Body).Decode(&suite); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	result := s.suites.Create(&suite)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) handleListSuites(w http.ResponseWriter, r *http.Request) {
+	list := s.suites.List()
+	if list == nil {
+		list = []*workflow.Suite{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(list)
+}
+
+func (s *Server) handleGetSuite(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	suite, ok := s.suites.Get(id)
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(suite)
+}
+
+func (s *Server) handleDeleteSuite(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if !s.suites.Delete(id) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Alert rules handler ---
+
+func (s *Server) handleEvaluateAlertRules(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Rules []intelligence.AlertRule `json:"rules"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	runs := s.getAllRuns(r)
+	sum := metrics.ComputeSummary(runs)
+	allRuns := s.getAllRuns(r)
+	risks := intelligence.ComputeRisk(allRuns, s.schedules.List())
+	avgRisk := 0.0
+	if len(risks) > 0 {
+		for _, ri := range risks[:min(len(risks), 5)] {
+			avgRisk += ri.RiskScore
+		}
+		avgRisk /= float64(min(len(risks), 5))
+	}
+	triggers := intelligence.EvaluateAlertRules(req.Rules, sum.PassRate, sum.TotalFailed, avgRisk)
+	if triggers == nil {
+		triggers = []intelligence.AlertTrigger{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(triggers)
+}
+
+// helper to get all runs with full data
+func (s *Server) getAllRuns(r *http.Request) []*agent.TestRun {
+	list, _ := s.store.ListRuns(r.Context(), 1000, 0)
+	var full []*agent.TestRun
+	for _, run := range list {
+		if f, err := s.store.GetRun(r.Context(), run.ID); err == nil {
+			full = append(full, f)
+		}
+	}
+	return full
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
