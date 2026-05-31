@@ -93,10 +93,16 @@ type ScreenshotCapturer interface {
 	Capture(ctx context.Context, runID string, label string) (string, error)
 }
 
+// EventEmitter adalah interface untuk mengirim step-level events
+type EventEmitter interface {
+	Emit(runID string, eventType string, phase, message string, metadata map[string]string)
+}
+
 // AgentConfig menyimpan dependensi opsional untuk agent
 type AgentConfig struct {
 	Sidecar       *SidecarClient
 	Screenshotter ScreenshotCapturer
+	Events        EventEmitter
 }
 
 // Agent adalah orchestrator utama yang menjalankan seluruh alur testing
@@ -106,6 +112,7 @@ type Agent struct {
 	maxFixAttempts int
 	sidecar        *SidecarClient
 	screenshotter  ScreenshotCapturer
+	events         EventEmitter
 }
 
 // New membuat Agent baru dengan konfigurasi minimal
@@ -113,7 +120,7 @@ func New(llm LLM, runner Runner, maxFixes int) *Agent {
 	return &Agent{llm: llm, runner: runner, maxFixAttempts: maxFixes}
 }
 
-// NewWithConfig membuat Agent dengan konfigurasi lengkap (sidecar + screenshot)
+// NewWithConfig membuat Agent dengan konfigurasi lengkap (sidecar + screenshot + events)
 func NewWithConfig(llm LLM, runner Runner, maxFixes int, cfg AgentConfig) *Agent {
 	return &Agent{
 		llm:            llm,
@@ -121,6 +128,7 @@ func NewWithConfig(llm LLM, runner Runner, maxFixes int, cfg AgentConfig) *Agent
 		maxFixAttempts: maxFixes,
 		sidecar:        cfg.Sidecar,
 		screenshotter:  cfg.Screenshotter,
+		events:         cfg.Events,
 	}
 }
 
@@ -185,40 +193,60 @@ func (a *Agent) executeAdvanced(ctx context.Context, run *TestRun) error {
 
 // executeSimple menjalankan alur testing langsung di Go (tanpa sidecar)
 func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
+	a.emit(run.ID, "run_started", "idle", "Run started", nil)
+
 	// Langkah 1: Analisis kode project
 	run.State = StateAnalyzing
 	run.UpdatedAt = time.Now()
+	a.emit(run.ID, "analysis_started", "analyzing", "Analyzing codebase", nil)
 
 	analysis, err := a.llm.AnalyzeCodebase(ctx, run.ProjectPath)
 	if err != nil {
+		a.emit(run.ID, "run_failed", "analyzing", err.Error(), nil)
 		return a.fail(run, fmt.Errorf("analyze: %w", err))
 	}
 	run.CodeAnalysis = analysis
+	a.emit(run.ID, "analysis_completed", "analyzing", "Analysis complete", nil)
 
 	// Langkah 2: Buat test plan dari hasil analisis
 	run.State = StatePlanGenerated
 	plan, err := a.llm.GenerateTestPlan(ctx, analysis, run.Requirements)
 	if err != nil {
+		a.emit(run.ID, "run_failed", "plan_generated", err.Error(), nil)
 		return a.fail(run, fmt.Errorf("plan: %w", err))
 	}
 	run.TestPlan = plan
+	a.emit(run.ID, "plan_generated", "plan_generated", fmt.Sprintf("Generated %d scenarios", len(plan.Scenarios)), nil)
 
 	// Langkah 3: Generate file test Playwright
 	run.State = StateWritingTests
 	files, err := a.llm.GenerateTestScripts(ctx, plan, analysis)
 	if err != nil {
+		a.emit(run.ID, "run_failed", "writing_tests", err.Error(), nil)
 		return a.fail(run, fmt.Errorf("write: %w", err))
 	}
 	run.TestFiles = files
+	a.emit(run.ID, "script_generated", "writing_tests", fmt.Sprintf("Generated %d test files", len(files)), nil)
 
 	// Langkah 4: Jalankan test + fix loop (maks 3x percobaan)
 	for {
 		run.State = StateRunning
+		a.emit(run.ID, "test_started", "running", "Executing tests", nil)
+
 		result, err := a.runner.Run(ctx, run.TestFiles, run.ProjectPath)
 		if err != nil {
+			a.emit(run.ID, "run_failed", "running", err.Error(), nil)
 			return a.fail(run, fmt.Errorf("run: %w", err))
 		}
 		run.RunResult = result
+
+		// Emit per-assertion events
+		for _, f := range result.Failures {
+			a.emit(run.ID, "assertion_failed", "running", f.Message, map[string]string{"test": f.Test})
+		}
+		if result.Passed > 0 {
+			a.emit(run.ID, "assertion_passed", "running", fmt.Sprintf("%d tests passed", result.Passed), nil)
+		}
 
 		// Jika semua pass atau sudah melebihi batas fix, selesai
 		if result.Failed == 0 || run.FixAttempts >= a.maxFixAttempts {
@@ -231,17 +259,22 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 		// Minta LLM untuk memperbaiki test yang gagal
 		run.State = StateFixing
 		run.FixAttempts++
+		a.emit(run.ID, "fix_attempt_started", "fixing", fmt.Sprintf("Fix attempt %d", run.FixAttempts), nil)
+
 		fixed, err := a.llm.SuggestFixes(ctx, result.Failures, run.TestFiles)
 		if err != nil {
+			a.emit(run.ID, "run_failed", "fixing", err.Error(), nil)
 			return a.fail(run, fmt.Errorf("fix: %w", err))
 		}
 		run.TestFiles = fixed
+		a.emit(run.ID, "fix_attempt_completed", "fixing", "Fix applied, re-running", nil)
 	}
 
 	run.State = StateDone
 	now := time.Now()
 	run.FinishedAt = &now
 	run.UpdatedAt = now
+	a.emit(run.ID, "run_completed", "done", "Run completed", nil)
 	return nil
 }
 
@@ -258,6 +291,14 @@ func (a *Agent) captureFailureScreenshots(ctx context.Context, run *TestRun, res
 		}
 		result.Failures[i].Screenshot = url
 		run.Screenshots = append(run.Screenshots, url)
+		a.emit(run.ID, "screenshot_captured", "running", "Screenshot captured", map[string]string{"url": url, "test": f.Test})
+	}
+}
+
+// emit mengirim event jika EventEmitter dikonfigurasi
+func (a *Agent) emit(runID, eventType, phase, message string, metadata map[string]string) {
+	if a.events != nil {
+		a.events.Emit(runID, eventType, phase, message, metadata)
 	}
 }
 
