@@ -1,3 +1,5 @@
+// Package queue menyediakan job queue menggunakan Asynq (Redis-backed).
+// Digunakan untuk menjalankan test secara async di background.
 package queue
 
 import (
@@ -12,19 +14,23 @@ import (
 	"github.com/hibiken/asynq"
 )
 
+// TypeTestRun adalah tipe job untuk menjalankan test
 const TypeTestRun = "tests:run"
 
+// TestRunPayload adalah data yang dikirim bersama job
 type TestRunPayload struct {
 	ProjectPath  string `json:"project_path"`
 	Requirements string `json:"requirements"`
 	ProjectURL   string `json:"project_url"`
 }
 
+// Worker memproses job dari Redis queue
 type Worker struct {
 	srv   *asynq.Server
 	agent *agent.Agent
 }
 
+// NewWorker membuat worker baru dengan koneksi Redis dan agent
 func NewWorker(redisAddr string, a *agent.Agent, concurrency int) *Worker {
 	srv := asynq.NewServer(
 		asynq.RedisClientOpt{Addr: redisAddr},
@@ -33,16 +39,19 @@ func NewWorker(redisAddr string, a *agent.Agent, concurrency int) *Worker {
 	return &Worker{srv: srv, agent: a}
 }
 
+// Start memulai worker untuk memproses job
 func (w *Worker) Start() error {
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(TypeTestRun, w.handleTestRun)
 	return w.srv.Start(mux)
 }
 
+// Stop menghentikan worker
 func (w *Worker) Stop() {
 	w.srv.Stop()
 }
 
+// handleTestRun memproses satu job test run
 func (w *Worker) handleTestRun(_ context.Context, t *asynq.Task) error {
 	var payload TestRunPayload
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
@@ -69,6 +78,7 @@ func (w *Worker) handleTestRun(_ context.Context, t *asynq.Task) error {
 	return nil
 }
 
+// EnqueueTestRun menambahkan job test run ke queue
 func EnqueueTestRun(client *asynq.Client, payload TestRunPayload) (string, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {

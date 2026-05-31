@@ -7,7 +7,8 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/agent"
 )
 
-// RunStore is the interface for persisting test runs.
+// RunStore adalah interface untuk menyimpan dan mengambil data test run.
+// Diimplementasikan oleh Store (PostgreSQL) dan MemoryStore (in-memory).
 type RunStore interface {
 	CreateRun(ctx context.Context, run *agent.TestRun) error
 	UpdateRun(ctx context.Context, run *agent.TestRun) error
@@ -15,25 +16,29 @@ type RunStore interface {
 	ListRuns(ctx context.Context, limit, offset int) ([]*agent.TestRun, error)
 }
 
-// MemoryStore is an in-memory RunStore for development without PostgreSQL.
+// MemoryStore adalah implementasi RunStore di memori (tanpa database).
+// Digunakan untuk development tanpa PostgreSQL.
 type MemoryStore struct {
-	mu   sync.RWMutex
-	runs map[string]*agent.TestRun
-	order []string
+	mu    sync.RWMutex
+	runs  map[string]*agent.TestRun
+	order []string // Urutan ID dari terbaru ke terlama
 }
 
+// NewMemoryStore membuat store in-memory baru
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{runs: make(map[string]*agent.TestRun)}
 }
 
+// CreateRun menyimpan run baru ke memori
 func (m *MemoryStore) CreateRun(_ context.Context, run *agent.TestRun) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.runs[run.ID] = run
-	m.order = append([]string{run.ID}, m.order...)
+	m.order = append([]string{run.ID}, m.order...) // Terbaru di depan
 	return nil
 }
 
+// UpdateRun memperbarui data run yang sudah ada
 func (m *MemoryStore) UpdateRun(_ context.Context, run *agent.TestRun) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -41,6 +46,7 @@ func (m *MemoryStore) UpdateRun(_ context.Context, run *agent.TestRun) error {
 	return nil
 }
 
+// GetRun mengambil run berdasarkan ID
 func (m *MemoryStore) GetRun(_ context.Context, id string) (*agent.TestRun, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -51,6 +57,7 @@ func (m *MemoryStore) GetRun(_ context.Context, id string) (*agent.TestRun, erro
 	return run, nil
 }
 
+// ListRuns menampilkan daftar run dengan pagination
 func (m *MemoryStore) ListRuns(_ context.Context, limit, offset int) ([]*agent.TestRun, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

@@ -1,3 +1,4 @@
+// Package report menghasilkan laporan HTML dari hasil test run
 package report
 
 import (
@@ -8,6 +9,7 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/agent"
 )
 
+// Template HTML untuk laporan test run
 var htmlTmpl = template.Must(template.New("report").Parse(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -58,6 +60,7 @@ th { background: #f9fafb; }
 </body>
 </html>`))
 
+// ReportData adalah data yang dikirim ke template HTML
 type ReportData struct {
 	ID          string
 	State       string
@@ -66,6 +69,7 @@ type ReportData struct {
 	GeneratedAt string
 }
 
+// GenerateHTML menulis laporan HTML ke writer dari data test run
 func GenerateHTML(w io.Writer, run *agent.TestRun) error {
 	data := ReportData{
 		ID:          run.ID,
@@ -77,6 +81,7 @@ func GenerateHTML(w io.Writer, run *agent.TestRun) error {
 	return htmlTmpl.Execute(w, data)
 }
 
+// GenerateHTMLString menghasilkan laporan HTML sebagai string
 func GenerateHTMLString(run *agent.TestRun) (string, error) {
 	w := &stringWriter{}
 	if err := GenerateHTML(w, run); err != nil {

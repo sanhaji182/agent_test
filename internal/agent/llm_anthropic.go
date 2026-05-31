@@ -10,16 +10,19 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
+// AnthropicLLM adalah implementasi LLM menggunakan Anthropic Claude API
 type AnthropicLLM struct {
 	client anthropic.Client
 	model  string
 }
 
+// NewAnthropicLLM membuat client Anthropic baru dengan API key dan model
 func NewAnthropicLLM(apiKey, model string) *AnthropicLLM {
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 	return &AnthropicLLM{client: client, model: model}
 }
 
+// AnalyzeCodebase menganalisis kode project dan mengembalikan ringkasan terstruktur
 func (a *AnthropicLLM) AnalyzeCodebase(ctx context.Context, path string) (string, error) {
 	prompt := fmt.Sprintf(`Analyze the codebase at path: %s
 Detect: language, framework, routes, controllers, models, API endpoints.
@@ -28,6 +31,7 @@ Return a structured summary.`, path)
 	return a.chat(ctx, prompt)
 }
 
+// GenerateTestPlan membuat rencana pengujian berdasarkan analisis kode
 func (a *AnthropicLLM) GenerateTestPlan(ctx context.Context, analysis, requirements string) (*TestPlan, error) {
 	prompt := fmt.Sprintf(`Based on this codebase analysis:
 %s
@@ -44,6 +48,7 @@ Return ONLY valid JSON, no markdown.`, analysis, requirements)
 		return nil, err
 	}
 
+	// Bersihkan response dari markdown code fence jika ada
 	resp = stripJSONMarkers(resp)
 	var plan TestPlan
 	if err := json.Unmarshal([]byte(resp), &plan); err != nil {
@@ -52,6 +57,7 @@ Return ONLY valid JSON, no markdown.`, analysis, requirements)
 	return &plan, nil
 }
 
+// GenerateTestScripts membuat file test Playwright dari test plan
 func (a *AnthropicLLM) GenerateTestScripts(ctx context.Context, plan *TestPlan, analysis string) ([]TestFile, error) {
 	planJSON, _ := json.Marshal(plan)
 	prompt := fmt.Sprintf(`Generate Playwright TypeScript test files for this test plan:
@@ -75,6 +81,7 @@ Return ONLY valid JSON, no markdown.`, string(planJSON), analysis)
 	return files, nil
 }
 
+// SuggestFixes meminta LLM untuk memperbaiki test yang gagal
 func (a *AnthropicLLM) SuggestFixes(ctx context.Context, failures []Failure, files []TestFile) ([]TestFile, error) {
 	failJSON, _ := json.Marshal(failures)
 	filesJSON, _ := json.Marshal(files)
@@ -98,6 +105,7 @@ Return ONLY valid JSON, no markdown.`, string(failJSON), string(filesJSON))
 	return fixed, nil
 }
 
+// chat mengirim pesan ke Anthropic API dan mengembalikan response teks
 func (a *AnthropicLLM) chat(ctx context.Context, prompt string) (string, error) {
 	msg, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.Model(a.model),
@@ -110,6 +118,7 @@ func (a *AnthropicLLM) chat(ctx context.Context, prompt string) (string, error) 
 		return "", fmt.Errorf("anthropic: %w", err)
 	}
 
+	// Ambil teks dari response content block pertama
 	for _, block := range msg.Content {
 		if block.Type == "text" {
 			return block.Text, nil
@@ -118,6 +127,8 @@ func (a *AnthropicLLM) chat(ctx context.Context, prompt string) (string, error) 
 	return "", fmt.Errorf("no text in response")
 }
 
+// stripJSONMarkers membersihkan markdown code fence dari response LLM
+// Contoh: ```json\n{...}\n``` → {...}
 func stripJSONMarkers(s string) string {
 	s = strings.TrimPrefix(s, "```json\n")
 	s = strings.TrimPrefix(s, "```\n")

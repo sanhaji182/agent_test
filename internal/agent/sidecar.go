@@ -10,11 +10,13 @@ import (
 	"time"
 )
 
+// SidecarClient adalah HTTP client untuk berkomunikasi dengan LangGraph Python sidecar
 type SidecarClient struct {
 	baseURL string
 	http    *http.Client
 }
 
+// NewSidecarClient membuat client baru untuk sidecar di URL tertentu
 func NewSidecarClient(baseURL string) *SidecarClient {
 	return &SidecarClient{
 		baseURL: baseURL,
@@ -22,6 +24,7 @@ func NewSidecarClient(baseURL string) *SidecarClient {
 	}
 }
 
+// Request body untuk memulai run di sidecar
 type sidecarRunRequest struct {
 	RunID        string `json:"run_id"`
 	ProjectPath  string `json:"project_path"`
@@ -30,17 +33,20 @@ type sidecarRunRequest struct {
 	MaxFixes     int    `json:"max_fixes"`
 }
 
+// Response dari sidecar saat memulai run
 type sidecarRunResponse struct {
 	JobID  string `json:"job_id"`
 	Status string `json:"status"`
 }
 
+// Response status dari sidecar
 type sidecarStatusResponse struct {
-	Status string `json:"status"`
+	Status string `json:"status"` // "running", "completed", "failed"
 	Result any    `json:"result"`
 	Error  string `json:"error"`
 }
 
+// StartRun memulai eksekusi multi-agent di sidecar (async)
 func (c *SidecarClient) StartRun(ctx context.Context, run *TestRun, maxFixes int) (string, error) {
 	body, _ := json.Marshal(sidecarRunRequest{
 		RunID:        run.ID,
@@ -74,6 +80,7 @@ func (c *SidecarClient) StartRun(ctx context.Context, run *TestRun, maxFixes int
 	return result.JobID, nil
 }
 
+// GetStatus mengecek status job yang sedang berjalan di sidecar
 func (c *SidecarClient) GetStatus(ctx context.Context, jobID string) (*sidecarStatusResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/agent/"+jobID, nil)
 	if err != nil {

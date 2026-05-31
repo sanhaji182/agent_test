@@ -1,3 +1,4 @@
+// Package runner berisi implementasi test executor (Docker dan Steel)
 package runner
 
 import (
@@ -12,11 +13,13 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/agent"
 )
 
+// DockerRunner menjalankan Playwright test di dalam Docker container
 type DockerRunner struct {
-	image   string
-	timeout int
+	image   string // Docker image Playwright
+	timeout int    // Timeout dalam detik
 }
 
+// NewDockerRunner membuat runner baru dengan timeout tertentu
 func NewDockerRunner(timeout int) *DockerRunner {
 	return &DockerRunner{
 		image:   "mcr.microsoft.com/playwright:v1.40.0-jammy",
@@ -24,14 +27,16 @@ func NewDockerRunner(timeout int) *DockerRunner {
 	}
 }
 
+// Run menjalankan test files di Docker container dan mengembalikan hasil
 func (r *DockerRunner) Run(ctx context.Context, testFiles []agent.TestFile, projectURL string) (*agent.RunResult, error) {
+	// Buat direktori sementara untuk file test
 	tmpDir, err := os.MkdirTemp("", "gotest-run-*")
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Write test files
+	// Tulis semua file test ke direktori sementara
 	for _, f := range testFiles {
 		path := filepath.Join(tmpDir, f.Name)
 		if err := os.WriteFile(path, []byte(f.Content), 0644); err != nil {
@@ -39,7 +44,7 @@ func (r *DockerRunner) Run(ctx context.Context, testFiles []agent.TestFile, proj
 		}
 	}
 
-	// Write playwright config
+	// Buat konfigurasi Playwright dengan JSON reporter
 	config := `import { defineConfig } from '@playwright/test';
 export default defineConfig({
   reporter: [['json', { outputFile: '/results/results.json' }]],
@@ -49,7 +54,7 @@ export default defineConfig({
 		return nil, fmt.Errorf("write config: %w", err)
 	}
 
-	// Run in Docker
+	// Jalankan test di Docker container
 	cmd := exec.CommandContext(ctx, "docker", "run", "--rm",
 		"-v", tmpDir+":/tests",
 		"-v", tmpDir+":/results",
@@ -60,17 +65,18 @@ export default defineConfig({
 	cmd.Dir = tmpDir
 	output, _ := cmd.CombinedOutput()
 
-	// Parse results
+	// Parse hasil dari JSON reporter
 	resultsPath := filepath.Join(tmpDir, "results.json")
 	return parsePlaywrightResults(resultsPath, string(output))
 }
 
+// Struktur untuk parsing JSON report Playwright
 type playwrightReport struct {
 	Suites []playwrightSuite `json:"suites"`
 	Stats  struct {
-		Expected   int `json:"expected"`
-		Unexpected int `json:"unexpected"`
-		Skipped    int `json:"skipped"`
+		Expected   int `json:"expected"`   // Test yang pass
+		Unexpected int `json:"unexpected"` // Test yang gagal
+		Skipped    int `json:"skipped"`    // Test yang dilewati
 	} `json:"stats"`
 }
 
@@ -92,13 +98,15 @@ type playwrightSpec struct {
 	} `json:"tests"`
 }
 
+// parsePlaywrightResults membaca dan parse file JSON report Playwright
 func parsePlaywrightResults(path, output string) (*agent.RunResult, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		// Fallback: parse from output
+		// Fallback: parse dari stdout jika file tidak ada
 		return parseFromOutput(output), nil
 	}
 
+	// Bersihkan markdown fence jika ada
 	data = []byte(stripJSONMarkers(string(data)))
 
 	var report playwrightReport
@@ -112,6 +120,7 @@ func parsePlaywrightResults(path, output string) (*agent.RunResult, error) {
 		Total:  report.Stats.Expected + report.Stats.Unexpected + report.Stats.Skipped,
 	}
 
+	// Kumpulkan detail kegagalan dari setiap test
 	for _, suite := range report.Suites {
 		for _, spec := range suite.Specs {
 			for _, test := range spec.Tests {
@@ -134,6 +143,7 @@ func parsePlaywrightResults(path, output string) (*agent.RunResult, error) {
 	return result, nil
 }
 
+// parseFromOutput adalah fallback parser dari stdout Playwright
 func parseFromOutput(output string) *agent.RunResult {
 	result := &agent.RunResult{}
 	lines := strings.Split(output, "\n")
@@ -153,6 +163,7 @@ func parseFromOutput(output string) *agent.RunResult {
 	return result
 }
 
+// stripJSONMarkers membersihkan markdown code fence
 func stripJSONMarkers(s string) string {
 	s = strings.TrimPrefix(s, "```json\n")
 	s = strings.TrimPrefix(s, "```\n")

@@ -11,10 +11,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Embed semua file SQL migrasi dari direktori migrations/
+//
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+// Migrate menjalankan semua migrasi SQL yang belum diterapkan
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
+	// Buat tabel tracking migrasi jika belum ada
 	_, err := pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version VARCHAR(255) PRIMARY KEY,
@@ -24,6 +28,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("create migrations table: %w", err)
 	}
 
+	// Baca semua file migrasi
 	entries, err := migrationsFS.ReadDir("migrations")
 	if err != nil {
 		return fmt.Errorf("read migrations dir: %w", err)
@@ -35,8 +40,9 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			names = append(names, e.Name())
 		}
 	}
-	sort.Strings(names)
+	sort.Strings(names) // Urutkan: 001_, 002_, dst
 
+	// Jalankan migrasi yang belum diterapkan
 	for _, name := range names {
 		var exists bool
 		err := pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)", name).Scan(&exists)
@@ -66,6 +72,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
+// RunMigrations helper untuk menjalankan migrasi dari URL database
 func RunMigrations(ctx context.Context, databaseURL string) error {
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {

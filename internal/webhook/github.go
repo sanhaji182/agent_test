@@ -1,3 +1,4 @@
+// Package webhook menangani webhook dari GitHub untuk trigger test otomatis
 package webhook
 
 import (
@@ -12,31 +13,37 @@ import (
 	"strings"
 )
 
+// GitHubHandler menangani webhook push event dari GitHub
 type GitHubHandler struct {
-	secret    string
-	onPush    func(event PushEvent)
+	secret string              // Secret untuk verifikasi HMAC signature
+	onPush func(event PushEvent) // Callback saat menerima push event
 }
 
+// PushEvent adalah payload dari GitHub push webhook
 type PushEvent struct {
 	Ref        string     `json:"ref"`
 	Repository Repository `json:"repository"`
 	HeadCommit Commit     `json:"head_commit"`
 }
 
+// Repository info dari GitHub
 type Repository struct {
 	FullName string `json:"full_name"`
 	CloneURL string `json:"clone_url"`
 }
 
+// Commit info dari push event
 type Commit struct {
 	ID      string `json:"id"`
 	Message string `json:"message"`
 }
 
+// NewGitHubHandler membuat handler baru dengan secret dan callback
 func NewGitHubHandler(secret string, onPush func(PushEvent)) *GitHubHandler {
 	return &GitHubHandler{secret: secret, onPush: onPush}
 }
 
+// ServeHTTP memproses incoming webhook request
 func (h *GitHubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -49,6 +56,7 @@ func (h *GitHubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verifikasi HMAC signature jika secret dikonfigurasi
 	if h.secret != "" {
 		sig := r.Header.Get("X-Hub-Signature-256")
 		if !h.verifySignature(body, sig) {
@@ -57,6 +65,7 @@ func (h *GitHubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Proses berdasarkan tipe event
 	event := r.Header.Get("X-GitHub-Event")
 	switch event {
 	case "push":
@@ -67,7 +76,7 @@ func (h *GitHubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		slog.Info("github push received", "repo", push.Repository.FullName, "ref", push.Ref)
 		if h.onPush != nil {
-			go h.onPush(push)
+			go h.onPush(push) // Proses async supaya tidak blocking
 		}
 	case "ping":
 		slog.Info("github ping received")
@@ -79,6 +88,7 @@ func (h *GitHubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, `{"status":"ok"}`)
 }
 
+// verifySignature memverifikasi HMAC-SHA256 signature dari GitHub
 func (h *GitHubHandler) verifySignature(body []byte, signature string) bool {
 	if !strings.HasPrefix(signature, "sha256=") {
 		return false

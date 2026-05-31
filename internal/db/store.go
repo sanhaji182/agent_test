@@ -1,3 +1,5 @@
+// Package db menyediakan layer persistensi untuk GoTest Agent.
+// Mendukung PostgreSQL (produksi) dan in-memory store (development).
 package db
 
 import (
@@ -11,12 +13,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// ErrNotFound dikembalikan ketika data tidak ditemukan
 var ErrNotFound = errors.New("not found")
 
+// Store adalah implementasi RunStore menggunakan PostgreSQL
 type Store struct {
 	pool *pgxpool.Pool
 }
 
+// NewStore membuat koneksi pool ke PostgreSQL
 func NewStore(ctx context.Context, databaseURL string) (*Store, error) {
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
@@ -28,10 +33,12 @@ func NewStore(ctx context.Context, databaseURL string) (*Store, error) {
 	return &Store{pool: pool}, nil
 }
 
+// Close menutup koneksi pool
 func (s *Store) Close() {
 	s.pool.Close()
 }
 
+// CreateRun menyimpan test run baru ke database
 func (s *Store) CreateRun(ctx context.Context, run *agent.TestRun) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO test_runs (id, project_id, state, requirements, created_at, updated_at)
@@ -40,6 +47,7 @@ func (s *Store) CreateRun(ctx context.Context, run *agent.TestRun) error {
 	return err
 }
 
+// UpdateRun memperbarui data run yang sudah ada
 func (s *Store) UpdateRun(ctx context.Context, run *agent.TestRun) error {
 	testPlan, _ := json.Marshal(run.TestPlan)
 	testFiles, _ := json.Marshal(run.TestFiles)
@@ -57,6 +65,7 @@ func (s *Store) UpdateRun(ctx context.Context, run *agent.TestRun) error {
 	return err
 }
 
+// GetRun mengambil detail test run berdasarkan ID
 func (s *Store) GetRun(ctx context.Context, id string) (*agent.TestRun, error) {
 	row := s.pool.QueryRow(ctx, `
 		SELECT id, state, requirements, code_analysis, test_plan, test_files,
@@ -85,6 +94,7 @@ func (s *Store) GetRun(ctx context.Context, id string) (*agent.TestRun, error) {
 	}
 	run.FinishedAt = finishedAt
 
+	// Unmarshal JSONB fields
 	if len(testPlan) > 0 {
 		json.Unmarshal(testPlan, &run.TestPlan)
 	}
@@ -98,6 +108,7 @@ func (s *Store) GetRun(ctx context.Context, id string) (*agent.TestRun, error) {
 	return &run, nil
 }
 
+// ListRuns menampilkan daftar test run dengan pagination
 func (s *Store) ListRuns(ctx context.Context, limit, offset int) ([]*agent.TestRun, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, state, requirements, fix_attempts, created_at, updated_at, finished_at

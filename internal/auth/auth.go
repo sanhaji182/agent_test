@@ -1,3 +1,4 @@
+// Package auth menyediakan autentikasi JWT dan manajemen API key
 package auth
 
 import (
@@ -14,22 +15,27 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// ErrUnauthorized dikembalikan saat token tidak valid
 var ErrUnauthorized = errors.New("unauthorized")
 
+// Claims adalah payload JWT yang berisi info user
 type Claims struct {
 	UserID string `json:"user_id"`
 	Email  string `json:"email"`
 	jwt.RegisteredClaims
 }
 
+// Auth mengelola JWT token generation dan validation
 type Auth struct {
 	jwtSecret []byte
 }
 
+// New membuat Auth baru dengan secret key
 func New(secret string) *Auth {
 	return &Auth{jwtSecret: []byte(secret)}
 }
 
+// GenerateToken membuat JWT token baru untuk user (berlaku 24 jam)
 func (a *Auth) GenerateToken(userID, email string) (string, error) {
 	claims := Claims{
 		UserID: userID,
@@ -43,6 +49,7 @@ func (a *Auth) GenerateToken(userID, email string) (string, error) {
 	return token.SignedString(a.jwtSecret)
 }
 
+// ValidateToken memvalidasi JWT token dan mengembalikan claims
 func (a *Auth) ValidateToken(tokenStr string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -60,6 +67,7 @@ func (a *Auth) ValidateToken(tokenStr string) (*Claims, error) {
 	return claims, nil
 }
 
+// Middleware adalah HTTP middleware yang memvalidasi Bearer token
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
@@ -80,23 +88,26 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 
 type claimsKey struct{}
 
+// GetClaims mengambil claims dari context (setelah melewati middleware)
 func GetClaims(ctx context.Context) *Claims {
 	c, _ := ctx.Value(claimsKey{}).(*Claims)
 	return c
 }
 
-// API Key management
+// --- Manajemen API Key ---
 
+// GenerateAPIKey membuat API key baru (plain + hash untuk disimpan di DB)
 func GenerateAPIKey() (plain string, hash string, err error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", "", err
 	}
-	plain = "gta_" + hex.EncodeToString(b)
+	plain = "gta_" + hex.EncodeToString(b) // Prefix "gta_" untuk identifikasi
 	hash = HashAPIKey(plain)
 	return plain, hash, nil
 }
 
+// HashAPIKey menghasilkan SHA-256 hash dari API key
 func HashAPIKey(key string) string {
 	h := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(h[:])

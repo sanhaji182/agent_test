@@ -1,3 +1,5 @@
+// Package agent berisi state machine utama untuk menjalankan test secara otomatis.
+// Alur: idle → analyzing → planning → writing → running → fixing → done
 package agent
 
 import (
@@ -6,35 +8,40 @@ import (
 	"time"
 )
 
+// State merepresentasikan status dari sebuah test run
 type State string
 
 const (
-	StateIdle          State = "idle"
-	StateAnalyzing     State = "analyzing"
-	StatePlanGenerated State = "plan_generated"
-	StateWritingTests  State = "writing_tests"
-	StateRunning       State = "running"
-	StateFixing        State = "fixing"
-	StateDone          State = "done"
-	StateFailed        State = "failed"
+	StateIdle          State = "idle"           // Belum dimulai
+	StateAnalyzing     State = "analyzing"      // Sedang menganalisis kode
+	StatePlanGenerated State = "plan_generated" // Test plan sudah dibuat
+	StateWritingTests  State = "writing_tests"  // Sedang menulis file test
+	StateRunning       State = "running"        // Sedang menjalankan test
+	StateFixing        State = "fixing"         // Sedang memperbaiki test yang gagal
+	StateDone          State = "done"           // Selesai
+	StateFailed        State = "failed"         // Gagal
 )
 
+// TestPlan adalah rencana pengujian yang dihasilkan oleh LLM
 type TestPlan struct {
 	Summary   string     `json:"summary"`
 	Scenarios []Scenario `json:"scenarios"`
 }
 
+// Scenario adalah satu skenario test dalam test plan
 type Scenario struct {
 	Name     string   `json:"name"`
-	Priority string   `json:"priority"`
+	Priority string   `json:"priority"` // high, medium, low
 	Steps    []string `json:"steps"`
 }
 
+// TestFile adalah file test yang di-generate oleh LLM
 type TestFile struct {
-	Name    string `json:"name"`
-	Content string `json:"content"`
+	Name    string `json:"name"`    // Nama file, misal "login.spec.ts"
+	Content string `json:"content"` // Isi kode test
 }
 
+// RunResult adalah hasil eksekusi test
 type RunResult struct {
 	Passed   int       `json:"passed"`
 	Failed   int       `json:"failed"`
@@ -42,17 +49,19 @@ type RunResult struct {
 	Failures []Failure `json:"failures"`
 }
 
+// Failure menyimpan detail test yang gagal
 type Failure struct {
 	Test       string `json:"test"`
 	Message    string `json:"message"`
 	Screenshot string `json:"screenshot_url,omitempty"`
 }
 
+// TestRun adalah objek utama yang merepresentasikan satu sesi pengujian
 type TestRun struct {
 	ID           string     `json:"id"`
 	ProjectPath  string     `json:"project_path"`
 	Requirements string     `json:"requirements"`
-	Mode         string     `json:"mode"` // "simple" or "advanced"
+	Mode         string     `json:"mode"` // "simple" atau "advanced"
 	State        State      `json:"state"`
 	CodeAnalysis string     `json:"code_analysis,omitempty"`
 	TestPlan     *TestPlan  `json:"test_plan,omitempty"`
@@ -66,6 +75,7 @@ type TestRun struct {
 	FinishedAt   *time.Time `json:"finished_at,omitempty"`
 }
 
+// LLM adalah interface untuk semua operasi yang membutuhkan AI/LLM
 type LLM interface {
 	AnalyzeCodebase(ctx context.Context, path string) (string, error)
 	GenerateTestPlan(ctx context.Context, analysis, requirements string) (*TestPlan, error)
@@ -73,21 +83,23 @@ type LLM interface {
 	SuggestFixes(ctx context.Context, failures []Failure, files []TestFile) ([]TestFile, error)
 }
 
+// Runner adalah interface untuk menjalankan test (Docker atau Steel)
 type Runner interface {
 	Run(ctx context.Context, testFiles []TestFile, projectURL string) (*RunResult, error)
 }
 
-// ScreenshotCapturer captures screenshots during test failures.
+// ScreenshotCapturer adalah interface untuk mengambil screenshot saat test gagal
 type ScreenshotCapturer interface {
 	Capture(ctx context.Context, runID string, label string) (string, error)
 }
 
-// AgentConfig holds optional dependencies for the agent.
+// AgentConfig menyimpan dependensi opsional untuk agent
 type AgentConfig struct {
-	Sidecar    *SidecarClient
+	Sidecar       *SidecarClient
 	Screenshotter ScreenshotCapturer
 }
 
+// Agent adalah orchestrator utama yang menjalankan seluruh alur testing
 type Agent struct {
 	llm            LLM
 	runner         Runner
@@ -96,10 +108,12 @@ type Agent struct {
 	screenshotter  ScreenshotCapturer
 }
 
+// New membuat Agent baru dengan konfigurasi minimal
 func New(llm LLM, runner Runner, maxFixes int) *Agent {
 	return &Agent{llm: llm, runner: runner, maxFixAttempts: maxFixes}
 }
 
+// NewWithConfig membuat Agent dengan konfigurasi lengkap (sidecar + screenshot)
 func NewWithConfig(llm LLM, runner Runner, maxFixes int, cfg AgentConfig) *Agent {
 	return &Agent{
 		llm:            llm,
@@ -110,12 +124,13 @@ func NewWithConfig(llm LLM, runner Runner, maxFixes int, cfg AgentConfig) *Agent
 	}
 }
 
+// Execute menjalankan test run. Jika mode=advanced, delegasi ke sidecar.
 func (a *Agent) Execute(ctx context.Context, run *TestRun) error {
 	if run.Mode == "" {
 		run.Mode = "simple"
 	}
 
-	// Advanced mode: delegate to LangGraph sidecar
+	// Mode advanced: delegasi ke LangGraph sidecar (multi-agent)
 	if run.Mode == "advanced" && a.sidecar != nil {
 		return a.executeAdvanced(ctx, run)
 	}
@@ -123,8 +138,9 @@ func (a *Agent) Execute(ctx context.Context, run *TestRun) error {
 	return a.executeSimple(ctx, run)
 }
 
+// executeAdvanced mendelegasikan eksekusi ke Python LangGraph sidecar
 func (a *Agent) executeAdvanced(ctx context.Context, run *TestRun) error {
-	// First do analysis locally so sidecar has context
+	// Analisis dulu secara lokal supaya sidecar punya konteks
 	run.State = StateAnalyzing
 	run.UpdatedAt = time.Now()
 
@@ -134,13 +150,13 @@ func (a *Agent) executeAdvanced(ctx context.Context, run *TestRun) error {
 	}
 	run.CodeAnalysis = analysis
 
-	// Delegate to sidecar
+	// Kirim ke sidecar untuk diproses multi-agent
 	jobID, err := a.sidecar.StartRun(ctx, run, a.maxFixAttempts)
 	if err != nil {
 		return a.fail(run, fmt.Errorf("sidecar start: %w", err))
 	}
 
-	// Poll for completion
+	// Polling status sampai selesai
 	run.State = StateRunning
 	for {
 		select {
@@ -167,7 +183,9 @@ func (a *Agent) executeAdvanced(ctx context.Context, run *TestRun) error {
 	}
 }
 
+// executeSimple menjalankan alur testing langsung di Go (tanpa sidecar)
 func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
+	// Langkah 1: Analisis kode project
 	run.State = StateAnalyzing
 	run.UpdatedAt = time.Now()
 
@@ -177,6 +195,7 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 	}
 	run.CodeAnalysis = analysis
 
+	// Langkah 2: Buat test plan dari hasil analisis
 	run.State = StatePlanGenerated
 	plan, err := a.llm.GenerateTestPlan(ctx, analysis, run.Requirements)
 	if err != nil {
@@ -184,6 +203,7 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 	}
 	run.TestPlan = plan
 
+	// Langkah 3: Generate file test Playwright
 	run.State = StateWritingTests
 	files, err := a.llm.GenerateTestScripts(ctx, plan, analysis)
 	if err != nil {
@@ -191,6 +211,7 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 	}
 	run.TestFiles = files
 
+	// Langkah 4: Jalankan test + fix loop (maks 3x percobaan)
 	for {
 		run.State = StateRunning
 		result, err := a.runner.Run(ctx, run.TestFiles, run.ProjectPath)
@@ -199,13 +220,15 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 		}
 		run.RunResult = result
 
+		// Jika semua pass atau sudah melebihi batas fix, selesai
 		if result.Failed == 0 || run.FixAttempts >= a.maxFixAttempts {
 			break
 		}
 
-		// Capture screenshots on failure
+		// Ambil screenshot untuk setiap test yang gagal
 		a.captureFailureScreenshots(ctx, run, result)
 
+		// Minta LLM untuk memperbaiki test yang gagal
 		run.State = StateFixing
 		run.FixAttempts++
 		fixed, err := a.llm.SuggestFixes(ctx, result.Failures, run.TestFiles)
@@ -222,6 +245,7 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 	return nil
 }
 
+// captureFailureScreenshots mengambil screenshot untuk setiap test yang gagal
 func (a *Agent) captureFailureScreenshots(ctx context.Context, run *TestRun, result *RunResult) {
 	if a.screenshotter == nil {
 		return
@@ -237,6 +261,7 @@ func (a *Agent) captureFailureScreenshots(ctx context.Context, run *TestRun, res
 	}
 }
 
+// fail menandai run sebagai gagal dan menyimpan pesan error
 func (a *Agent) fail(run *TestRun, err error) error {
 	run.State = StateFailed
 	run.Error = err.Error()

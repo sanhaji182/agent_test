@@ -1,3 +1,5 @@
+// Package steel menyediakan client untuk berkomunikasi dengan Steel Browser API.
+// Steel Browser adalah headless browser self-hosted untuk menjalankan Playwright test.
 package steel
 
 import (
@@ -10,19 +12,22 @@ import (
 	"time"
 )
 
+// Client adalah HTTP client untuk Steel Browser API
 type Client struct {
 	baseURL string
 	apiKey  string
 	http    *http.Client
 }
 
+// Session merepresentasikan satu sesi browser di Steel
 type Session struct {
-	ID          string `json:"sessionId"`
-	CDPURL      string `json:"cdpUrl"`
-	SeleniumURL string `json:"seleniumUrl"`
+	ID          string `json:"sessionId"`    // ID unik sesi
+	CDPURL      string `json:"cdpUrl"`       // WebSocket URL untuk Chrome DevTools Protocol
+	SeleniumURL string `json:"seleniumUrl"`  // URL Selenium (alternatif)
 	CreatedAt   string `json:"createdAt"`
 }
 
+// NewClient membuat Steel client baru
 func NewClient(baseURL, apiKey string) *Client {
 	return &Client{
 		baseURL: baseURL,
@@ -31,8 +36,10 @@ func NewClient(baseURL, apiKey string) *Client {
 	}
 }
 
+// CreateSession membuat sesi browser baru di Steel
+// Mengembalikan session dengan CDP URL untuk koneksi Playwright
 func (c *Client) CreateSession(ctx context.Context) (*Session, error) {
-	body, _ := json.Marshal(map[string]any{"timeout": 300000})
+	body, _ := json.Marshal(map[string]any{"timeout": 300000}) // 5 menit timeout
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/v1/sessions", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -57,6 +64,7 @@ func (c *Client) CreateSession(ctx context.Context) (*Session, error) {
 	return &session, nil
 }
 
+// GetSession mengambil detail sesi berdasarkan ID
 func (c *Client) GetSession(ctx context.Context, id string) (*Session, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/v1/sessions/"+id, nil)
 	if err != nil {
@@ -77,6 +85,7 @@ func (c *Client) GetSession(ctx context.Context, id string) (*Session, error) {
 	return &session, nil
 }
 
+// DestroySession menghapus sesi browser dan membersihkan resource
 func (c *Client) DestroySession(ctx context.Context, id string) error {
 	req, err := http.NewRequestWithContext(ctx, "DELETE", c.baseURL+"/v1/sessions/"+id, nil)
 	if err != nil {
@@ -92,6 +101,8 @@ func (c *Client) DestroySession(ctx context.Context, id string) error {
 	return nil
 }
 
+// Screenshot mengambil screenshot dari sesi browser
+// fullPage=true untuk screenshot seluruh halaman
 func (c *Client) Screenshot(ctx context.Context, id string, fullPage bool) ([]byte, error) {
 	url := fmt.Sprintf("%s/v1/sessions/%s/screenshot?fullPage=%t", c.baseURL, id, fullPage)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -109,6 +120,7 @@ func (c *Client) Screenshot(ctx context.Context, id string, fullPage bool) ([]by
 	return io.ReadAll(resp.Body)
 }
 
+// ListSessions menampilkan semua sesi browser yang aktif
 func (c *Client) ListSessions(ctx context.Context) ([]*Session, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/v1/sessions", nil)
 	if err != nil {
@@ -129,6 +141,7 @@ func (c *Client) ListSessions(ctx context.Context) ([]*Session, error) {
 	return sessions, nil
 }
 
+// setHeaders mengatur header standar untuk setiap request
 func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {

@@ -1,24 +1,27 @@
+// Package config memuat konfigurasi aplikasi dari environment variables
 package config
 
 import "os"
 
+// Config menyimpan semua konfigurasi yang dibutuhkan aplikasi
 type Config struct {
-	AppPort          string
-	APIKey           string
-	DatabaseURL      string
-	RedisURL         string
-	AnthropicAPIKey  string
-	LLMModel         string
-	SteelAPIURL      string
-	SteelAPIKey      string
-	SteelMaxSessions int
-	LangGraphURL     string
-	MaxFixAttempts   int
-	TimeoutSeconds   int
-	ScreenshotsPath  string
-	ReportsPath      string
+	AppPort          string // Port HTTP server (default: 8080)
+	APIKey           string // API key untuk autentikasi (kosong = tanpa auth)
+	DatabaseURL      string // URL koneksi PostgreSQL
+	RedisURL         string // Alamat Redis untuk job queue
+	AnthropicAPIKey  string // API key Anthropic untuk LLM
+	LLMModel         string // Model LLM yang digunakan (default: claude-sonnet-4-5)
+	SteelAPIURL      string // URL Steel Browser API
+	SteelAPIKey      string // API key Steel Browser (opsional)
+	SteelMaxSessions int    // Maksimal sesi browser bersamaan
+	LangGraphURL     string // URL LangGraph sidecar
+	MaxFixAttempts   int    // Maksimal percobaan fix test gagal
+	TimeoutSeconds   int    // Timeout eksekusi test (detik)
+	ScreenshotsPath  string // Direktori penyimpanan screenshot
+	ReportsPath      string // Direktori penyimpanan laporan HTML
 }
 
+// Load membaca konfigurasi dari environment variables dengan nilai default
 func Load() *Config {
 	return &Config{
 		AppPort:          getEnv("APP_PORT", "8080"),
@@ -38,6 +41,7 @@ func Load() *Config {
 	}
 }
 
+// getEnv membaca env var, gunakan fallback jika kosong
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
