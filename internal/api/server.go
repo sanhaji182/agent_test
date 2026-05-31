@@ -74,7 +74,7 @@ func (s *Server) Notifications() *notify.Store   { return s.notifs }
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Api-Key")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusNoContent)
@@ -82,6 +82,19 @@ func corsMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isValidID validates that an ID param is safe (no path traversal, reasonable length)
+func isValidID(id string) bool {
+	if len(id) < 1 || len(id) > 64 {
+		return false
+	}
+	for _, c := range id {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) routes() {
@@ -158,8 +171,11 @@ func (s *Server) routes() {
 	wh := webhook.NewGitHubHandler(s.cfg.APIKey, func(event webhook.PushEvent) { _ = event })
 	s.router.Post("/api/v1/webhooks/github", wh.ServeHTTP)
 
-	// Serve video files statically
-	s.router.Handle("/videos/*", http.StripPrefix("/videos/", http.FileServer(http.Dir("/data/videos"))))
+	// Serve video files (behind API key auth)
+	s.router.Group(func(r chi.Router) {
+		r.Use(s.apiKeyAuth)
+		r.Handle("/videos/*", http.StripPrefix("/videos/", http.FileServer(http.Dir("/data/videos"))))
+	})
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -191,9 +207,11 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	if err := s.store.CreateRun(r.Context(), run); err != nil {
-		http.Error(w, "store error: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	// Audit: run created
+	s.events.Emit(run.ID, "run_started", "idle", "Run created via API", map[string]string{"project": req.ProjectPath, "mode": mode})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]string{"run_id": run.ID, "state": string(run.State), "created_at": run.CreatedAt.Format(time.RFC3339)})
@@ -202,7 +220,7 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	runs, err := s.store.ListRuns(r.Context(), 50, 0)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if runs == nil {
@@ -214,6 +232,10 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	if !isValidID(id) {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
 	run, err := s.store.GetRun(r.Context(), id)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -236,7 +258,7 @@ func (s *Server) handleRerun(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	if err := s.store.CreateRun(r.Context(), run); err != nil {
-		http.Error(w, "store error: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -518,7 +540,7 @@ func (s *Server) handleRunNow(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	if err := s.store.CreateRun(r.Context(), run); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	// Update schedule last run
