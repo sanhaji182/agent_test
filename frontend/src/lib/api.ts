@@ -113,6 +113,10 @@ export function subscribeToRun(
     onEvent({ type: "state_change", data: JSON.parse(e.data) });
   });
 
+  es.addEventListener("step", (e) => {
+    onEvent({ type: "step", data: JSON.parse(e.data) });
+  });
+
   es.addEventListener("done", (e) => {
     onEvent({ type: "done", data: JSON.parse(e.data) });
     es.close();
@@ -123,4 +127,70 @@ export function subscribeToRun(
   };
 
   return () => es.close();
+}
+
+// Step-level events
+export interface RunEvent {
+  id: string;
+  run_id: string;
+  type: string;
+  phase: string;
+  message: string;
+  metadata?: Record<string, string>;
+  timestamp: string;
+}
+
+export async function getRunEvents(id: string): Promise<RunEvent[]> {
+  return apiFetch<RunEvent[]>(`/api/v1/runs/${id}/events`);
+}
+
+// Recordings
+export interface Recording {
+  id: string;
+  run_id: string;
+  test_name: string;
+  step_name: string;
+  screenshot_url: string;
+  start_time: string;
+  end_time: string;
+  status: string;
+}
+
+export async function getRunRecordings(id: string): Promise<Recording[]> {
+  return apiFetch<Recording[]>(`/api/v1/runs/${id}/recordings`);
+}
+
+// Visual artifacts
+export interface VisualArtifact {
+  id: string;
+  run_id: string;
+  step_name: string;
+  baseline_url?: string;
+  current_url?: string;
+  diff_url?: string;
+  similarity_score: number;
+  passed: boolean;
+  created_at: string;
+}
+
+export async function getRunVisuals(id: string): Promise<VisualArtifact[]> {
+  return apiFetch<VisualArtifact[]>(`/api/v1/runs/${id}/visual`);
+}
+
+// Compare
+export interface CompareResult {
+  run_a: string;
+  run_b: string;
+  summary: string;
+  total_delta: number;
+  passed_delta: number;
+  failed_delta: number;
+  new_failures: string[];
+  recovered: string[];
+  common_failures: string[];
+  screenshot_diff: number;
+}
+
+export async function compareRuns(idA: string, idB: string): Promise<CompareResult> {
+  return apiFetch<CompareResult>(`/api/v1/runs/${idA}/compare/${idB}`);
 }
