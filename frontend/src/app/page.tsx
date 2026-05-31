@@ -18,15 +18,50 @@ export default function OverviewPage() {
   const [risks, setRisks] = useState<RiskItem[]>([]);
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState<string | null>(null);
+  const [connected, setConnected] = useState(false);
 
+  // Initial load
   useEffect(() => {
     Promise.all([getRuns(), getMetricsRisk().catch(() => []), getRecommendations().catch(() => [])])
       .then(([r, ri, re]) => { setRuns(r); setRisks(ri); setRecs(re); })
       .catch(() => {})
       .finally(() => setLoading(false));
-    // Auto-refresh every 10s for live feel
-    const interval = setInterval(() => { getRuns().then(setRuns).catch(() => {}); }, 10000);
-    return () => clearInterval(interval);
+  }, []);
+
+  // Live SSE stream with polling fallback
+  useEffect(() => {
+    const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+    let es: EventSource | null = null;
+    let fallbackInterval: NodeJS.Timeout | null = null;
+
+    const connectSSE = () => {
+      es = new EventSource(`${API}/api/v1/stream`);
+      es.addEventListener("update", (e) => {
+        const data = JSON.parse(e.data);
+        // Refresh runs on any state change
+        getRuns().then(setRuns).catch(() => {});
+        // Show failure toast
+        if (data.failed) {
+          setToast(`❌ Run failed: ${data.requirements || data.run_id?.slice(0, 8)}`);
+          setTimeout(() => setToast(null), 5000);
+        }
+      });
+      es.onopen = () => { setConnected(true); if (fallbackInterval) clearInterval(fallbackInterval); };
+      es.onerror = () => {
+        setConnected(false);
+        es?.close();
+        // Fallback to polling
+        if (!fallbackInterval) {
+          fallbackInterval = setInterval(() => { getRuns().then(setRuns).catch(() => {}); }, 10000);
+        }
+        // Retry SSE after 5s
+        setTimeout(connectSSE, 5000);
+      };
+    };
+
+    connectSSE();
+    return () => { es?.close(); if (fallbackInterval) clearInterval(fallbackInterval); };
   }, []);
 
   if (loading) return <LoadingSkeleton rows={8} />;
@@ -42,6 +77,13 @@ export default function OverviewPage() {
 
   return (
     <div className="space-y-5">
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed top-16 right-6 z-50 px-4 py-3 rounded-[var(--radius)] bg-[var(--danger-bg)] border border-[var(--danger)]/20 shadow-[var(--shadow-md)] animate-[slideIn_0.2s_ease-out]">
+          <p className="text-[12px] font-medium text-[var(--danger)]">{toast}</p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -49,8 +91,8 @@ export default function OverviewPage() {
           <p className="text-[12px] text-[var(--text-secondary)]">Live test execution status and audit overview</p>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-[var(--success)] animate-pulse" />
-          <span className="text-[10px] text-[var(--text-muted)]">Live</span>
+          <span className={`w-2 h-2 rounded-full ${connected ? "bg-[var(--success)] animate-pulse" : "bg-[var(--text-muted)]"}`} />
+          <span className="text-[10px] text-[var(--text-muted)]">{connected ? "Live" : "Polling"}</span>
         </div>
       </div>
 
@@ -73,9 +115,13 @@ export default function OverviewPage() {
                     <StatusBadge state={r.state} />
                     <span className="text-[11px] font-medium text-[var(--text-primary)]">{r.requirements || r.id.slice(0, 8)}</span>
                   </div>
-                  <span className="text-[10px] text-[var(--text-muted)]">{timeAgo(r.created_at)}</span>
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-3 h-3 text-[var(--text-muted)]" />
+                    <span className="text-[10px] text-[var(--text-muted)]">{timeAgo(r.created_at)}</span>
+                  </div>
                 </div>
                 <ExecutionTimeline state={r.state} />
+                <p className="mt-2 text-[10px] text-[var(--warning)] font-medium">Stage: {stageLabel(r.state)}</p>
               </Link>
             ))}
           </div>
@@ -189,6 +235,17 @@ function ActionDot({ action }: { action: string }) {
 function RiskDot({ score }: { score: number }) {
   const c = score >= 0.7 ? "bg-[var(--danger)]" : score >= 0.4 ? "bg-[var(--warning)]" : "bg-[var(--success)]";
   return <span className={`w-2 h-2 rounded-full ${c} shrink-0`} />;
+}
+
+function stageLabel(state: string): string {
+  const labels: Record<string, string> = {
+    analyzing: "Analyzing codebase...",
+    plan_generated: "Generating test plan...",
+    writing_tests: "Writing test scripts...",
+    running: "Executing tests...",
+    fixing: "Auto-fixing failures...",
+  };
+  return labels[state] || "Processing...";
 }
 
 function timeAgo(dateStr: string): string {

@@ -103,6 +103,8 @@ func (s *Server) routes() {
 		r.Get("/runs/{id}/video", s.handleGetVideoMetadata)
 		r.Delete("/runs/{id}", s.handleDeleteRun)
 		r.Get("/recordings", s.handleListAllRecordings)
+		// Global live stream
+		r.Get("/stream", s.handleGlobalStream)
 		// Schedules
 		r.Post("/schedules", s.handleCreateSchedule)
 		r.Get("/schedules", s.handleListSchedules)
@@ -954,6 +956,59 @@ func (s *Server) getAllRuns(r *http.Request) []*agent.TestRun {
 		}
 	}
 	return full
+}
+
+// handleGlobalStream streams all run state changes via SSE for the control room
+func (s *Server) handleGlobalStream(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Track known states to detect changes
+	known := map[string]string{}
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			runs, _ := s.store.ListRuns(ctx, 50, 0)
+			for _, run := range runs {
+				full, err := s.store.GetRun(ctx, run.ID)
+				if err != nil {
+					continue
+				}
+				prev := known[run.ID]
+				curr := string(full.State)
+				if prev != curr {
+					known[run.ID] = curr
+					// Only emit after first scan (skip initial population)
+					if prev != "" {
+						data, _ := json.Marshal(map[string]interface{}{
+							"type":    "run_update",
+							"run_id":  full.ID,
+							"state":   curr,
+							"failed":  full.State == agent.StateFailed,
+							"requirements": full.Requirements,
+						})
+						fmt.Fprintf(w, "event: update\ndata: %s\n\n", data)
+						flusher.Flush()
+					}
+				}
+			}
+		}
+	}
 }
 
 func min(a, b int) int {
