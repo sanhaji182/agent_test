@@ -130,6 +130,7 @@ export default function RunConsolePage() {
       {/* Tabbed console */}
       <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-[var(--shadow-sm)] p-5">
         <Tabs tabs={[
+          { id: "video", label: "Video", content: <VideoPlayer run={run} /> },
           { id: "events", label: "Live Events", count: liveEvents.length, content: <EventsView events={liveEvents} /> },
           { id: "steps", label: "Steps", count: stepCount(run), content: <StepsView run={run} /> },
           { id: "files", label: "Files", count: run.test_files?.length, content: <FilesView run={run} /> },
@@ -137,7 +138,7 @@ export default function RunConsolePage() {
           { id: "shots", label: "Screenshots", count: run.screenshots?.length, content: <ScreenshotStrip screenshots={run.screenshots} /> },
           { id: "failures", label: "Failures", count: result?.failures.length, content: <FailuresView run={run} /> },
           { id: "visual", label: "Visual", count: visuals.length, content: <VisualView artifacts={visuals} /> },
-        ]} />
+        ]} initial={run.video_url ? "video" : "events"} />
       </div>
     </div>
   );
@@ -291,6 +292,69 @@ function FailuresView({ run }: { run: TestRun }) {
 }
 
 // Visual artifacts view
+// Video player for browser recording replay
+function VideoPlayer({ run }: { run: TestRun }) {
+  const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+
+  if (!run.video_url || run.video_status === "none") {
+    return (
+      <EmptyState
+        icon={<Film className="w-6 h-6" />}
+        title="No video recording"
+        description="Video recordings are captured automatically during browser test execution. Run a test with Steel Browser to generate a recording."
+      />
+    );
+  }
+
+  if (run.video_status === "recording") {
+    return (
+      <div className="flex items-center gap-2 p-4 rounded-[var(--radius-sm)] bg-[var(--warning-bg)] border border-[var(--warning)]/15">
+        <div className="w-2 h-2 rounded-full bg-[var(--danger)] animate-pulse" />
+        <span className="text-[12px] font-medium text-[var(--warning)]">Recording in progress...</span>
+      </div>
+    );
+  }
+
+  if (run.video_status === "failed") {
+    return (
+      <EmptyState
+        icon={<Film className="w-6 h-6" />}
+        title="Recording failed"
+        description="The video recording could not be completed. This does not affect test results."
+      />
+    );
+  }
+
+  const videoSrc = run.video_url.startsWith("http") ? run.video_url : `${API}${run.video_url}`;
+
+  return (
+    <div className="space-y-3">
+      {/* Player */}
+      <div className="rounded-[var(--radius)] border border-[var(--border)] overflow-hidden bg-black">
+        <video
+          src={videoSrc}
+          controls
+          className="w-full aspect-video"
+          preload="metadata"
+        >
+          Your browser does not support video playback.
+        </video>
+      </div>
+
+      {/* Metadata */}
+      <div className="flex items-center gap-4 text-[11px] text-[var(--text-muted)]">
+        {run.video_duration && run.video_duration > 0 && (
+          <span>Duration: {run.video_duration.toFixed(1)}s</span>
+        )}
+        {run.video_failure_marker_at && run.video_failure_marker_at > 0 && (
+          <span className="text-[var(--danger)]">Failure at: {run.video_failure_marker_at.toFixed(1)}s</span>
+        )}
+        <a href={videoSrc} download className="text-[var(--accent)] hover:underline">Download</a>
+      </div>
+    </div>
+  );
+}
+
 function VisualView({ artifacts }: { artifacts: VisualArtifact[] }) {
   if (artifacts.length === 0) {
     return <EmptyState icon={<Eye className="w-6 h-6" />} title="No visual artifacts" description="Visual artifacts are created when screenshots are captured. Enable visual regression for baseline comparisons." />;

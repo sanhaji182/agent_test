@@ -13,6 +13,10 @@ export interface TestRun {
   screenshots?: string[];
   fix_attempts: number;
   error?: string;
+  video_url?: string;
+  video_status?: string;
+  video_duration?: number;
+  video_failure_marker_at?: number;
   created_at: string;
   updated_at: string;
   finished_at?: string;

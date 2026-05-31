@@ -54,11 +54,14 @@ func (r *DockerRunner) Run(ctx context.Context, testFiles []agent.TestFile, proj
 		}
 	}
 
-	// Buat konfigurasi Playwright dengan JSON reporter
+	// Buat konfigurasi Playwright dengan JSON reporter + video recording
 	config := `import { defineConfig } from '@playwright/test';
 export default defineConfig({
   reporter: [['json', { outputFile: '/results/results.json' }]],
-  use: { baseURL: '` + projectURL + `' },
+  use: {
+    baseURL: '` + projectURL + `',
+    video: { mode: 'on', size: { width: 1280, height: 720 } },
+  },
 });`
 	if err := os.WriteFile(filepath.Join(tmpDir, "playwright.config.ts"), []byte(config), 0644); err != nil {
 		return nil, fmt.Errorf("write config: %w", err)
@@ -83,7 +86,25 @@ export default defineConfig({
 		reporter.ParseAndEmit(r.exec, r.runID, resultsPath)
 	}
 
-	return parsePlaywrightResults(resultsPath, string(output))
+	result, err := parsePlaywrightResults(resultsPath, string(output))
+	if err != nil {
+		return result, err
+	}
+
+	// Cari file video yang dihasilkan Playwright (biasanya di test-results/)
+	videoPath := findVideoFile(tmpDir)
+	if videoPath != "" && r.runID != "" {
+		// Salin video ke direktori persisten
+		destDir := filepath.Join("/data/videos", r.runID)
+		os.MkdirAll(destDir, 0755)
+		destPath := filepath.Join(destDir, "recording.webm")
+		if data, err := os.ReadFile(videoPath); err == nil {
+			os.WriteFile(destPath, data, 0644)
+			result.VideoPath = "/videos/" + r.runID + "/recording.webm"
+		}
+	}
+
+	return result, nil
 }
 
 // Struktur untuk parsing JSON report Playwright
@@ -177,6 +198,22 @@ func parseFromOutput(output string) *agent.RunResult {
 	}
 	result.Total = result.Passed + result.Failed
 	return result
+}
+
+// findVideoFile mencari file video (.webm) di direktori test results
+func findVideoFile(dir string) string {
+	var found string
+	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		if strings.HasSuffix(path, ".webm") || strings.HasSuffix(path, ".mp4") {
+			found = path
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
 }
 
 // stripJSONMarkers membersihkan markdown code fence

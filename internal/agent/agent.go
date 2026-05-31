@@ -46,10 +46,11 @@ type TestFile struct {
 
 // RunResult adalah hasil eksekusi test
 type RunResult struct {
-	Passed   int       `json:"passed"`
-	Failed   int       `json:"failed"`
-	Total    int       `json:"total"`
-	Failures []Failure `json:"failures"`
+	Passed    int       `json:"passed"`
+	Failed    int       `json:"failed"`
+	Total     int       `json:"total"`
+	Failures  []Failure `json:"failures"`
+	VideoPath string    `json:"video_path,omitempty"` // Path ke file video recording
 }
 
 // Failure menyimpan detail test yang gagal
@@ -73,9 +74,16 @@ type TestRun struct {
 	Screenshots  []string   `json:"screenshots,omitempty"`
 	FixAttempts  int        `json:"fix_attempts"`
 	Error        string     `json:"error,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+	// Video recording fields
+	VideoURL             string  `json:"video_url,omitempty"`
+	VideoStatus          string  `json:"video_status,omitempty"` // "recording", "ready", "failed", "none"
+	VideoDuration        float64 `json:"video_duration,omitempty"`
+	VideoSize            int64   `json:"video_size,omitempty"`
+	VideoFailureMarkerAt float64 `json:"video_failure_marker_at,omitempty"` // timestamp in seconds where failure occurred
+	// Timestamps
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
 }
 
 // LLM adalah interface untuk semua operasi yang membutuhkan AI/LLM
@@ -245,6 +253,16 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 			return a.fail(run, fmt.Errorf("run: %w", err))
 		}
 		run.RunResult = result
+
+		// Populate video fields jika runner menghasilkan video
+		if result.VideoPath != "" {
+			run.VideoURL = result.VideoPath
+			run.VideoStatus = "ready"
+			if result.Failed > 0 {
+				// Marker di 80% durasi sebagai estimasi failure point
+				run.VideoFailureMarkerAt = run.VideoDuration * 0.8
+			}
+		}
 
 		// Emit per-assertion events
 		for _, f := range result.Failures {

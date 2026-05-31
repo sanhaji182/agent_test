@@ -100,6 +100,7 @@ func (s *Server) routes() {
 		r.Get("/runs/{id}/compare/{otherId}", s.handleCompare)
 		r.Get("/runs/{id}/recordings", s.handleGetRecordings)
 		r.Get("/runs/{id}/visual", s.handleGetVisualArtifacts)
+		r.Get("/runs/{id}/video", s.handleGetVideoMetadata)
 		r.Delete("/runs/{id}", s.handleDeleteRun)
 		r.Get("/recordings", s.handleListAllRecordings)
 		// Schedules
@@ -154,6 +155,9 @@ func (s *Server) routes() {
 
 	wh := webhook.NewGitHubHandler(s.cfg.APIKey, func(event webhook.PushEvent) { _ = event })
 	s.router.Post("/api/v1/webhooks/github", wh.ServeHTTP)
+
+	// Serve video files statically
+	s.router.Handle("/videos/*", http.StripPrefix("/videos/", http.FileServer(http.Dir("/data/videos"))))
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -367,6 +371,23 @@ func (s *Server) handleGetVisualArtifacts(w http.ResponseWriter, r *http.Request
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(arts)
+}
+
+func (s *Server) handleGetVideoMetadata(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	run, err := s.store.GetRun(r.Context(), id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"video_url":               run.VideoURL,
+		"video_status":            run.VideoStatus,
+		"video_duration":          run.VideoDuration,
+		"video_size":              run.VideoSize,
+		"video_failure_marker_at": run.VideoFailureMarkerAt,
+	})
 }
 
 func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
