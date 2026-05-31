@@ -1,62 +1,48 @@
 "use client";
 
+import { Section } from "@/components/ui/section";
+
 export default function SettingsPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-6">Settings</h1>
-      <div className="space-y-6 max-w-lg">
-        <section className="border rounded-lg p-4">
-          <h2 className="font-semibold mb-3">API Configuration</h2>
-          <dl className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <dt className="text-zinc-500">API URL</dt>
-              <dd className="font-mono">
-                {process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}
-              </dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-zinc-500">LLM Provider</dt>
-              <dd>Anthropic (Claude)</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-zinc-500">Max Fix Attempts</dt>
-              <dd>3</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-zinc-500">Timeout</dt>
-              <dd>300s</dd>
-            </div>
-          </dl>
-        </section>
-
-        <section className="border rounded-lg p-4">
-          <h2 className="font-semibold mb-3">Steel Browser</h2>
-          <dl className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <dt className="text-zinc-500">Steel API</dt>
-              <dd className="font-mono">http://localhost:3000</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-zinc-500">Max Sessions</dt>
-              <dd>10</dd>
-            </div>
-          </dl>
-        </section>
-
-        <section className="border rounded-lg p-4">
-          <h2 className="font-semibold mb-3">Advanced Agent</h2>
-          <dl className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <dt className="text-zinc-500">LangGraph Sidecar</dt>
-              <dd className="font-mono">http://localhost:8000</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-zinc-500">Status</dt>
-              <dd className="text-zinc-400">Not connected</dd>
-            </div>
-          </dl>
-        </section>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-[var(--text-primary)]">Settings</h1>
+        <p className="text-sm text-[var(--text-secondary)] mt-0.5">System configuration</p>
       </div>
+
+      <div className="grid gap-4 max-w-2xl">
+        <Section title="API Configuration">
+          <dl className="space-y-3 text-sm">
+            <SettingRow label="API URL" value={process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"} />
+            <SettingRow label="LLM Provider" value="Anthropic Claude" />
+            <SettingRow label="Max Fix Attempts" value="3" />
+            <SettingRow label="Timeout" value="300s" />
+          </dl>
+        </Section>
+
+        <Section title="Steel Browser">
+          <dl className="space-y-3 text-sm">
+            <SettingRow label="Steel API" value="http://steel-browser:3000" />
+            <SettingRow label="Max Sessions" value="10" />
+          </dl>
+        </Section>
+
+        <Section title="LangGraph Sidecar">
+          <dl className="space-y-3 text-sm">
+            <SettingRow label="Sidecar URL" value="http://langgraph-sidecar:8000" />
+            <SettingRow label="Mode" value="Available" />
+          </dl>
+        </Section>
+      </div>
+    </div>
+  );
+}
+
+function SettingRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between py-1">
+      <dt className="text-[var(--text-secondary)]">{label}</dt>
+      <dd className="font-mono text-xs text-[var(--text-primary)] bg-[var(--bg-secondary)] px-2 py-1 rounded">{value}</dd>
     </div>
   );
 }

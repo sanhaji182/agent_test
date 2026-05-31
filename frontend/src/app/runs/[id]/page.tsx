@@ -3,7 +3,20 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { getRun, subscribeToRun, type TestRun } from "@/lib/api";
-import { StateBadge } from "@/components/state-badge";
+import { StatusBadge, PriorityBadge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { Section, LoadingSkeleton } from "@/components/ui/section";
+import {
+  FileCode,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Image,
+  FileText,
+  Clock,
+  ArrowLeft,
+} from "lucide-react";
+import Link from "next/link";
 
 export default function RunDetailPage() {
   const params = useParams();
@@ -14,142 +27,102 @@ export default function RunDetailPage() {
   const [liveState, setLiveState] = useState<string | null>(null);
 
   useEffect(() => {
+    let unsub: (() => void) | undefined;
     getRun(id)
       .then((r) => {
         setRun(r);
-        // Subscribe to SSE if run is still in progress
         if (!["done", "failed"].includes(r.state)) {
-          const unsub = subscribeToRun(id, (event) => {
-            if (event.type === "state_change") {
-              setLiveState(event.data.state);
-            }
-            if (event.type === "done") {
-              getRun(id).then(setRun);
-            }
+          unsub = subscribeToRun(id, (event) => {
+            if (event.type === "state_change") setLiveState(event.data.state);
+            if (event.type === "done") getRun(id).then(setRun);
           });
-          return unsub;
         }
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+    return () => unsub?.();
   }, [id]);
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        <div className="h-8 w-64 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse" />
-        <div className="h-40 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse" />
+      <div className="space-y-6">
+        <div className="h-6 w-32 rounded bg-[var(--bg-secondary)] animate-pulse" />
+        <LoadingSkeleton rows={6} />
       </div>
     );
   }
 
-  if (error) {
+  if (error || !run) {
     return (
-      <div className="border border-red-200 bg-red-50 rounded-lg p-4">
-        <p className="text-red-700">Error loading run: {error}</p>
+      <div className="rounded-xl border border-[var(--danger)]/20 bg-[var(--danger-bg)] p-5">
+        <p className="text-sm font-medium text-[var(--danger)]">
+          {error || "Run not found"}
+        </p>
       </div>
     );
   }
-
-  if (!run) return null;
 
   const displayState = liveState || run.state;
+  const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Back + Header */}
+      <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Run {run.id.slice(0, 8)}</h1>
-          <p className="text-sm text-zinc-500 font-mono">{run.id}</p>
+          <Link href="/runs" className="inline-flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] mb-2">
+            <ArrowLeft className="w-3 h-3" /> Back to runs
+          </Link>
+          <h1 className="text-lg font-bold text-[var(--text-primary)]">
+            Run <span className="font-mono text-[var(--accent)]">{run.id.slice(0, 8)}</span>
+          </h1>
+          <p className="text-xs font-mono text-[var(--text-muted)] mt-0.5">{run.id}</p>
         </div>
         <div className="flex items-center gap-3">
-          <StateBadge state={displayState} />
+          <StatusBadge state={displayState} />
           <a
-            href={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/v1/runs/${run.id}/report`}
+            href={`${API}/api/v1/runs/${run.id}/report`}
             target="_blank"
-            className="text-sm text-blue-600 hover:underline"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border)] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent)]/30 transition-colors"
           >
-            HTML Report ↗
+            <FileText className="w-3.5 h-3.5" /> Report
           </a>
         </div>
       </div>
 
-      {/* Summary */}
-      <Section title="Summary">
-        <dl className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-          <DT label="Mode" value={run.mode || "simple"} />
-          <DT label="Fix Attempts" value={String(run.fix_attempts)} />
-          <DT
-            label="Created"
-            value={new Date(run.created_at).toLocaleString()}
-          />
-          <DT
-            label="Finished"
-            value={
-              run.finished_at
-                ? new Date(run.finished_at).toLocaleString()
-                : "—"
-            }
-          />
-        </dl>
-      </Section>
+      {/* Meta Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <MetaCard label="Mode" value={run.mode || "simple"} />
+        <MetaCard label="Fix Attempts" value={String(run.fix_attempts)} />
+        <MetaCard label="Created" value={new Date(run.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} />
+        <MetaCard label="Finished" value={run.finished_at ? new Date(run.finished_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"} />
+      </div>
 
       {/* Results */}
       {run.run_result && (
         <Section title="Results">
-          <div className="flex gap-6 mb-4">
-            <div className="text-center">
-              <p className="text-2xl font-bold text-green-600">
-                {run.run_result.passed}
-              </p>
-              <p className="text-xs text-zinc-500">Passed</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-red-600">
-                {run.run_result.failed}
-              </p>
-              <p className="text-xs text-zinc-500">Failed</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold">{run.run_result.total}</p>
-              <p className="text-xs text-zinc-500">Total</p>
-            </div>
+          <div className="flex items-center gap-8 mb-4">
+            <ResultStat icon={<CheckCircle2 className="w-4 h-4" />} value={run.run_result.passed} label="Passed" color="success" />
+            <ResultStat icon={<XCircle className="w-4 h-4" />} value={run.run_result.failed} label="Failed" color="danger" />
+            <ResultStat icon={<Clock className="w-4 h-4" />} value={run.run_result.total} label="Total" color="default" />
           </div>
 
           {run.run_result.failures.length > 0 && (
-            <div className="border rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-zinc-50 dark:bg-zinc-800">
-                  <tr>
-                    <th className="text-left px-4 py-2">Test</th>
-                    <th className="text-left px-4 py-2">Error</th>
-                    <th className="text-left px-4 py-2">Screenshot</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {run.run_result.failures.map((f, i) => (
-                    <tr key={i} className="border-t">
-                      <td className="px-4 py-2 font-mono text-xs">{f.test}</td>
-                      <td className="px-4 py-2 text-red-600 text-xs">
-                        {f.message}
-                      </td>
-                      <td className="px-4 py-2">
-                        {f.screenshot_url ? (
-                          <a
-                            href={f.screenshot_url}
-                            target="_blank"
-                            className="text-blue-600 hover:underline text-xs"
-                          >
-                            View
-                          </a>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-2 mt-4">
+              {run.run_result.failures.map((f, i) => (
+                <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-[var(--danger-bg)] border border-[var(--danger)]/10">
+                  <AlertTriangle className="w-4 h-4 text-[var(--danger)] mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-[var(--text-primary)]">{f.test}</p>
+                    <p className="text-[11px] text-[var(--danger)]/80 mt-0.5 break-all">{f.message}</p>
+                    {f.screenshot_url && (
+                      <a href={f.screenshot_url} target="_blank" className="inline-flex items-center gap-1 text-[10px] text-[var(--accent)] mt-1 hover:underline">
+                        <Image className="w-3 h-3" /> Screenshot
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </Section>
@@ -158,37 +131,36 @@ export default function RunDetailPage() {
       {/* Test Plan */}
       {run.test_plan && (
         <Section title="Test Plan">
-          <p className="text-sm text-zinc-600 mb-3">{run.test_plan.summary}</p>
-          <ul className="space-y-2">
+          <p className="text-sm text-[var(--text-secondary)] mb-4">{run.test_plan.summary}</p>
+          <div className="space-y-2">
             {run.test_plan.scenarios.map((s, i) => (
-              <li key={i} className="border rounded p-3">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-sm">{s.name}</span>
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800">
-                    {s.priority}
-                  </span>
+              <div key={i} className="p-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border)]">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs font-medium text-[var(--text-primary)]">{s.name}</span>
+                  <PriorityBadge priority={s.priority} />
                 </div>
-                <ul className="mt-1 text-xs text-zinc-500 list-disc list-inside">
+                <ul className="text-[11px] text-[var(--text-muted)] space-y-0.5 ml-3">
                   {s.steps.map((step, j) => (
-                    <li key={j}>{step}</li>
+                    <li key={j} className="list-disc">{step}</li>
                   ))}
                 </ul>
-              </li>
+              </div>
             ))}
-          </ul>
+          </div>
         </Section>
       )}
 
-      {/* Test Files */}
+      {/* Generated Files */}
       {run.test_files && run.test_files.length > 0 && (
         <Section title="Generated Test Files">
-          <div className="space-y-3">
+          <div className="space-y-2">
             {run.test_files.map((f, i) => (
-              <details key={i} className="border rounded">
-                <summary className="px-4 py-2 cursor-pointer text-sm font-mono hover:bg-zinc-50 dark:hover:bg-zinc-800">
+              <details key={i} className="group rounded-lg border border-[var(--border)] overflow-hidden">
+                <summary className="flex items-center gap-2 px-4 py-2.5 cursor-pointer text-xs font-mono text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] transition-colors">
+                  <FileCode className="w-3.5 h-3.5 text-[var(--text-muted)]" />
                   {f.name}
                 </summary>
-                <pre className="px-4 py-3 text-xs overflow-x-auto bg-zinc-50 dark:bg-zinc-900 border-t">
+                <pre className="px-4 py-3 text-[11px] leading-relaxed overflow-x-auto bg-[var(--bg-primary)] border-t border-[var(--border)] text-[var(--text-secondary)]">
                   {f.content}
                 </pre>
               </details>
@@ -200,15 +172,11 @@ export default function RunDetailPage() {
       {/* Screenshots */}
       {run.screenshots && run.screenshots.length > 0 && (
         <Section title="Screenshots">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2">
             {run.screenshots.map((url, i) => (
-              <a
-                key={i}
-                href={url}
-                target="_blank"
-                className="border rounded p-2 text-xs text-blue-600 hover:underline"
-              >
-                {url.split("/").pop()}
+              <a key={i} href={url} target="_blank" className="flex items-center gap-2 p-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border)] hover:border-[var(--accent)]/30 transition-colors">
+                <Image className="w-4 h-4 text-[var(--text-muted)]" />
+                <span className="text-xs text-[var(--accent)] truncate">{url.split("/").pop()}</span>
               </a>
             ))}
           </div>
@@ -218,7 +186,7 @@ export default function RunDetailPage() {
       {/* Error */}
       {run.error && (
         <Section title="Error">
-          <pre className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 p-3 rounded overflow-x-auto">
+          <pre className="text-xs text-[var(--danger)] bg-[var(--danger-bg)] p-3 rounded-lg overflow-x-auto whitespace-pre-wrap">
             {run.error}
           </pre>
         </Section>
@@ -227,28 +195,28 @@ export default function RunDetailPage() {
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function MetaCard({ label, value }: { label: string; value: string }) {
   return (
-    <section className="border rounded-lg p-4">
-      <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-3">
-        {title}
-      </h2>
-      {children}
-    </section>
+    <Card>
+      <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">{label}</p>
+      <p className="text-sm font-semibold text-[var(--text-primary)] mt-0.5">{value}</p>
+    </Card>
   );
 }
 
-function DT({ label, value }: { label: string; value: string }) {
+function ResultStat({ icon, value, label, color }: { icon: React.ReactNode; value: number; label: string; color: string }) {
+  const colors: Record<string, string> = {
+    success: "text-[var(--success)]",
+    danger: "text-[var(--danger)]",
+    default: "text-[var(--text-primary)]",
+  };
   return (
-    <div>
-      <dt className="text-zinc-500">{label}</dt>
-      <dd className="font-medium">{value}</dd>
+    <div className="flex items-center gap-2">
+      <div className={colors[color]}>{icon}</div>
+      <div>
+        <p className={`text-lg font-bold ${colors[color]}`}>{value}</p>
+        <p className="text-[10px] text-[var(--text-muted)]">{label}</p>
+      </div>
     </div>
   );
 }

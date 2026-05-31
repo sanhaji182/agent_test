@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GoTest Agent",
-  description: "AI-powered testing agent dashboard",
+  title: "GoTest Agent — AI Testing Platform",
+  description: "Self-hosted AI testing agent dashboard",
 };
 
 export default function RootLayout({
@@ -28,9 +28,11 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="h-full flex">
+      <body className="h-full flex font-[family-name:var(--font-geist-sans)]">
         <Sidebar />
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main className="flex-1 overflow-auto">
+          <div className="max-w-6xl mx-auto px-6 py-8">{children}</div>
+        </main>
       </body>
     </html>
   );
