@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   getRun, subscribeToRun, rerunRun, reportUrl, isActive,
@@ -292,9 +292,11 @@ function FailuresView({ run }: { run: TestRun }) {
 }
 
 // Visual artifacts view
-// Video player for browser recording replay
+// Video player with failure highlight, step markers, and inspection controls
 function VideoPlayer({ run }: { run: TestRun }) {
   const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const [currentTime, setCurrentTime] = React.useState(0);
 
   if (!run.video_url || run.video_status === "none") {
     return (
@@ -326,30 +328,115 @@ function VideoPlayer({ run }: { run: TestRun }) {
   }
 
   const videoSrc = run.video_url.startsWith("http") ? run.video_url : `${API}${run.video_url}`;
+  const hasFailure = run.run_result && run.run_result.failed > 0;
+  const failureAt = run.video_failure_marker_at || 0;
+  const duration = run.video_duration || 0;
+
+  // Approximate step markers from test plan (evenly distributed across duration)
+  const steps = run.test_plan?.scenarios?.flatMap((s) => s.steps) || [];
+  const stepMarkers = duration > 0 && steps.length > 0
+    ? steps.map((step, i) => ({ label: step, time: (duration / (steps.length + 1)) * (i + 1) }))
+    : [];
+
+  const seekTo = (time: number) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = time;
+      videoRef.current.play();
+    }
+  };
 
   return (
     <div className="space-y-3">
+      {/* Failure callout */}
+      {hasFailure && (
+        <div className="flex items-center justify-between p-3 rounded-[var(--radius-sm)] bg-[var(--danger-bg)] border border-[var(--danger)]/15">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-[var(--danger)]" />
+            <span className="text-[12px] font-medium text-[var(--danger)]">
+              {run.run_result!.failures[0]?.test}: {run.run_result!.failures[0]?.message?.slice(0, 80)}
+            </span>
+          </div>
+          {failureAt > 0 && (
+            <button
+              onClick={() => seekTo(failureAt)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[var(--radius-sm)] bg-[var(--danger)] text-white text-[10px] font-semibold hover:opacity-90 transition-opacity shrink-0"
+            >
+              Jump to failure ({failureAt.toFixed(1)}s)
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Player */}
-      <div className="rounded-[var(--radius)] border border-[var(--border)] overflow-hidden bg-black">
+      <div className="rounded-[var(--radius)] border border-[var(--border)] overflow-hidden bg-black relative">
         <video
+          ref={videoRef}
           src={videoSrc}
           controls
           className="w-full aspect-video"
           preload="metadata"
+          onTimeUpdate={(e) => setCurrentTime((e.target as HTMLVideoElement).currentTime)}
         >
           Your browser does not support video playback.
         </video>
       </div>
 
-      {/* Metadata */}
+      {/* Timeline scrubber with markers */}
+      {duration > 0 && (
+        <div className="relative h-6 rounded-[var(--radius-sm)] bg-[var(--bg-subtle)] border border-[var(--border)] overflow-hidden">
+          {/* Progress */}
+          <div className="absolute inset-y-0 left-0 bg-[var(--accent)]/10" style={{ width: `${(currentTime / duration) * 100}%` }} />
+          {/* Failure marker */}
+          {failureAt > 0 && (
+            <button
+              onClick={() => seekTo(failureAt)}
+              className="absolute top-0 bottom-0 w-1 bg-[var(--danger)] hover:w-1.5 transition-all cursor-pointer z-10"
+              style={{ left: `${(failureAt / duration) * 100}%` }}
+              title={`Failure at ${failureAt.toFixed(1)}s`}
+            />
+          )}
+          {/* Step markers */}
+          {stepMarkers.map((m, i) => (
+            <button
+              key={i}
+              onClick={() => seekTo(m.time)}
+              className="absolute top-1 bottom-1 w-0.5 bg-[var(--accent)]/40 hover:bg-[var(--accent)] transition-colors cursor-pointer"
+              style={{ left: `${(m.time / duration) * 100}%` }}
+              title={`Step: ${m.label} (~${m.time.toFixed(0)}s)`}
+            />
+          ))}
+          {/* Current position */}
+          <div className="absolute top-0 bottom-0 w-0.5 bg-[var(--text-primary)]" style={{ left: `${(currentTime / duration) * 100}%` }} />
+        </div>
+      )}
+
+      {/* Step chips */}
+      {stepMarkers.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {stepMarkers.map((m, i) => {
+            const isActive = currentTime >= m.time - 1 && currentTime < (stepMarkers[i + 1]?.time || duration);
+            return (
+              <button
+                key={i}
+                onClick={() => seekTo(m.time)}
+                className={`px-2 py-1 rounded-[var(--radius-sm)] text-[10px] font-medium border transition-all ${
+                  isActive
+                    ? "bg-[var(--accent-bg)] border-[var(--accent)]/30 text-[var(--accent)]"
+                    : "bg-[var(--bg-subtle)] border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                }`}
+              >
+                {m.label.length > 25 ? m.label.slice(0, 25) + "…" : m.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Controls bar */}
       <div className="flex items-center gap-4 text-[11px] text-[var(--text-muted)]">
-        {run.video_duration && run.video_duration > 0 && (
-          <span>Duration: {run.video_duration.toFixed(1)}s</span>
-        )}
-        {run.video_failure_marker_at && run.video_failure_marker_at > 0 && (
-          <span className="text-[var(--danger)]">Failure at: {run.video_failure_marker_at.toFixed(1)}s</span>
-        )}
-        <a href={videoSrc} download className="text-[var(--accent)] hover:underline">Download</a>
+        {duration > 0 && <span>{currentTime.toFixed(1)}s / {duration.toFixed(1)}s</span>}
+        {stepMarkers.length > 0 && <span className="text-[var(--text-muted)]">~{stepMarkers.length} steps (approximate)</span>}
+        <a href={videoSrc} download className="ml-auto text-[var(--accent)] hover:underline">Download video</a>
       </div>
     </div>
   );
