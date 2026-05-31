@@ -958,7 +958,7 @@ func (s *Server) getAllRuns(r *http.Request) []*agent.TestRun {
 	return full
 }
 
-// handleGlobalStream streams all run state changes via SSE for the control room
+// handleGlobalStream pushes all execution events instantly via SSE (event-bus driven)
 func (s *Server) handleGlobalStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -973,40 +973,37 @@ func (s *Server) handleGlobalStream(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Track known states to detect changes
-	known := map[string]string{}
-	ticker := time.NewTicker(2 * time.Second)
+	// Subscribe to ALL events from the event bus
+	ch, unsub := s.events.SubscribeAll()
+	defer unsub()
+
+	// Heartbeat to keep connection alive
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			runs, _ := s.store.ListRuns(ctx, 50, 0)
-			for _, run := range runs {
-				full, err := s.store.GetRun(ctx, run.ID)
-				if err != nil {
-					continue
-				}
-				prev := known[run.ID]
-				curr := string(full.State)
-				if prev != curr {
-					known[run.ID] = curr
-					// Only emit after first scan (skip initial population)
-					if prev != "" {
-						data, _ := json.Marshal(map[string]interface{}{
-							"type":    "run_update",
-							"run_id":  full.ID,
-							"state":   curr,
-							"failed":  full.State == agent.StateFailed,
-							"requirements": full.Requirements,
-						})
-						fmt.Fprintf(w, "event: update\ndata: %s\n\n", data)
-						flusher.Flush()
-					}
-				}
+		case evt, ok := <-ch:
+			if !ok {
+				return
 			}
+			// Push every event to the control room
+			data, _ := json.Marshal(map[string]interface{}{
+				"type":     string(evt.Type),
+				"run_id":   evt.RunID,
+				"phase":    evt.Phase,
+				"message":  evt.Message,
+				"metadata": evt.Metadata,
+				"failed":   evt.Type == "run_failed" || evt.Type == "assertion_failed",
+			})
+			fmt.Fprintf(w, "event: update\ndata: %s\n\n", data)
+			flusher.Flush()
+		case <-ticker.C:
+			// Heartbeat
+			fmt.Fprintf(w, ": heartbeat\n\n")
+			flusher.Flush()
 		}
 	}
 }

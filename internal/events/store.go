@@ -41,10 +41,11 @@ type Event struct {
 
 // Store menyimpan events per run di memori dan mendukung subscribe untuk streaming
 type Store struct {
-	mu          sync.RWMutex
-	events      map[string][]Event          // runID → events
-	subscribers map[string][]chan Event      // runID → subscriber channels
-	counter     int64
+	mu             sync.RWMutex
+	events         map[string][]Event          // runID → events
+	subscribers    map[string][]chan Event      // runID → subscriber channels
+	globalSubs     []chan Event                 // subscribers to ALL events
+	counter        int64
 }
 
 // NewStore membuat event store baru
@@ -73,11 +74,19 @@ func (s *Store) Emit(runID string, eventType EventType, phase, message string, m
 
 	s.events[runID] = append(s.events[runID], evt)
 
-	// Kirim ke semua subscriber aktif
+	// Kirim ke semua subscriber aktif (per-run)
 	for _, ch := range s.subscribers[runID] {
 		select {
 		case ch <- evt:
-		default: // skip jika channel penuh
+		default:
+		}
+	}
+
+	// Kirim ke global subscribers (control room)
+	for _, ch := range s.globalSubs {
+		select {
+		case ch <- evt:
+		default:
 		}
 	}
 
@@ -105,6 +114,28 @@ func (s *Store) Subscribe(runID string) (chan Event, func()) {
 		for i, sub := range subs {
 			if sub == ch {
 				s.subscribers[runID] = append(subs[:i], subs[i+1:]...)
+				break
+			}
+		}
+		close(ch)
+	}
+
+	return ch, unsubscribe
+}
+
+// SubscribeAll membuat channel untuk menerima SEMUA events dari semua run (untuk control room)
+func (s *Store) SubscribeAll() (chan Event, func()) {
+	ch := make(chan Event, 128)
+	s.mu.Lock()
+	s.globalSubs = append(s.globalSubs, ch)
+	s.mu.Unlock()
+
+	unsubscribe := func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for i, sub := range s.globalSubs {
+			if sub == ch {
+				s.globalSubs = append(s.globalSubs[:i], s.globalSubs[i+1:]...)
 				break
 			}
 		}

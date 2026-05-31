@@ -39,23 +39,24 @@ export default function OverviewPage() {
       es = new EventSource(`${API}/api/v1/stream`);
       es.addEventListener("update", (e) => {
         const data = JSON.parse(e.data);
-        // Refresh runs on any state change
-        getRuns().then(setRuns).catch(() => {});
+        // Refresh runs on state-changing events
+        if (["run_started", "run_completed", "run_failed", "analysis_completed", "plan_generated", "script_generated", "test_started", "fix_attempt_started"].includes(data.type)) {
+          getRuns().then(setRuns).catch(() => {});
+        }
         // Show failure toast
         if (data.failed) {
-          setToast(`❌ Run failed: ${data.requirements || data.run_id?.slice(0, 8)}`);
+          const label = data.metadata?.test || data.message?.slice(0, 60) || data.run_id?.slice(0, 8);
+          setToast(`❌ ${data.type === "assertion_failed" ? "Test failed" : "Run failed"}: ${label}`);
           setTimeout(() => setToast(null), 5000);
         }
       });
-      es.onopen = () => { setConnected(true); if (fallbackInterval) clearInterval(fallbackInterval); };
+      es.onopen = () => { setConnected(true); if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null; } };
       es.onerror = () => {
         setConnected(false);
         es?.close();
-        // Fallback to polling
         if (!fallbackInterval) {
           fallbackInterval = setInterval(() => { getRuns().then(setRuns).catch(() => {}); }, 10000);
         }
-        // Retry SSE after 5s
         setTimeout(connectSSE, 5000);
       };
     };
