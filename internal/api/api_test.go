@@ -153,3 +153,47 @@ func TestReport_NotFound(t *testing.T) {
 		t.Fatalf("expected 404, got %d", w.Code)
 	}
 }
+
+func TestRerun(t *testing.T) {
+	cfg := &config.Config{AppPort: "8080"}
+	srv := api.NewServer(cfg, db.NewMemoryStore())
+
+	// Buat run awal
+	body := `{"project_path":"/tmp/app","requirements":"login","mode":"simple"}`
+	req := httptest.NewRequest("POST", "/api/v1/runs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	var createResp map[string]string
+	json.NewDecoder(w.Body).Decode(&createResp)
+	origID := createResp["run_id"]
+
+	// Rerun
+	req = httptest.NewRequest("POST", "/api/v1/runs/"+origID+"/rerun", nil)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var rerunResp map[string]string
+	json.NewDecoder(w.Body).Decode(&rerunResp)
+	if rerunResp["run_id"] == "" || rerunResp["run_id"] == origID {
+		t.Fatalf("expected new run_id different from original, got %q", rerunResp["run_id"])
+	}
+}
+
+func TestRerun_NotFound(t *testing.T) {
+	cfg := &config.Config{AppPort: "8080"}
+	srv := api.NewServer(cfg, db.NewMemoryStore())
+
+	req := httptest.NewRequest("POST", "/api/v1/runs/nonexistent/rerun", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}

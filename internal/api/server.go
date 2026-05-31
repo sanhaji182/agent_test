@@ -55,6 +55,7 @@ func (s *Server) routes() {
 		r.Post("/runs", s.handleCreateRun)
 		r.Get("/runs", s.handleListRuns)
 		r.Get("/runs/{id}", s.handleGetRun)
+		r.Post("/runs/{id}/rerun", s.handleRerun)
 		r.Get("/runs/{id}/stream", s.handleSSEStream)
 		r.Get("/runs/{id}/report", s.handleReport)
 		r.Delete("/runs/{id}", s.handleDeleteRun)
@@ -137,6 +138,39 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(run)
+}
+
+// handleRerun membuat run baru dengan menyalin konfigurasi run lama (project, requirements, mode)
+func (s *Server) handleRerun(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	orig, err := s.store.GetRun(r.Context(), id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	run := &agent.TestRun{
+		ID:           uuid.New().String(),
+		ProjectPath:  orig.ProjectPath,
+		Requirements: orig.Requirements,
+		Mode:         orig.Mode,
+		State:        agent.StateIdle,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+
+	if err := s.store.CreateRun(r.Context(), run); err != nil {
+		http.Error(w, "store error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{
+		"run_id":     run.ID,
+		"state":      string(run.State),
+		"created_at": run.CreatedAt.Format(time.RFC3339),
+	})
 }
 
 func (s *Server) handleSSEStream(w http.ResponseWriter, r *http.Request) {
