@@ -3,10 +3,12 @@
 package intelligence
 
 import (
+	"fmt"
 	"sort"
 	"time"
 
 	"github.com/go-go-golems/gotest-agent/internal/agent"
+	"github.com/go-go-golems/gotest-agent/internal/gitdiff"
 	"github.com/go-go-golems/gotest-agent/internal/schedule"
 )
 
@@ -117,6 +119,11 @@ type SuiteSelection struct {
 
 // SelectSuite chooses which tests to run based on mode and risk data
 func SelectSuite(mode SelectionMode, allTests []string, risks []RiskItem, flakyTests []string) *SuiteSelection {
+	return SelectSuiteWithPath(mode, allTests, risks, flakyTests, "")
+}
+
+// SelectSuiteWithPath is like SelectSuite but accepts a project path for git-based impacted selection
+func SelectSuiteWithPath(mode SelectionMode, allTests []string, risks []RiskItem, flakyTests []string, projectPath string) *SuiteSelection {
 	switch mode {
 	case SelectHighRisk:
 		var selected []string
@@ -135,8 +142,15 @@ func SelectSuite(mode SelectionMode, allTests []string, risks []RiskItem, flakyT
 		}
 		return &SuiteSelection{Mode: mode, Selected: flakyTests, Reason: "running flaky tests for stability check"}
 	case SelectImpacted:
-		// Without code diff info, fall back to high-risk
-		return SelectSuite(SelectHighRisk, allTests, risks, flakyTests)
+		if projectPath != "" {
+			changed, err := gitdiff.ChangedFiles(projectPath)
+			if err == nil && len(changed) > 0 {
+				impacted := gitdiff.MapToTests(changed, allTests)
+				return &SuiteSelection{Mode: mode, Selected: impacted, Reason: fmt.Sprintf("impacted by %d changed files", len(changed))}
+			}
+		}
+		// Fallback to high-risk if no git data
+		return SelectSuiteWithPath(SelectHighRisk, allTests, risks, flakyTests, "")
 	default:
 		return &SuiteSelection{Mode: SelectAll, Selected: allTests, Reason: "running full suite"}
 	}

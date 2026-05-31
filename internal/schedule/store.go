@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/robfig/cron/v3"
 )
 
 type Frequency string
@@ -125,8 +126,15 @@ func (s *Store) GetDue(now time.Time) []*Schedule {
 	return due
 }
 
-// CalcNextRun calculates the next run time based on frequency
+// CalcNextRun calculates the next run time based on frequency or cron expression
 func CalcNextRun(freq Frequency, cronExpr string, from time.Time) time.Time {
+	if freq == Cron && cronExpr != "" {
+		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+		sched, err := parser.Parse(cronExpr)
+		if err == nil {
+			return sched.Next(from)
+		}
+	}
 	switch freq {
 	case Daily:
 		return from.Add(24 * time.Hour)
