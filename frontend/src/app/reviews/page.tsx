@@ -32,8 +32,8 @@ export default function ReviewsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold">Review Queue</h1>
-        <p className="text-sm text-[var(--text-secondary)] mt-0.5">Approve or reject generated test plans, scripts, and fixes</p>
+        <h1 className="text-lg font-bold">Reviews</h1>
+        <p className="text-[13px] text-[var(--text-secondary)] mt-0.5">Approve or reject AI-generated test plans, scripts, and fixes before they run.</p>
       </div>
 
       <Section title="Pending Reviews" action={<span className="text-[11px] text-[var(--text-muted)]">{pending.length} pending</span>}>

@@ -18,8 +18,8 @@ export default function ReleasesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold">Releases</h1>
-        <p className="text-sm text-[var(--text-secondary)] mt-0.5">Organize test runs by release version</p>
+        <h1 className="text-lg font-bold">Releases</h1>
+        <p className="text-[13px] text-[var(--text-secondary)] mt-0.5">Track release readiness with confidence grades. Group runs by version to see if you&apos;re ready to ship.</p>
       </div>
 
       <Section title="All Releases">

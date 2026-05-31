@@ -5,19 +5,19 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, PlayCircle, FolderOpen, Settings, Zap,
-  Calendar, Bell, Tag, Shield, ClipboardCheck, Layers,
+  Calendar, Bell, Tag, Shield, ClipboardCheck, Layers, Download,
 } from "lucide-react";
 
 const nav = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
-  { href: "/runs", label: "Test Runs", icon: PlayCircle },
-  { href: "/monitoring", label: "Schedules", icon: Calendar },
-  { href: "/risk", label: "Risk & Intel", icon: Shield },
-  { href: "/reviews", label: "Reviews", icon: ClipboardCheck },
-  { href: "/suites", label: "Suites", icon: Layers },
+  { href: "/runs", label: "Runs", icon: PlayCircle },
+  { href: "/risk", label: "Risk", icon: Shield },
+  { href: "/monitoring", label: "Monitoring", icon: Calendar },
   { href: "/releases", label: "Releases", icon: Tag },
+  { href: "/suites", label: "Suites", icon: Layers },
+  { href: "/reviews", label: "Reviews", icon: ClipboardCheck },
   { href: "/alerts", label: "Alerts", icon: Bell },
-  { href: "/projects", label: "Projects", icon: FolderOpen },
+  { href: "/exports", label: "Exports", icon: Download },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

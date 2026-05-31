@@ -22,8 +22,8 @@ export default function RiskPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold">Risk Intelligence</h1>
-        <p className="text-sm text-[var(--text-secondary)] mt-0.5">AI-powered risk scoring and recommendations</p>
+        <h1 className="text-lg font-bold">Risk</h1>
+        <p className="text-[13px] text-[var(--text-secondary)] mt-0.5">Tests and schedules ranked by failure risk. Act on the highest-priority items first.</p>
       </div>
 
       {/* Recommendations */}

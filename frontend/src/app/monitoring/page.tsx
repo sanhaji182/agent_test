@@ -29,8 +29,8 @@ export default function MonitoringPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold">Scheduled Monitoring</h1>
-        <p className="text-sm text-[var(--text-secondary)] mt-0.5">Recurring test schedules and their execution history</p>
+        <h1 className="text-lg font-bold">Monitoring</h1>
+        <p className="text-[13px] text-[var(--text-secondary)] mt-0.5">Recurring test schedules that run automatically. Set up once, get notified on failures.</p>
       </div>
 
       <Section title="Schedules" action={<span className="text-[11px] text-[var(--text-muted)]">{schedules.length} configured</span>}>

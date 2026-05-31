@@ -21,8 +21,8 @@ export default function SuitesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold">Test Suites</h1>
-        <p className="text-sm text-[var(--text-secondary)] mt-0.5">Organize and manage test groups with tags and pinning</p>
+        <h1 className="text-lg font-bold">Suites</h1>
+        <p className="text-[13px] text-[var(--text-secondary)] mt-0.5">Organize tests into groups with tags and pinning. Pin critical suites for quick access.</p>
       </div>
 
       {suites.length === 0 ? (

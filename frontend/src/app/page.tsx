@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getRuns, isActive, type TestRun } from "@/lib/api";
+import { getRuns, isActive, getMetricsRisk, getRecommendations, type TestRun, type RiskItem, type Recommendation } from "@/lib/api";
 import { StatCard } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
 import { EmptyState, Section, LoadingSkeleton } from "@/components/ui/section";
@@ -9,34 +9,24 @@ import { ExecutionTimeline } from "@/components/console/timeline";
 import { PassRateChart } from "@/components/ui/chart";
 import Link from "next/link";
 import {
-  Activity, CheckCircle2, XCircle, PlayCircle, Inbox,
-  Flame, Layers, Film, ArrowRight, Terminal,
+  Activity, CheckCircle2, XCircle, PlayCircle,
+  Flame, ArrowRight, Lightbulb, Shield,
 } from "lucide-react";
 
-export default function DashboardPage() {
+export default function OverviewPage() {
   const [runs, setRuns] = useState<TestRun[]>([]);
+  const [risks, setRisks] = useState<RiskItem[]>([]);
+  const [recs, setRecs] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getRuns().then(setRuns).catch((e) => setError(e.message)).finally(() => setLoading(false));
+    Promise.all([getRuns(), getMetricsRisk().catch(() => []), getRecommendations().catch(() => [])])
+      .then(([r, ri, re]) => { setRuns(r); setRisks(ri); setRecs(re); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="h-8 w-48 rounded-lg bg-[var(--bg-subtle)] animate-pulse" />
-        <div className="grid grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => <div key={i} className="h-24 rounded-xl bg-[var(--bg-subtle)] animate-pulse" />)}
-        </div>
-        <LoadingSkeleton rows={4} />
-      </div>
-    );
-  }
-
-  if (error) {
-    return <div className="rounded-xl border border-[var(--danger)]/20 bg-[var(--danger-bg)] p-5 text-sm text-[var(--danger)]">Failed to load: {error}</div>;
-  }
+  if (loading) return <LoadingSkeleton rows={6} />;
 
   const total = runs.length;
   const passed = runs.filter((r) => r.state === "done").length;
@@ -44,163 +34,175 @@ export default function DashboardPage() {
   const activeRuns = runs.filter((r) => isActive(r.state));
   const passRate = total > 0 ? Math.round((passed / total) * 100) : 0;
 
-  // Failure hotspots: agregasi failure berdasarkan nama test (data nyata)
-  const hotspots = aggregateFailures(runs);
-  // Recent recordings: screenshot terbaru lintas run (data nyata)
-  const recordings = runs.flatMap((r) => (r.screenshots || []).map((s) => ({ runId: r.id, url: s }))).slice(0, 6);
+  // Show onboarding if no data
+  if (total === 0) return <OnboardingView />;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* Page header */}
       <div>
-        <h1 className="text-xl font-bold">Control Center</h1>
-        <p className="text-sm text-[var(--text-secondary)] mt-0.5">Live testing activity and execution overview</p>
+        <h1 className="text-lg font-bold">Overview</h1>
+        <p className="text-[13px] text-[var(--text-secondary)]">Your testing health at a glance. Start here to understand what needs attention.</p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Total Runs" value={total} icon={<Activity className="w-4 h-4" />} />
         <StatCard label="Pass Rate" value={`${passRate}%`} color="success" icon={<CheckCircle2 className="w-4 h-4" />} trend={`${passed} passed`} />
         <StatCard label="Failed" value={failed} color="danger" icon={<XCircle className="w-4 h-4" />} />
         <StatCard label="Active" value={activeRuns.length} color="warning" icon={<PlayCircle className="w-4 h-4" />} />
       </div>
 
-      {/* Trend chart */}
-      {runs.length > 1 && (
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-[var(--shadow-sm)] p-5">
-          <PassRateChart trend={buildTrend(runs)} />
-        </div>
-      )}
+      {/* Trend + Recommendations side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Trend */}
+        <Section title="Pass Rate Trend">
+          {runs.length > 1 ? (
+            <PassRateChart trend={buildTrend(runs)} />
+          ) : (
+            <p className="text-[11px] text-[var(--text-muted)]">More runs needed to show trend.</p>
+          )}
+        </Section>
+
+        {/* Recommendations */}
+        <Section title="Recommendations" action={<Link href="/risk" className="text-[10px] font-medium text-[var(--accent)]">View all →</Link>}>
+          {recs.length === 0 ? (
+            <p className="text-[11px] text-[var(--text-muted)]">No recommendations yet. Run more tests to generate insights.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {recs.slice(0, 4).map((rec, i) => (
+                <div key={i} className="flex items-center gap-2 px-2.5 py-2 rounded-[var(--radius-sm)] bg-[var(--bg-subtle)]">
+                  <Lightbulb className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
+                  <span className="text-[11px] text-[var(--text-secondary)] truncate flex-1">{rec.target}: {rec.reason}</span>
+                  <span className="text-[9px] font-bold text-[var(--accent)]">{rec.action.replace("_", " ")}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+      </div>
 
       {/* Active execution */}
-      <Section title="Active Execution" action={<span className="text-[11px] text-[var(--text-muted)]">{activeRuns.length} running</span>}>
-        {activeRuns.length === 0 ? (
-          <EmptyState icon={<PlayCircle className="w-6 h-6" />} title="No active runs" description="Runs in progress will appear here with a live execution timeline." />
-        ) : (
-          <div className="space-y-3">
+      {activeRuns.length > 0 && (
+        <Section title="Running Now">
+          <div className="space-y-2">
             {activeRuns.map((r) => (
-              <Link key={r.id} href={`/runs/${r.id}`} className="block p-4 rounded-lg border border-[var(--border)] hover:border-[var(--accent)]/40 hover:shadow-[var(--shadow-sm)] transition-all">
-                <div className="flex items-center justify-between mb-3">
+              <Link key={r.id} href={`/runs/${r.id}`} className="block p-3 rounded-[var(--radius-sm)] border border-[var(--border)] hover:border-[var(--accent-light)] transition-all">
+                <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <StatusBadge state={r.state} />
-                    <span className="font-mono text-xs text-[var(--text-secondary)]">{r.id.slice(0, 8)}</span>
+                    <span className="font-mono text-[11px] text-[var(--text-muted)]">{r.id.slice(0, 8)}</span>
                   </div>
-                  <ArrowRight className="w-4 h-4 text-[var(--text-muted)]" />
+                  <ArrowRight className="w-3.5 h-3.5 text-[var(--text-muted)]" />
                 </div>
                 <ExecutionTimeline state={r.state} />
               </Link>
             ))}
           </div>
-        )}
-      </Section>
+        </Section>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent suites */}
-        <Section title="Recent Suites" action={<Link href="/runs" className="text-[11px] font-medium text-[var(--accent)]">View all →</Link>}>
-          {runs.length === 0 ? (
-            <EmptyState icon={<Layers className="w-6 h-6" />} title="No suites yet" description="Create a run via API or MCP." />
-          ) : (
-            <div className="space-y-1">
-              {runs.slice(0, 6).map((r) => (
-                <Link key={r.id} href={`/runs/${r.id}`} className="flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-[var(--bg-hover)] transition-colors">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <StatusBadge state={r.state} />
-                    <span className="text-xs text-[var(--text-secondary)] truncate max-w-[160px]">{r.requirements || r.id.slice(0, 8)}</span>
-                  </div>
-                  {r.run_result && (
-                    <span className="text-[11px] shrink-0">
-                      <span className="text-[var(--success)]">{r.run_result.passed}</span>
-                      <span className="text-[var(--text-muted)]">/{r.run_result.total}</span>
-                    </span>
-                  )}
-                </Link>
-              ))}
-            </div>
-          )}
+      {/* Recent runs + Risk */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Section title="Recent Runs" action={<Link href="/runs" className="text-[10px] font-medium text-[var(--accent)]">All runs →</Link>}>
+          <div className="space-y-0.5">
+            {runs.slice(0, 5).map((r) => (
+              <Link key={r.id} href={`/runs/${r.id}`} className="flex items-center justify-between px-2.5 py-2 rounded-[var(--radius-sm)] hover:bg-[var(--bg-hover)] transition-colors">
+                <div className="flex items-center gap-2 min-w-0">
+                  <StatusBadge state={r.state} />
+                  <span className="text-[11px] text-[var(--text-secondary)] truncate">{r.requirements || r.id.slice(0, 8)}</span>
+                </div>
+                {r.run_result && (
+                  <span className="text-[10px] shrink-0 ml-2">
+                    <span className="text-[var(--success)]">{r.run_result.passed}</span>
+                    <span className="text-[var(--text-muted)]">/{r.run_result.total}</span>
+                  </span>
+                )}
+              </Link>
+            ))}
+          </div>
         </Section>
 
-        {/* Failure hotspots */}
-        <Section title="Failure Hotspots">
-          {hotspots.length === 0 ? (
-            <EmptyState icon={<Flame className="w-6 h-6" />} title="No failures" description="Recurring test failures will surface here." />
+        <Section title="Top Risks" action={<Link href="/risk" className="text-[10px] font-medium text-[var(--accent)]">Details →</Link>}>
+          {risks.length === 0 ? (
+            <p className="text-[11px] text-[var(--text-muted)]">No risks detected. This is good!</p>
           ) : (
-            <div className="space-y-2">
-              {hotspots.map((h, i) => (
-                <div key={i} className="flex items-center justify-between px-3 py-2 rounded-lg bg-[var(--danger-bg)] border border-[var(--danger)]/10">
-                  <span className="text-xs font-medium text-[var(--text-primary)] truncate">{h.test}</span>
-                  <span className="text-[11px] font-semibold text-[var(--danger)] shrink-0 ml-2">{h.count}×</span>
+            <div className="space-y-1.5">
+              {risks.slice(0, 5).map((r, i) => (
+                <div key={i} className="flex items-center gap-2 px-2.5 py-2 rounded-[var(--radius-sm)] bg-[var(--bg-subtle)]">
+                  <Shield className="w-3.5 h-3.5 text-[var(--danger)] shrink-0" />
+                  <span className="text-[11px] text-[var(--text-secondary)] truncate flex-1">{r.name}</span>
+                  <span className="text-[9px] font-bold text-[var(--danger)]">{Math.round(r.risk_score * 100)}%</span>
                 </div>
               ))}
             </div>
           )}
         </Section>
       </div>
+    </div>
+  );
+}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Quick actions */}
-        <Section title="Quick Actions">
-          <div className="grid grid-cols-2 gap-2">
-            <QuickAction href="/runs" icon={<Layers className="w-4 h-4" />} label="Browse Suites" />
-            <QuickAction href="/projects" icon={<Terminal className="w-4 h-4" />} label="Projects" />
-            <QuickAction href="/settings" icon={<Activity className="w-4 h-4" />} label="Settings" />
-            <QuickAction href="/runs" icon={<PlayCircle className="w-4 h-4" />} label="Recent Runs" />
-          </div>
-        </Section>
-
-        {/* Recent recordings */}
-        <Section title="Recent Recordings">
-          {recordings.length === 0 ? (
-            <EmptyState icon={<Film className="w-6 h-6" />} title="No recordings" description="Screenshots and recordings from runs will appear here." />
-          ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {recordings.map((rec, i) => (
-                <Link key={i} href={`/runs/${rec.runId}`} className="aspect-video rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] overflow-hidden hover:border-[var(--accent)] transition-colors">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={rec.url.startsWith("http") ? rec.url : `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}${rec.url}`} alt="recording" className="w-full h-full object-cover" />
-                </Link>
-              ))}
-            </div>
-          )}
-        </Section>
+// Onboarding view for first-time users
+function OnboardingView() {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-lg font-bold">Welcome to GoTest Agent</h1>
+        <p className="text-[13px] text-[var(--text-secondary)] mt-0.5 max-w-lg">
+          An AI-powered testing platform that analyzes your code, generates tests, runs them automatically, and helps you understand what needs attention.
+        </p>
       </div>
 
-      {runs.length === 0 && (
-        <Section title="Getting Started">
-          <div className="space-y-4">
-            <p className="text-sm text-[var(--text-secondary)]">Welcome to GoTest Agent. Here&apos;s how to get started:</p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <OnboardStep num={1} title="Connect a project" desc="POST /api/v1/runs with your project_path" />
-              <OnboardStep num={2} title="Run tests" desc="The agent analyzes, generates, and executes tests" />
-              <OnboardStep num={3} title="Set up schedules" desc="POST /api/v1/schedules for recurring runs" />
-            </div>
-            <button
-              onClick={() => { fetch((process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080") + "/api/v1/demo/seed", { method: "POST" }).then(() => window.location.reload()); }}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors"
-            >
-              <PlayCircle className="w-4 h-4" /> Seed Demo Data
-            </button>
-          </div>
-        </Section>
-      )}
+      <Section title="Get Started in 3 Steps">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <StepCard num={1} title="Seed demo data" desc="See the platform in action with sample runs, schedules, and risk scores." />
+          <StepCard num={2} title="Connect your project" desc="Point the agent at your codebase via API or MCP in your IDE." />
+          <StepCard num={3} title="Set up monitoring" desc="Create schedules, enable alerts, and track release confidence." />
+        </div>
+        <div className="mt-4">
+          <button
+            onClick={() => { fetch((process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080") + "/api/v1/demo/seed", { method: "POST" }).then(() => window.location.reload()); }}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
+          >
+            <PlayCircle className="w-3.5 h-3.5" /> Seed Demo Data
+          </button>
+          <span className="ml-3 text-[11px] text-[var(--text-muted)]">Creates 5 sample runs, a schedule, and a release</span>
+        </div>
+      </Section>
+
+      <Section title="What Each Page Does">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <PageDesc title="Runs" desc="View and inspect test executions with live timelines" />
+          <PageDesc title="Risk" desc="See which tests and schedules need attention" />
+          <PageDesc title="Monitoring" desc="Manage recurring schedules and their status" />
+          <PageDesc title="Releases" desc="Track release readiness with confidence grades" />
+          <PageDesc title="Suites" desc="Organize tests with tags and pinning" />
+          <PageDesc title="Reviews" desc="Approve or reject generated test plans and fixes" />
+          <PageDesc title="Alerts" desc="View notification history for failures" />
+          <PageDesc title="Exports" desc="Download test data as JSON for reporting" />
+        </div>
+      </Section>
     </div>
   );
 }
 
-function OnboardStep({ num, title, desc }: { num: number; title: string; desc: string }) {
+function StepCard({ num, title, desc }: { num: number; title: string; desc: string }) {
   return (
-    <div className="p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
-      <div className="w-6 h-6 rounded-full bg-[var(--accent-bg)] text-[var(--accent)] flex items-center justify-center text-xs font-bold mb-2">{num}</div>
-      <p className="text-xs font-semibold text-[var(--text-primary)]">{title}</p>
-      <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{desc}</p>
+    <div className="p-3 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-subtle)]">
+      <div className="w-5 h-5 rounded-full bg-[var(--accent-bg)] text-[var(--accent)] flex items-center justify-center text-[10px] font-bold mb-2">{num}</div>
+      <p className="text-[12px] font-semibold text-[var(--text-primary)]">{title}</p>
+      <p className="text-[11px] text-[var(--text-muted)] mt-0.5 leading-relaxed">{desc}</p>
     </div>
   );
 }
 
-function QuickAction({ href, icon, label }: { href: string; icon: React.ReactNode; label: string }) {
+function PageDesc({ title, desc }: { title: string; desc: string }) {
   return (
-    <Link href={href} className="flex items-center gap-2.5 px-3 py-3 rounded-lg border border-[var(--border)] hover:border-[var(--accent)]/40 hover:bg-[var(--bg-hover)] transition-all">
-      <div className="text-[var(--accent)]">{icon}</div>
-      <span className="text-xs font-medium">{label}</span>
-    </Link>
+    <div className="flex items-start gap-2 px-2.5 py-2">
+      <span className="text-[11px] font-semibold text-[var(--text-primary)] w-20 shrink-0">{title}</span>
+      <span className="text-[11px] text-[var(--text-muted)]">{desc}</span>
+    </div>
   );
 }
 
@@ -216,17 +218,4 @@ function buildTrend(runs: TestRun[]): { date: string; pass_rate: number }[] {
   return [...byDate.entries()]
     .map(([date, { passed, total }]) => ({ date, pass_rate: total > 0 ? passed / total : 0 }))
     .sort((a, b) => a.date.localeCompare(b.date));
-}
-
-function aggregateFailures(runs: TestRun[]): { test: string; count: number }[] {
-  const map = new Map<string, number>();
-  for (const r of runs) {
-    for (const f of r.run_result?.failures || []) {
-      map.set(f.test, (map.get(f.test) || 0) + 1);
-    }
-  }
-  return [...map.entries()]
-    .map(([test, count]) => ({ test, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5);
 }

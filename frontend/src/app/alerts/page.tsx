@@ -18,8 +18,8 @@ export default function AlertsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold">Alerts & Notifications</h1>
-        <p className="text-sm text-[var(--text-secondary)] mt-0.5">Failure alerts and notification history</p>
+        <h1 className="text-lg font-bold">Alerts</h1>
+        <p className="text-[13px] text-[var(--text-secondary)] mt-0.5">Notification history for test failures. Configure webhooks in your schedules to receive alerts.</p>
       </div>
 
       <Section title="Notification History">
