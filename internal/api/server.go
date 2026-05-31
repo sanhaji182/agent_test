@@ -143,6 +143,13 @@ func (s *Server) routes() {
 		r.Delete("/suites/{id}", s.handleDeleteSuite)
 		// Alert rules
 		r.Post("/alert-rules/evaluate", s.handleEvaluateAlertRules)
+		// Demo
+		r.Post("/demo/seed", s.handleDemoSeed)
+		// Export
+		r.Get("/runs/{id}/export", s.handleExportRun)
+		r.Get("/runs/{id}/compare/{otherId}/export", s.handleExportCompare)
+		r.Get("/metrics/risk/export", s.handleExportRisk)
+		r.Get("/releases/{id}/confidence/export", s.handleExportConfidence)
 	})
 
 	wh := webhook.NewGitHubHandler(s.cfg.APIKey, func(event webhook.PushEvent) { _ = event })
@@ -933,4 +940,136 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// --- Demo seed ---
+
+func (s *Server) handleDemoSeed(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	now := time.Now()
+
+	// Create sample runs with realistic data
+	runs := []struct {
+		req  string
+		state agent.State
+		passed, failed int
+	}{
+		{"test login and signup flows", agent.StateDone, 5, 0},
+		{"test checkout and payment", agent.StateDone, 3, 1},
+		{"test user profile and settings", agent.StateFailed, 2, 2},
+		{"regression: homepage and navigation", agent.StateDone, 8, 0},
+		{"test API endpoints", agent.StateDone, 6, 1},
+	}
+
+	var ids []string
+	for i, r := range runs {
+		run := &agent.TestRun{
+			ID: uuid.New().String(), ProjectPath: "/demo/app",
+			Requirements: r.req, Mode: "simple", State: r.state,
+			CreatedAt: now.Add(time.Duration(-i) * time.Hour), UpdatedAt: now,
+		}
+		if r.state == agent.StateDone || r.state == agent.StateFailed {
+			fin := now.Add(time.Duration(-i)*time.Hour + 45*time.Second)
+			run.FinishedAt = &fin
+			run.RunResult = &agent.RunResult{Passed: r.passed, Failed: r.failed, Total: r.passed + r.failed}
+			if r.failed > 0 {
+				run.RunResult.Failures = []agent.Failure{{Test: "checkout flow", Message: "Element not found: #submit-btn"}}
+			}
+			run.TestPlan = &agent.TestPlan{Summary: r.req, Scenarios: []agent.Scenario{{Name: r.req, Priority: "high", Steps: []string{"Navigate to page", "Fill form", "Submit", "Verify result"}}}}
+		}
+		s.store.CreateRun(ctx, run)
+		ids = append(ids, run.ID)
+
+		// Emit events for the run
+		s.events.Emit(run.ID, "run_started", "idle", "Run started", nil)
+		s.events.Emit(run.ID, "analysis_completed", "analyzing", "Analysis complete", nil)
+		s.events.Emit(run.ID, "plan_generated", "plan_generated", "Generated test plan", nil)
+		s.events.Emit(run.ID, "run_completed", "done", "Run completed", nil)
+	}
+
+	// Create a sample schedule
+	s.schedules.Create(&schedule.Schedule{
+		Name: "Nightly Regression", ProjectPath: "/demo/app",
+		Requirements: "full regression", Frequency: "daily",
+		Environment: "staging", BaseURL: "http://staging.demo.com",
+		Enabled: true, NextRunAt: now.Add(12 * time.Hour),
+	})
+
+	// Create a sample release
+	s.releases.Create(&release.Release{
+		Name: "v2.1.0", Version: "2.1.0", ProjectID: "demo",
+		Status: "active", RunIDs: ids[:3],
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Demo data seeded",
+		"runs":    len(ids),
+	})
+}
+
+// --- Export handlers ---
+
+func (s *Server) handleExportRun(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	run, err := s.store.GetRun(r.Context(), id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", "attachment; filename=run-"+id[:8]+".json")
+	json.NewEncoder(w).Encode(run)
+}
+
+func (s *Server) handleExportCompare(w http.ResponseWriter, r *http.Request) {
+	idA := chi.URLParam(r, "id")
+	idB := chi.URLParam(r, "otherId")
+	runA, err := s.store.GetRun(r.Context(), idA)
+	if err != nil {
+		http.Error(w, "run A not found", http.StatusNotFound)
+		return
+	}
+	runB, err := s.store.GetRun(r.Context(), idB)
+	if err != nil {
+		http.Error(w, "run B not found", http.StatusNotFound)
+		return
+	}
+	result := compare.Compare(runA, runB)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", "attachment; filename=compare-"+idA[:8]+"-vs-"+idB[:8]+".json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) handleExportRisk(w http.ResponseWriter, r *http.Request) {
+	runs := s.getAllRuns(r)
+	scheds := s.schedules.List()
+	risks := intelligence.ComputeRisk(runs, scheds)
+	if risks == nil {
+		risks = []intelligence.RiskItem{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", "attachment; filename=risk-report.json")
+	json.NewEncoder(w).Encode(risks)
+}
+
+func (s *Server) handleExportConfidence(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	rel, ok := s.releases.Get(id)
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	var runs []*agent.TestRun
+	for _, rid := range rel.RunIDs {
+		if run, err := s.store.GetRun(r.Context(), rid); err == nil {
+			runs = append(runs, run)
+		}
+	}
+	allRuns := s.getAllRuns(r)
+	risks := intelligence.ComputeRisk(allRuns, nil)
+	conf := intelligence.ComputeConfidence(runs, risks)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", "attachment; filename=confidence-"+id[:8]+".json")
+	json.NewEncoder(w).Encode(conf)
 }

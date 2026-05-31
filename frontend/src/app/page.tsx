@@ -6,6 +6,7 @@ import { StatCard } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
 import { EmptyState, Section, LoadingSkeleton } from "@/components/ui/section";
 import { ExecutionTimeline } from "@/components/console/timeline";
+import { PassRateChart } from "@/components/ui/chart";
 import Link from "next/link";
 import {
   Activity, CheckCircle2, XCircle, PlayCircle, Inbox,
@@ -62,6 +63,13 @@ export default function DashboardPage() {
         <StatCard label="Failed" value={failed} color="danger" icon={<XCircle className="w-4 h-4" />} />
         <StatCard label="Active" value={activeRuns.length} color="warning" icon={<PlayCircle className="w-4 h-4" />} />
       </div>
+
+      {/* Trend chart */}
+      {runs.length > 1 && (
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-[var(--shadow-sm)] p-5">
+          <PassRateChart trend={buildTrend(runs)} />
+        </div>
+      )}
 
       {/* Active execution */}
       <Section title="Active Execution" action={<span className="text-[11px] text-[var(--text-muted)]">{activeRuns.length} running</span>}>
@@ -156,8 +164,33 @@ export default function DashboardPage() {
       </div>
 
       {runs.length === 0 && (
-        <EmptyState icon={<Inbox className="w-6 h-6" />} title="Welcome to GoTest Agent" description="Run your first test via the MCP tool in your IDE or the HTTP API." />
+        <Section title="Getting Started">
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--text-secondary)]">Welcome to GoTest Agent. Here&apos;s how to get started:</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <OnboardStep num={1} title="Connect a project" desc="POST /api/v1/runs with your project_path" />
+              <OnboardStep num={2} title="Run tests" desc="The agent analyzes, generates, and executes tests" />
+              <OnboardStep num={3} title="Set up schedules" desc="POST /api/v1/schedules for recurring runs" />
+            </div>
+            <button
+              onClick={() => { fetch((process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080") + "/api/v1/demo/seed", { method: "POST" }).then(() => window.location.reload()); }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors"
+            >
+              <PlayCircle className="w-4 h-4" /> Seed Demo Data
+            </button>
+          </div>
+        </Section>
       )}
+    </div>
+  );
+}
+
+function OnboardStep({ num, title, desc }: { num: number; title: string; desc: string }) {
+  return (
+    <div className="p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
+      <div className="w-6 h-6 rounded-full bg-[var(--accent-bg)] text-[var(--accent)] flex items-center justify-center text-xs font-bold mb-2">{num}</div>
+      <p className="text-xs font-semibold text-[var(--text-primary)]">{title}</p>
+      <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{desc}</p>
     </div>
   );
 }
@@ -169,6 +202,20 @@ function QuickAction({ href, icon, label }: { href: string; icon: React.ReactNod
       <span className="text-xs font-medium">{label}</span>
     </Link>
   );
+}
+
+function buildTrend(runs: TestRun[]): { date: string; pass_rate: number }[] {
+  const byDate = new Map<string, { passed: number; total: number }>();
+  for (const r of runs) {
+    const d = r.created_at.slice(0, 10);
+    const entry = byDate.get(d) || { passed: 0, total: 0 };
+    entry.total++;
+    if (r.state === "done") entry.passed++;
+    byDate.set(d, entry);
+  }
+  return [...byDate.entries()]
+    .map(([date, { passed, total }]) => ({ date, pass_rate: total > 0 ? passed / total : 0 }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 function aggregateFailures(runs: TestRun[]): { test: string; count: number }[] {
