@@ -1,80 +1,91 @@
 # AGENT.md — GoTest Agent Execution Guide
 
-You are an autonomous coding agent working on the GoTest Agent project.
-Your job is to implement the full blueprint in gotest-agent-master-blueprint.md.
+## Project Status: Production-Ready MVP ✅
 
-## Core Objective
+All core phases are complete. The system is running as a full Docker stack.
 
-Build a self-hostable AI software testing agent in Go with:
-- MCP server for Cursor/VS Code integration
-- HTTP API + async queue
-- Anthropic Claude-based code analysis and test generation
-- Steel Browser self-hosted sandbox for browser automation
-- Playwright test generation and execution
-- Visual regression and screenshot analysis
-- LangGraph sidecar for advanced multi-agent workflows
-- Braintrust-based evals for quality tracking
-- PostgreSQL persistence and Redis queue
+## What Is Built
+
+### Backend (Go)
+- HTTP API (Chi router) on `:8080`
+- MCP server (stdio) for Cursor/VS Code
+- Anthropic Claude-based code analysis, test plan generation, script writing, auto-fix loop
+- Steel Browser integration for Playwright execution
+- PostgreSQL persistence + in-memory fallback
+- Redis job queue + background worker
+- SSE live event stream (global `/api/v1/stream` + per-run `/api/v1/runs/:id/stream`)
+- Event bus for instant push (no polling lag)
+- Browser video recording & replay with step→timestamp mapping
+- Visual regression (GPT-4o Vision)
+- Braintrust eval logging
+- Git diff-based impacted test selection
+- Background scheduler (daily/weekly/monthly/cron)
+- Webhook notifications + alert rules
+- Review workflow (approve/reject/request-changes)
+- Risk scoring, suite selection, release confidence
+- HTML report generation
+- Auth middleware (API key)
+- Production hardening: rate limiting, input validation, security headers
+
+### Frontend (Next.js)
+- Real-time control room dashboard with SSE live updates
+- Failure toast notifications
+- Progress bar with stage hints (early/midway/near completion) for running tests
+- Run detail audit view: video replay, step breakdown, screenshots, failure summary
+- Step-to-video timestamp sync
+- Risk dashboard, review queue, suite browser
+- Monitoring (schedules), alerts, releases, exports pages
+- Bilingual documentation (Indonesian + English)
+- Filter + search on run list (by ID, state, requirements, project path)
+- Onboarding flow with demo seed
+
+### LangGraph Sidecar (Python)
+- FastAPI server on `:8000`
+- Multi-agent graph: planner → writer → executor → critic → fixer
+
+## Architecture
+
+```
+Frontend (:3001) → Go Backend (:8080) → Steel Browser (:3010)
+                         ↓
+              PostgreSQL / Redis / LangGraph Sidecar (:8000)
+```
+
+## Running the Stack
+
+```bash
+make up          # start all 6 services
+make rebuild     # rebuild images and restart
+make down        # stop
+make logs        # tail logs
+make smoke-test  # end-to-end verification
+```
+
+## Key Files
+
+| Path | Purpose |
+|------|---------|
+| `internal/agent/agent.go` | Core agent pipeline |
+| `internal/api/server.go` | All HTTP routes |
+| `internal/runner/docker.go` | Playwright execution |
+| `internal/events/store.go` | Event bus + SSE |
+| `frontend/src/app/page.tsx` | Overview / control room |
+| `frontend/src/app/runs/page.tsx` | Run list with filter/search |
+| `frontend/src/app/runs/[id]/page.tsx` | Run detail / audit view |
+| `sidecar/graph.py` | LangGraph multi-agent graph |
+
+## What Remains / Next Priorities
+
+1. **Analytics** — pass rate trends, failure hotspots, flaky detection (backend metrics exist, frontend charts partial)
+2. **Alert rules UI** — backend exists, frontend page is placeholder
+3. **Suite management** — tags and pinning UI
+4. **Export** — JSON download buttons for runs, comparisons, risk reports
 
 ## Operating Rules
 
-1. Read gotest-agent-master-blueprint.md before changing code.
-2. Follow the blueprint in order, starting from Section 12.
-3. Do not wait for human confirmation between tasks unless blocked by ambiguity.
-4. Prefer making the code compile and run over perfect architecture.
-5. If a file is broken, rewrite it fully and continue.
-6. After each phase, summarize what changed and what remains.
-7. Keep the implementation production-oriented but MVP-first.
-8. If a dependency or API is uncertain, inspect docs and implement the simplest working version.
-9. Keep all changes aligned with the blueprint; do not invent unrelated features.
-10. Treat the blueprint as the source of truth.
-
-## Required Execution Order
-
-### Phase 1 — Foundation
-- Fix module name in go.mod
-- Install dependencies
-- Run go mod tidy
-- Rewrite internal/agent/llm_anthropic.go using anthropic-sdk-go
-- Create internal/steel/client.go
-- Fix internal/mcp/server.go imports and tool wiring
-- Fix internal/runner/docker.go JSON parsing
-- Ensure go build ./... passes
-
-### Phase 2 — E2E MVP
-- Add Steel Browser service to docker-compose
-- Add DB store implementation
-- Add migration runner
-- Persist test runs and results
-- Add SSE progress stream
-- Add HTML report generation
-- Ensure MCP run_tests works end-to-end
-
-### Phase 3 — Vision + Evals
-- Add screenshot capture
-- Add GPT-4o Vision integration
-- Add Braintrust eval logging
-- Add visual regression checks
-
-### Phase 4 — LangGraph Sidecar
-- Create Python sidecar service
-- Add FastAPI server
-- Implement planner/writer/critic/executor/fixer agents
-- Wire Go backend to sidecar for advanced mode
-
-### Phase 5 — SaaS Layer
-- Add auth, API keys, dashboard, webhook integration, billing
-
-## Work Style
-
-- Be aggressive and autonomous.
-- Make sensible decisions without asking unless absolutely necessary.
-- Fix compile/runtime errors as soon as they appear.
-- Keep the implementation incremental and test frequently.
-
-## First Actions
-
-1. Inspect the repository structure.
-2. Read the blueprint.
-3. Start Phase 1 immediately.
-4. Report progress only after meaningful chunks of work.
+1. Read this file and the relevant PRD before changing code.
+2. Do not break existing behavior — run `go build ./...` and `npm run build` after changes.
+3. Prefer minimal, focused changes over large rewrites.
+4. Keep polling as fallback whenever touching SSE/live transport.
+5. Do not fake precision (timestamps, percentages) — use real data or approximate labels.
+6. After each meaningful change: commit, push, then `make rebuild`.
