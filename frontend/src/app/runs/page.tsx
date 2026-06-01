@@ -25,11 +25,13 @@ export default function RunsPage() {
   }, []);
 
   const filtered = useMemo(() => {
+    const q = query.toLowerCase();
     let list = runs.filter(
       (r) =>
-        r.id.includes(query) ||
-        r.state.includes(query) ||
-        (r.requirements || "").toLowerCase().includes(query.toLowerCase())
+        r.id.includes(q) ||
+        r.state.includes(q) ||
+        (r.requirements || "").toLowerCase().includes(q) ||
+        (r.project_path || "").toLowerCase().includes(q)
     );
     if (group === "active") list = list.filter((r) => isActive(r.state));
     if (group === "passed") list = list.filter((r) => r.state === "done");
@@ -68,7 +70,7 @@ export default function RunsPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
           <input
             type="text"
-            placeholder="Search by ID, state, or requirements..."
+            placeholder="Search by ID, state, requirements, or project..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]/50 focus:ring-2 focus:ring-[var(--accent)]/10"

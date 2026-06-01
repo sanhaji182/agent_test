@@ -122,7 +122,7 @@ export default function OverviewPage() {
                   </div>
                 </div>
                 <ExecutionTimeline state={r.state} />
-                <p className="mt-2 text-[10px] text-[var(--warning)] font-medium">Stage: {stageLabel(r.state)}</p>
+                <StageProgress state={r.state} />
               </Link>
             ))}
           </div>
@@ -236,6 +236,34 @@ function ActionDot({ action }: { action: string }) {
 function RiskDot({ score }: { score: number }) {
   const c = score >= 0.7 ? "bg-[var(--danger)]" : score >= 0.4 ? "bg-[var(--warning)]" : "bg-[var(--success)]";
   return <span className={`w-2 h-2 rounded-full ${c} shrink-0`} />;
+}
+
+const STAGE_ORDER = ["analyzing", "plan_generated", "writing_tests", "running", "fixing"];
+
+function stageProgress(state: string): { pct: number; hint: string } {
+  const idx = STAGE_ORDER.indexOf(state);
+  if (idx === -1) return { pct: 5, hint: "starting" };
+  const pct = Math.round(((idx + 1) / STAGE_ORDER.length) * 100);
+  const hint = pct <= 30 ? "early" : pct <= 70 ? "midway" : "near completion";
+  return { pct, hint };
+}
+
+function StageProgress({ state }: { state: string }) {
+  const { pct, hint } = stageProgress(state);
+  return (
+    <div className="mt-2 space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-[var(--warning)] font-medium">{stageLabel(state)}</span>
+        <span className="text-[10px] text-[var(--text-muted)]">{hint} · {pct}%</span>
+      </div>
+      <div className="h-1 rounded-full bg-[var(--warning)]/15 overflow-hidden">
+        <div
+          className="h-full rounded-full bg-[var(--warning)] transition-all duration-700"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
 }
 
 function stageLabel(state: string): string {
