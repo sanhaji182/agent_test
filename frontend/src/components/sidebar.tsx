@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, PlayCircle, FolderOpen, Settings, Zap,
-  Calendar, Bell, Tag, Shield, ClipboardCheck, Layers, Download,
+  Calendar, Bell, Tag, Shield, ClipboardCheck, Layers, Download, BookOpen,
 } from "lucide-react";
 
 const nav = [
@@ -18,6 +18,7 @@ const nav = [
   { href: "/reviews", label: "Reviews", icon: ClipboardCheck },
   { href: "/alerts", label: "Alerts", icon: Bell },
   { href: "/exports", label: "Exports", icon: Download },
+  { href: "/docs", label: "Docs", icon: BookOpen },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

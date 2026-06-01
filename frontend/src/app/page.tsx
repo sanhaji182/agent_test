@@ -141,7 +141,7 @@ export default function OverviewPage() {
                     <span className="text-[11px] font-semibold text-[var(--text-primary)]">{r.requirements || r.id.slice(0, 8)}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    {r.video_url && <Film className="w-3 h-3 text-[var(--text-muted)]" title="Video available" />}
+                    {r.video_url && <Film className="w-3 h-3 text-[var(--text-muted)]" />}
                     <span className="text-[10px] text-[var(--text-muted)]">{timeAgo(r.created_at)}</span>
                   </div>
                 </div>
