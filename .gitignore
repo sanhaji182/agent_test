@@ -1,16 +1,70 @@
 # Binaries
 bin/
 *.exe
+*.dll
+*.so
+*.dylib
 
 # Environment
 .env
+.env.local
+.env.*.local
 
 # Frontend
 frontend/node_modules/
 frontend/.next/
+frontend/out/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
 
 # Data
 data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Keys and certificates
+*.pem
+*.key
+*.crt
+*.csr
+id_rsa
+id_dsa
+id_ed25519
+*.pub
+
+# Docker
+docker-compose.override.yml
+docker-compose.prod.yml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # OS
 .DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Temporary
+*.tmp
+*.bak
+*.cache

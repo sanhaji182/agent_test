@@ -174,6 +174,59 @@ Key endpoints:
 - `POST /api/v1/releases` — create release
 - `GET /api/v1/releases/:id/confidence` — confidence score
 
+## Security Considerations
+
+This setup is optimized for **local development and demo**. For production deployment:
+
+### 🔒 Required Changes
+
+- **Change database credentials** — Update `POSTGRES_PASSWORD` in `docker-compose.yml` to a strong random value
+- **Rotate secrets** — Generate strong random values for `JWT_SECRET`, `API_KEY`, and `GITHUB_WEBHOOK_SECRET` in your `.env`
+- **Remove exposed ports** — Remove or bind database/Redis ports to `127.0.0.1`:
+  ```yaml
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"  # instead of "5432:5432"
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"  # instead of "6379:6379"
+  ```
+- **Add TLS termination** — Use a reverse proxy (Caddy, nginx, Traefik) with automatic HTTPS in front of the backend
+
+### 🛡️ Recommended Enhancements
+
+- **Restrict CORS** — Set `CORS_ALLOWED_ORIGINS` env var to your frontend domain(s) instead of wildcard `*`
+- **Enable rate limiting** — Add rate limiting middleware to prevent API abuse (currently not implemented)
+- **Use Docker secrets** — For sensitive values, use Docker secrets or external secret managers instead of env vars
+- **Network isolation** — Consider running database/Redis on a private Docker network without host port exposure
+- **Steel Browser hardening** — The `SYS_ADMIN` capability is required for headless Chrome but increases attack surface. In production:
+  - Use a dedicated container runtime (gVisor, Firecracker)
+  - Apply seccomp profiles to restrict syscalls
+  - Monitor and limit concurrent sessions
+
+### 📋 Security Checklist
+
+Before deploying to production:
+
+- [ ] Changed `POSTGRES_PASSWORD` from `password`
+- [ ] Set strong `JWT_SECRET` (32+ random characters)
+- [ ] Set strong `API_KEY` for backend authentication
+- [ ] Removed or restricted exposed ports (5432, 6379)
+- [ ] Configured reverse proxy with TLS (HTTPS)
+- [ ] Set `CORS_ALLOWED_ORIGINS` to specific domains
+- [ ] Reviewed and rotated all API keys (Anthropic, Steel, etc.)
+- [ ] Enabled database SSL (`sslmode=require` in `DATABASE_URL`)
+- [ ] Set up monitoring and logging for security events
+- [ ] Regular security updates for base images
+
+### 🔍 Automated Security Scanning
+
+This project uses [gitleaks](https://github.com/gitleaks/gitleaks) to prevent accidental secret commits. See `.github/workflows/security.yml` for CI configuration.
+
+### 🐛 Reporting Vulnerabilities
+
+If you discover a security vulnerability, please email [security@yourdomain.com] instead of opening a public issue.
+
 ## License
 
 MIT

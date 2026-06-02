@@ -1,0 +1,45 @@
+# Gitleaks configuration
+# https://github.com/gitleaks/gitleaks#configuration
+
+title = "GoTest Agent Gitleaks Configuration"
+
+# Extend default rules
+[extend]
+useDefault = true
+
+# Custom rules (add project-specific patterns here)
+# [[rules]]
+# id = "custom-secret-pattern"
+# description = "Custom secret pattern"
+# regex = '''your-regex-here'''
+# tags = ["custom"]
+
+# Allowlist for false positives
+[allowlist]
+description = "Global allowlist"
+
+# Paths to ignore
+paths = [
+  '''\.gitleaks\.toml$''',
+  '''node_modules/''',
+  '''vendor/''',
+  '''\.git/''',
+  '''go\.sum$''',
+  '''package-lock\.json$''',
+  '''\.env\.example$''',
+]
+
+# Specific commits to ignore (if needed)
+# commits = [
+#   'abc123def456',  # Example: commit that added test fixtures
+# ]
+
+# Regex patterns to ignore (for test fixtures, examples, etc.)
+regexTarget = "match"
+regexes = [
+  '''your-.*-here''',           # Placeholder patterns
+  '''EXAMPLE''',                 # Example values
+  '''test-secret''',            # Test secrets
+  '''sk_test_''',               # Stripe test keys
+  '''pk_test_''',               # Stripe public test keys
+]
