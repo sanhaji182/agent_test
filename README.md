@@ -65,13 +65,15 @@ Services: backend (:8080), frontend (:3001), postgres (:5432), redis (:6379), st
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | Anthropic API key for LLM |
-| `LLM_MODEL` | No | Model (default: claude-sonnet-4-5) |
+| `ANTHROPIC_API_KEY` | No* | API key for Claude models (*at least one API key is required) |
+| `OPENAI_API_KEY` | No* | API key for GPT models & visual regression (*at least one API key is required) |
+| `GOOGLE_API_KEY` | No* | API key for Gemini models (*at least one API key is required) |
+| `DEEPSEEK_API_KEY` | No* | API key for DeepSeek models (*at least one API key is required) |
+| `LLM_MODEL` | No | Default Model (e.g., claude-sonnet-4-6, gpt-5.5-pro, gemini-3.1-pro) |
 | `API_KEY` | No | API auth key (empty = no auth) |
 | `DATABASE_URL` | No | PostgreSQL URL (falls back to in-memory) |
 | `REDIS_URL` | No | Redis for job queue |
 | `STEEL_API_URL` | No | Steel Browser URL |
-| `OPENAI_API_KEY` | No | For visual regression (GPT-4o Vision) |
 
 ## How to Use
 
