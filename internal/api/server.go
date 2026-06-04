@@ -2182,6 +2182,13 @@ func (s *Server) handleRerun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+
+	// Audit: run created for rerun
+	s.events.Emit(run.ID, "run_started", "idle", "Rerun triggered via API", map[string]string{"project": run.ProjectPath, "mode": run.Mode})
+
+	// Start async real execution
+	go s.executeRealRun(run)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]string{"run_id": run.ID, "state": string(run.State), "created_at": run.CreatedAt.Format(time.RFC3339)})
