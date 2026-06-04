@@ -19,6 +19,18 @@ Self-hosted AI testing agent that reads your codebase, generates tests, executes
 5. **Auto-fixes** failing tests (up to 3 attempts)
 6. **Reports** results with screenshots, HTML reports, and live streaming
 
+## Tech Stack
+
+This project uses modern, up-to-date technologies (as of June 2026):
+- **Backend**: Go 1.26.4 with Chi Router
+- **Frontend**: Next.js 16.2.7 & React 19.2.7 (Tailwind CSS)
+- **Database**: PostgreSQL 16.14
+- **Queue**: Redis (via Asynq)
+- **Browser Automation**: Playwright (Steel Browser)
+- **AI Integration**: Multi-provider support (Anthropic, OpenAI, Google, DeepSeek, Local)
+
+> **Note on Documentation**: All internal architecture blueprints, product requirements (PRDs), and master prompts can be found in the `planning/` directory.
+
 ## Quick Start
 
 ```bash
