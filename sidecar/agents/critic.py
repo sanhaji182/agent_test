@@ -8,10 +8,14 @@ llm = ChatAnthropic(model="claude-sonnet-4-5")
 
 def critic_node(state: dict) -> dict:
     files = json.dumps(state["test_files"])
-    prompt = f"""Review these Playwright test files for quality:
+    prompt = f"""You are a strict QA Test Critic (Enterprise Level). Review these Playwright test files for quality:
 {files}
 
-Score each on: assertions, selector quality, edge cases.
+Critique the tests ruthlessly on:
+1. Assertions (Are they robust or flaky?)
+2. Selector quality (Are they using stable data-testids or fragile DOM paths?)
+3. Edge cases (Did the planner miss negative scenarios?)
+
 Return JSON: {{"score": 0-100, "suggestions": ["..."]}}"""
 
     resp = llm.invoke([HumanMessage(content=prompt)])

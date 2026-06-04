@@ -137,3 +137,11 @@ func TestAgentExecute_ScreenshotOnFailure(t *testing.T) {
 		t.Fatal("expected screenshots in run")
 	}
 }
+
+func (m *mockLLM) HealAction(ctx context.Context, action string, domSnapshot string, errorMsg string) (string, error) {
+	return "", nil
+}
+
+func (m *mockLLM) HealActionWithVision(ctx context.Context, action string, domSnapshot string, errorMsg string, imageBase64 string) (string, error) {
+	return "", nil
+}

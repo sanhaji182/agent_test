@@ -25,6 +25,11 @@ CREATE TABLE IF NOT EXISTS test_runs (
     error_msg      TEXT,
     duration_ms    INT,
     llm_tokens_used INT,
+    video_url      TEXT,
+    video_status   VARCHAR(50),
+    video_duration REAL,
+    video_size     BIGINT,
+    video_failure_marker_at REAL,
     created_at     TIMESTAMPTZ DEFAULT NOW(),
     updated_at     TIMESTAMPTZ DEFAULT NOW(),
     finished_at    TIMESTAMPTZ
@@ -38,6 +43,34 @@ CREATE TABLE IF NOT EXISTS api_keys (
     last_used_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS settings (
+    key        VARCHAR(100) PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Default LLM settings
+INSERT INTO settings (key, value) VALUES
+  ('llm_provider', 'anthropic'),
+  ('llm_model', 'claude-sonnet-4-5'),
+  ('llm_api_key', ''),
+  ('llm_temperature', '0.2'),
+  ('llm_max_tokens', '4096'),
+  ('browser_headless', 'true'),
+  ('browser_timeout', '300'),
+  ('max_fix_attempts', '3')
+ON CONFLICT (key) DO NOTHING;
+
 CREATE INDEX IF NOT EXISTS idx_runs_state ON test_runs(state);
 CREATE INDEX IF NOT EXISTS idx_runs_project ON test_runs(project_id);
 CREATE INDEX IF NOT EXISTS idx_runs_created ON test_runs(created_at DESC);
+
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS project_path TEXT;
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS test_type VARCHAR(20);
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS prd TEXT;
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS api_docs TEXT;
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS auth_type VARCHAR(50);
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS credentials TEXT;
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS focus_hints TEXT;
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS skip_hints TEXT;
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS feature_map JSONB;

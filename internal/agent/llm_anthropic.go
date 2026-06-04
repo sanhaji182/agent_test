@@ -60,12 +60,28 @@ Return ONLY valid JSON, no markdown.`, analysis, requirements)
 // GenerateTestScripts membuat file test Playwright dari test plan
 func (a *AnthropicLLM) GenerateTestScripts(ctx context.Context, plan *TestPlan, analysis string) ([]TestFile, error) {
 	planJSON, _ := json.Marshal(plan)
-	prompt := fmt.Sprintf(`Generate Playwright TypeScript test files for this test plan:
+	prompt := fmt.Sprintf(`Generate Playwright automation actions for this test plan:
 %s
 
 Codebase context: %s
 
-Return JSON array: [{"name": "test-name.spec.ts", "content": "..."}]
+You must return a JSON array of files. Each file represents a test scenario.
+For the 'content' field, provide a JSON array of actions as a string.
+Supported actions:
+- {"action": "goto", "url": "..."}
+- {"action": "fill", "selector": "...", "value": "..."}
+- {"action": "click", "selector": "..."}
+- {"action": "scroll", "y": 500}
+- {"action": "wait", "ms": 2000}
+
+Format Example:
+[
+  {
+    "name": "scenario1.json",
+    "content": "[\n  {\"action\": \"goto\", \"url\": \"https://example.com\"},\n  {\"action\": \"fill\", \"selector\": \"input[name='q']\", \"value\": \"test\"},\n  {\"action\": \"click\", \"selector\": \"button[type='submit']\"}\n]"
+  }
+]
+
 Return ONLY valid JSON, no markdown.`, string(planJSON), analysis)
 
 	resp, err := a.chat(ctx, prompt)
@@ -105,6 +121,62 @@ Return ONLY valid JSON, no markdown.`, string(failJSON), string(filesJSON))
 	return fixed, nil
 }
 
+// HealAction meminta LLM untuk memperbaiki aksi tunggal Playwright (Self-Healing)
+func (a *AnthropicLLM) HealAction(ctx context.Context, action string, domSnapshot string, errorMsg string) (string, error) {
+	prompt := fmt.Sprintf(`A Playwright browser action failed.
+Target Action: %s
+Error Encountered: %s
+
+Current Simplified DOM:
+%s
+
+Please provide a CORRECTED JSON action to replace the failed one.
+Supported actions format:
+- {"action": "goto", "url": "..."}
+- {"action": "fill", "selector": "...", "value": "..."}
+- {"action": "click", "selector": "..."}
+- {"action": "scroll", "y": 500}
+- {"action": "wait", "ms": 2000}
+
+Analyze the DOM to find the correct selector if the old one failed.
+Return ONLY valid JSON for the single corrected action, no markdown, no explanation.`, action, errorMsg, domSnapshot)
+
+	resp, err := a.chat(ctx, prompt)
+	if err != nil {
+		return "", err
+	}
+	return stripJSONMarkers(resp), nil
+}
+
+// HealActionWithVision meminta LLM untuk memperbaiki aksi dengan menyertakan screenshot dari browser
+func (a *AnthropicLLM) HealActionWithVision(ctx context.Context, action string, domSnapshot string, errorMsg string, imageBase64 string) (string, error) {
+	prompt := fmt.Sprintf(`A Playwright browser action failed.
+Target Action: %s
+Error Encountered: %s
+
+Current Simplified DOM:
+%s
+
+I have also attached a screenshot of the current page state.
+Please analyze BOTH the screenshot and the DOM to find the correct selector if the old one failed, or if the UI has changed.
+
+Provide a CORRECTED JSON action to replace the failed one.
+Supported actions format:
+- {"action": "goto", "url": "..."}
+- {"action": "fill", "selector": "...", "value": "..."}
+- {"action": "click", "selector": "..."}
+- {"action": "scroll", "y": 500}
+- {"action": "wait", "ms": 2000}
+
+Return ONLY valid JSON for the single corrected action, no markdown, no explanation.`, action, errorMsg, domSnapshot)
+
+	resp, err := a.chatWithVision(ctx, prompt, imageBase64)
+	if err != nil {
+		return "", err
+	}
+	return stripJSONMarkers(resp), nil
+}
+
 // chat mengirim pesan ke Anthropic API dan mengembalikan response teks
 func (a *AnthropicLLM) chat(ctx context.Context, prompt string) (string, error) {
 	msg, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
@@ -119,6 +191,30 @@ func (a *AnthropicLLM) chat(ctx context.Context, prompt string) (string, error) 
 	}
 
 	// Ambil teks dari response content block pertama
+	for _, block := range msg.Content {
+		if block.Type == "text" {
+			return block.Text, nil
+		}
+	}
+	return "", fmt.Errorf("no text in response")
+}
+
+// chatWithVision mengirim pesan teks dan gambar (base64) ke Anthropic API
+func (a *AnthropicLLM) chatWithVision(ctx context.Context, prompt string, imageBase64 string) (string, error) {
+	msg, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:     anthropic.Model(a.model),
+		MaxTokens: int64(4096),
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(
+				anthropic.NewImageBlockBase64("image/jpeg", imageBase64),
+				anthropic.NewTextBlock(prompt),
+			),
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("anthropic vision: %w", err)
+	}
+
 	for _, block := range msg.Content {
 		if block.Type == "text" {
 			return block.Text, nil

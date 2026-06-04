@@ -4,12 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard, PlayCircle, FolderOpen, Settings, Zap,
-  Calendar, Bell, Tag, Shield, ClipboardCheck, Layers, Download, BookOpen,
+  LayoutDashboard, PlayCircle, Settings, Zap,
+  Calendar, Bell, Tag, Shield, ClipboardCheck, Layers, Download, BookOpen, FileText
 } from "lucide-react";
 
 const nav = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
+  { href: "/tests", label: "Test Library", icon: FileText },
   { href: "/runs", label: "Runs", icon: PlayCircle },
   { href: "/risk", label: "Risk", icon: Shield },
   { href: "/monitoring", label: "Monitoring", icon: Calendar },
@@ -34,6 +35,16 @@ export function Sidebar() {
           </div>
           <span className="text-[13px] font-bold text-[var(--text-primary)]">GoTest</span>
         </div>
+      </div>
+
+      <div className="px-3 pt-4 pb-2">
+        <Link
+          href="/create"
+          className="flex items-center justify-center gap-2 w-full py-2 bg-[var(--accent)] text-white text-[13px] font-semibold rounded-[var(--radius-sm)] hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
+        >
+          <PlayCircle className="w-4 h-4" />
+          Create Test
+        </Link>
       </div>
 
       <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">

@@ -12,7 +12,7 @@ export default function ExportsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getRuns().then(setRuns).catch(() => {}).finally(() => setLoading(false));
+    getRuns().then((r) => setRuns(r || [])).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   if (loading) return <LoadingSkeleton rows={4} />;

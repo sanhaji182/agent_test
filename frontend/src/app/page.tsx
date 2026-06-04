@@ -4,13 +4,13 @@ import { useEffect, useState } from "react";
 import { getRuns, isActive, getMetricsRisk, getRecommendations, type TestRun, type RiskItem, type Recommendation } from "@/lib/api";
 import { StatCard } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
-import { EmptyState, Section, LoadingSkeleton } from "@/components/ui/section";
+import { Section, LoadingSkeleton } from "@/components/ui/section";
 import { ExecutionTimeline } from "@/components/console/timeline";
 import { PassRateChart } from "@/components/ui/chart";
 import Link from "next/link";
 import {
   Activity, CheckCircle2, XCircle, PlayCircle,
-  ArrowRight, Lightbulb, Shield, AlertTriangle, Clock, Film,
+  Lightbulb, AlertTriangle, Clock, Film,
 } from "lucide-react";
 
 export default function OverviewPage() {
@@ -24,7 +24,7 @@ export default function OverviewPage() {
   // Initial load
   useEffect(() => {
     Promise.all([getRuns(), getMetricsRisk().catch(() => []), getRecommendations().catch(() => [])])
-      .then(([r, ri, re]) => { setRuns(r); setRisks(ri); setRecs(re); })
+      .then(([r, ri, re]) => { setRuns(r || []); setRisks(ri || []); setRecs(re || []); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -41,7 +41,7 @@ export default function OverviewPage() {
         const data = JSON.parse(e.data);
         // Refresh runs on state-changing events
         if (["run_started", "run_completed", "run_failed", "analysis_completed", "plan_generated", "script_generated", "test_started", "fix_attempt_started"].includes(data.type)) {
-          getRuns().then(setRuns).catch(() => {});
+          getRuns().then((r) => setRuns(r || [])).catch(() => {});
         }
         // Show failure toast
         if (data.failed) {
@@ -55,7 +55,7 @@ export default function OverviewPage() {
         setConnected(false);
         es?.close();
         if (!fallbackInterval) {
-          fallbackInterval = setInterval(() => { getRuns().then(setRuns).catch(() => {}); }, 10000);
+          fallbackInterval = setInterval(() => { getRuns().then((r) => setRuns(r || [])).catch(() => {}); }, 10000);
         }
         setTimeout(connectSSE, 5000);
       };
@@ -91,9 +91,18 @@ export default function OverviewPage() {
           <h1 className="text-lg font-bold">Control Room</h1>
           <p className="text-[12px] text-[var(--text-secondary)]">Live test execution status and audit overview</p>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className={`w-2 h-2 rounded-full ${connected ? "bg-[var(--success)] animate-pulse" : "bg-[var(--text-muted)]"}`} />
-          <span className="text-[10px] text-[var(--text-muted)]">{connected ? "Live" : "Polling"}</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 mr-2">
+            <span className={`w-2 h-2 rounded-full ${connected ? "bg-[var(--success)] animate-pulse" : "bg-[var(--text-muted)]"}`} />
+            <span className="text-[10px] text-[var(--text-muted)]">{connected ? "Live" : "Polling"}</span>
+          </div>
+          <Link
+            href="/create"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
+          >
+            <PlayCircle className="w-3.5 h-3.5" />
+            Create Test
+          </Link>
         </div>
       </div>
 
@@ -314,16 +323,24 @@ function OnboardingView() {
       </div>
       <Section title="Get Started">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-          <StepCard num={1} title="Seed demo data" desc="See the platform in action with sample runs and risk scores." />
-          <StepCard num={2} title="Connect your project" desc="Point the agent at your codebase via API or MCP." />
-          <StepCard num={3} title="Set up monitoring" desc="Create schedules and enable failure alerts." />
+          <StepCard num={1} title="Create your first test" desc="Provide a repository path and test requirements to begin." />
+          <StepCard num={2} title="Review test plan" desc="The AI will generate a plan. Review and confirm before execution." />
+          <StepCard num={3} title="Monitor results" desc="Watch tests run live and review AI-generated reports." />
         </div>
-        <button
-          onClick={() => { fetch((process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080") + "/api/v1/demo/seed", { method: "POST" }).then(() => window.location.reload()); }}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
-        >
-          <PlayCircle className="w-3.5 h-3.5" /> Seed Demo Data
-        </button>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/create"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
+          >
+            <PlayCircle className="w-3.5 h-3.5" /> Create Test
+          </Link>
+          <button
+            onClick={() => { fetch((process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080") + "/api/v1/demo/seed", { method: "POST" }).then(() => window.location.reload()); }}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text-primary)] text-[12px] font-semibold hover:bg-[var(--bg-hover)] transition-colors shadow-sm"
+          >
+            <Lightbulb className="w-3.5 h-3.5" /> Or seed demo data
+          </button>
+        </div>
       </Section>
     </div>
   );

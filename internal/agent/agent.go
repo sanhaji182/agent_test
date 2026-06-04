@@ -38,6 +38,17 @@ type Scenario struct {
 	Steps    []string `json:"steps"`
 }
 
+// FeatureMap menyimpan fitur dan use case yang diturunkan dari PRD/requirements.
+type FeatureMap struct {
+	Source   string    `json:"source"`
+	Features []Feature `json:"features"`
+}
+
+type Feature struct {
+	Name     string   `json:"name"`
+	UseCases []string `json:"use_cases"`
+}
+
 // TestFile adalah file test yang di-generate oleh LLM
 type TestFile struct {
 	Name    string `json:"name"`    // Nama file, misal "login.spec.ts"
@@ -62,18 +73,28 @@ type Failure struct {
 
 // TestRun adalah objek utama yang merepresentasikan satu sesi pengujian
 type TestRun struct {
-	ID           string     `json:"id"`
-	ProjectPath  string     `json:"project_path"`
-	Requirements string     `json:"requirements"`
-	Mode         string     `json:"mode"` // "simple" atau "advanced"
-	State        State      `json:"state"`
-	CodeAnalysis string     `json:"code_analysis,omitempty"`
-	TestPlan     *TestPlan  `json:"test_plan,omitempty"`
-	TestFiles    []TestFile `json:"test_files,omitempty"`
-	RunResult    *RunResult `json:"run_result,omitempty"`
-	Screenshots  []string   `json:"screenshots,omitempty"`
-	FixAttempts  int        `json:"fix_attempts"`
-	Error        string     `json:"error,omitempty"`
+	ID           string      `json:"id"`
+	ProjectPath  string      `json:"project_path"`
+	Requirements string      `json:"requirements"`
+	Mode         string      `json:"mode"`                // "simple" atau "advanced"
+	TestType     string      `json:"test_type,omitempty"` // "ui" atau "api"
+	TestCaseID   string      `json:"test_case_id,omitempty"`
+	TestListID   string      `json:"test_list_id,omitempty"`
+	PRD          string      `json:"prd,omitempty"`
+	APIDocs      string      `json:"api_docs,omitempty"`
+	AuthType     string      `json:"auth_type,omitempty"`
+	Credentials  string      `json:"credentials,omitempty"`
+	FocusHints   string      `json:"focus_hints,omitempty"`
+	SkipHints    string      `json:"skip_hints,omitempty"`
+	FeatureMap   *FeatureMap `json:"feature_map,omitempty"`
+	State        State       `json:"state"`
+	CodeAnalysis string      `json:"code_analysis,omitempty"`
+	TestPlan     *TestPlan   `json:"test_plan,omitempty"`
+	TestFiles    []TestFile  `json:"test_files,omitempty"`
+	RunResult    *RunResult  `json:"run_result,omitempty"`
+	Screenshots  []string    `json:"screenshots,omitempty"`
+	FixAttempts  int         `json:"fix_attempts"`
+	Error        string      `json:"error,omitempty"`
 	// Video recording fields
 	VideoURL             string  `json:"video_url,omitempty"`
 	VideoStatus          string  `json:"video_status,omitempty"` // "recording", "ready", "failed", "none"
@@ -92,6 +113,8 @@ type LLM interface {
 	GenerateTestPlan(ctx context.Context, analysis, requirements string) (*TestPlan, error)
 	GenerateTestScripts(ctx context.Context, plan *TestPlan, analysis string) ([]TestFile, error)
 	SuggestFixes(ctx context.Context, failures []Failure, files []TestFile) ([]TestFile, error)
+	HealAction(ctx context.Context, action string, domSnapshot string, errorMsg string) (string, error)
+	HealActionWithVision(ctx context.Context, action string, domSnapshot string, errorMsg string, imageBase64 string) (string, error)
 }
 
 // Runner adalah interface untuk menjalankan test (Docker atau Steel)
@@ -247,7 +270,15 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 		run.State = StateRunning
 		a.emit(run.ID, "test_started", "running", "Executing tests", nil)
 
-		result, err := a.runner.Run(ctx, run.TestFiles, run.ProjectPath)
+		var result *RunResult
+		var err error
+		if run.TestType == "api" {
+			apiRunner := NewAPIRunner()
+			result, err = apiRunner.Run(ctx, run.TestFiles, run.ProjectPath)
+		} else {
+			result, err = a.runner.Run(ctx, run.TestFiles, run.ProjectPath)
+		}
+
 		if err != nil {
 			a.emit(run.ID, "run_failed", "running", err.Error(), nil)
 			return a.fail(run, fmt.Errorf("run: %w", err))

@@ -10,7 +10,7 @@ export default function AlertsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getNotifications().then(setNotifs).catch(() => {}).finally(() => setLoading(false));
+    getNotifications().then((n) => setNotifs(n || [])).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="space-y-6"><LoadingSkeleton rows={4} /></div>;

@@ -9,6 +9,7 @@ export function ThemeToggle() {
   useEffect(() => {
     // Baca preferensi tersimpan, atau ikuti sistem jika belum ada
     const saved = localStorage.getItem("theme") as "light" | "dark" | null;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTheme(saved || (document.documentElement.classList.contains("dark") ? "dark" : "light"));
   }, []);
 

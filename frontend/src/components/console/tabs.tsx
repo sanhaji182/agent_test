@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 
 export interface Tab {
@@ -13,6 +13,12 @@ export interface Tab {
 // Tabbed panel sederhana untuk execution console
 export function Tabs({ tabs, initial }: { tabs: Tab[]; initial?: string }) {
   const [active, setActive] = useState(initial || tabs[0]?.id);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (initial) setActive(initial);
+  }, [initial]);
+
   const activeTab = tabs.find((t) => t.id === active);
 
   return (

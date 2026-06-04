@@ -10,7 +10,7 @@ export default function ReleasesPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getReleases().then(setReleases).catch(() => {}).finally(() => setLoading(false));
+    getReleases().then((r) => setReleases(r || [])).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="space-y-6"><LoadingSkeleton rows={4} /></div>;

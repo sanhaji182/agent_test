@@ -21,7 +21,7 @@ export default function RunsPage() {
   const [selected, setSelected] = useState<TestRun | null>(null);
 
   useEffect(() => {
-    getRuns().then(setRuns).catch((e) => setError(e.message)).finally(() => setLoading(false));
+    getRuns().then((r) => setRuns(r || [])).catch((e) => setError(e.message)).finally(() => setLoading(false));
   }, []);
 
   const filtered = useMemo(() => {
@@ -108,7 +108,16 @@ export default function RunsPage() {
       {/* List */}
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)]">
-          <EmptyState icon={<Inbox className="w-6 h-6" />} title={query ? "No matching runs" : "No runs in this group"} description={query ? "Try a different search." : "Runs will appear here."} />
+          <EmptyState 
+            icon={<Inbox className="w-6 h-6" />} 
+            title={query ? "No matching runs" : "No runs in this group"} 
+            description={query ? "Try a different search." : "Runs will appear here. Create your first test to get started."} 
+            action={!query && runs.length === 0 ? (
+              <a href="/create" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm">
+                Create First Test
+              </a>
+            ) : undefined}
+          />
         </div>
       ) : (
         <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-[var(--shadow-sm)] overflow-hidden divide-y divide-[var(--border)]">

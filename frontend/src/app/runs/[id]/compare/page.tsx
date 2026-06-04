@@ -78,33 +78,33 @@ export default function ComparePage() {
               <DeltaCard label="Failed" value={result.failed_delta} invert />
             </div>
 
-            {result.new_failures.length > 0 && (
+            {result.new_failures?.length > 0 && (
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--danger)] mb-2">New Failures ({result.new_failures.length})</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--danger)] mb-2">New Failures ({result.new_failures?.length})</p>
                 <div className="space-y-1">
-                  {result.new_failures.map((t, i) => (
+                  {result.new_failures?.map((t, i) => (
                     <div key={i} className="px-3 py-2 rounded-md bg-[var(--danger-bg)] text-xs text-[var(--danger)]">{t}</div>
                   ))}
                 </div>
               </div>
             )}
 
-            {result.recovered.length > 0 && (
+            {result.recovered?.length > 0 && (
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--success)] mb-2">Recovered ({result.recovered.length})</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--success)] mb-2">Recovered ({result.recovered?.length})</p>
                 <div className="space-y-1">
-                  {result.recovered.map((t, i) => (
+                  {result.recovered?.map((t, i) => (
                     <div key={i} className="px-3 py-2 rounded-md bg-[var(--success-bg)] text-xs text-[var(--success)]">{t}</div>
                   ))}
                 </div>
               </div>
             )}
 
-            {result.common_failures.length > 0 && (
+            {result.common_failures?.length > 0 && (
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">Still Failing ({result.common_failures.length})</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">Still Failing ({result.common_failures?.length})</p>
                 <div className="space-y-1">
-                  {result.common_failures.map((t, i) => (
+                  {result.common_failures?.map((t, i) => (
                     <div key={i} className="px-3 py-2 rounded-md bg-[var(--bg-subtle)] text-xs text-[var(--text-secondary)]">{t}</div>
                   ))}
                 </div>

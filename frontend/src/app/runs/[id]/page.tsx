@@ -3,9 +3,9 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  getRun, subscribeToRun, rerunRun, reportUrl, isActive,
+  getRun, subscribeToRun, rerunRun, reportUrl, isActive, analyzeFailure,
   getRunEvents, getRunRecordings, getRunVisuals,
-  type TestRun, type RunEvent, type Recording, type VisualArtifact,
+  type TestRun, type RunEvent, type Recording, type VisualArtifact, type FailureAnalysis,
 } from "@/lib/api";
 import { StatusBadge, PriorityBadge } from "@/components/ui/badge";
 import { LoadingSkeleton } from "@/components/ui/section";
@@ -16,7 +16,7 @@ import { EmptyState } from "@/components/ui/section";
 import {
   ArrowLeft, FileText, RotateCw, FileCode, AlertTriangle,
   CheckCircle2, XCircle, Image as ImageIcon, ListChecks, Eye,
-  Radio, Film, GitCompare,
+  Radio, Film, GitCompare, GitBranch, KeyRound, Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -32,6 +32,8 @@ export default function RunConsolePage() {
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [visuals, setVisuals] = useState<VisualArtifact[]>([]);
   const [rerunning, setRerunning] = useState(false);
+  const [analysis, setAnalysis] = useState<FailureAnalysis | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
 
   useEffect(() => {
     let unsub: (() => void) | undefined;
@@ -39,9 +41,9 @@ export default function RunConsolePage() {
       .then((r) => {
         setRun(r);
         // Load events, recordings, visuals
-        getRunEvents(id).then(setLiveEvents).catch(() => {});
-        getRunRecordings(id).then(setRecordings).catch(() => {});
-        getRunVisuals(id).then(setVisuals).catch(() => {});
+        getRunEvents(id).then((e) => setLiveEvents(e || [])).catch(() => {});
+        getRunRecordings(id).then((r) => setRecordings(r || [])).catch(() => {});
+        getRunVisuals(id).then((v) => setVisuals(v || [])).catch(() => {});
 
         if (isActive(r.state)) {
           unsub = subscribeToRun(id, (event) => {
@@ -51,8 +53,8 @@ export default function RunConsolePage() {
             }
             if (event.type === "done") {
               getRun(id).then(setRun);
-              getRunRecordings(id).then(setRecordings).catch(() => {});
-              getRunVisuals(id).then(setVisuals).catch(() => {});
+              getRunRecordings(id).then((r) => setRecordings(r || [])).catch(() => {});
+              getRunVisuals(id).then((v) => setVisuals(v || [])).catch(() => {});
             }
           });
         }
@@ -70,6 +72,17 @@ export default function RunConsolePage() {
     } catch (e) {
       setError((e as Error).message);
       setRerunning(false);
+    }
+  };
+
+  const handleAnalyze = async () => {
+    setAnalyzing(true);
+    try {
+      setAnalysis(await analyzeFailure(id));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setAnalyzing(false);
     }
   };
 
@@ -110,6 +123,12 @@ export default function RunConsolePage() {
         <div className="p-4 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border)]">
           <ExecutionTimeline state={displayState} />
         </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mt-4">
+          <Meta label="Type" value={(run.test_type || "ui").toUpperCase()} />
+          <Meta label="Mode" value={run.mode || "simple"} />
+          <Meta label="Auth" value={run.auth_type || "none"} />
+          <Meta label="Plan Source" value={run.feature_map?.source || (run.prd ? "prd" : "requirements")} />
+        </div>
         {result && (
           <div className="flex items-center gap-6 mt-4">
             <Stat icon={<CheckCircle2 className="w-4 h-4" />} value={result.passed} label="Passed" color="success" />
@@ -133,13 +152,65 @@ export default function RunConsolePage() {
           { id: "video", label: "Video", content: <VideoPlayer run={run} events={liveEvents} /> },
           { id: "events", label: "Live Events", count: liveEvents.length, content: <EventsView events={liveEvents} /> },
           { id: "steps", label: "Steps", count: stepCount(run), content: <StepsView run={run} /> },
+          { id: "features", label: "Feature Map", count: run.feature_map?.features?.length, content: <FeatureMapView run={run} /> },
           { id: "files", label: "Files", count: run.test_files?.length, content: <FilesView run={run} /> },
           { id: "recordings", label: "Recordings", count: recordings.length, content: <RecordingsView recordings={recordings} /> },
           { id: "shots", label: "Screenshots", count: run.screenshots?.length, content: <ScreenshotStrip screenshots={run.screenshots} /> },
-          { id: "failures", label: "Failures", count: result?.failures.length, content: <FailuresView run={run} /> },
+          { id: "failures", label: "Failures", count: result?.failures?.length, content: <FailuresView run={run} /> },
+          { id: "analysis", label: "Analysis", content: <AnalysisView analysis={analysis} loading={analyzing} onAnalyze={handleAnalyze} /> },
           { id: "visual", label: "Visual", count: visuals.length, content: <VisualView artifacts={visuals} /> },
         ]} initial={run.video_url ? "video" : "events"} />
       </div>
+    </div>
+  );
+}
+
+function AnalysisView({ analysis, loading, onAnalyze }: { analysis: FailureAnalysis | null; loading: boolean; onAnalyze: () => void }) {
+  if (!analysis) {
+    return (
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-5">
+        <button onClick={onAnalyze} disabled={loading} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)] disabled:opacity-60">
+          <Sparkles className="w-3.5 h-3.5" />
+          {loading ? "Analyzing" : "Analyze failure"}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[12px] font-semibold text-[var(--text-primary)]">{analysis.summary}</p>
+          <span className="text-[10px] font-semibold uppercase text-[var(--text-muted)]">{analysis.source}</span>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Likely Cause</p>
+            <p className="text-[12px] text-[var(--text-secondary)] mt-1">{analysis.likely_cause}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Next Action</p>
+            <p className="text-[12px] text-[var(--text-secondary)] mt-1">{analysis.next_action}</p>
+          </div>
+        </div>
+      </div>
+      <div className="space-y-1">
+        {analysis.evidence.map((item, i) => (
+          <div key={`${item}-${i}`} className="flex items-start gap-2 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 text-[12px] text-[var(--text-secondary)]">
+            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-[var(--accent)] shrink-0" />
+            <span>{item}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Meta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{label}</p>
+      <p className="text-[12px] font-semibold text-[var(--text-primary)] truncate mt-0.5">{value}</p>
     </div>
   );
 }
@@ -157,6 +228,58 @@ function Stat({ icon, value, label, color }: { icon: React.ReactNode; value: num
 
 function stepCount(run: TestRun): number {
   return (run.test_plan?.scenarios || []).reduce((n, s) => n + (s.steps?.length || 0), 0);
+}
+
+function FeatureMapView({ run }: { run: TestRun }) {
+  const features = run.feature_map?.features || [];
+  if (features.length === 0) {
+    return <EmptyState icon={<GitBranch className="w-6 h-6" />} title="No feature map" description="Upload or paste a PRD when creating a run to derive feature and use-case coverage." />;
+  }
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {features.map((feature, i) => (
+          <div key={`${feature.name}-${i}`} className="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="w-6 h-6 rounded-[var(--radius-sm)] bg-[var(--accent-bg)] text-[var(--accent)] flex items-center justify-center text-[11px] font-bold">{i + 1}</span>
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">{feature.name}</h3>
+            </div>
+            <ul className="space-y-2">
+              {feature.use_cases.map((useCase) => (
+                <li key={useCase} className="flex items-start gap-2 text-[12px] text-[var(--text-secondary)]">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[var(--success)] mt-0.5 shrink-0" />
+                  <span>{useCase}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      {(run.credentials || run.focus_hints || run.skip_hints || run.api_docs) && (
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <KeyRound className="w-4 h-4 text-[var(--accent)]" />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Execution Context</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {run.focus_hints && <ContextBlock label="Focus" value={run.focus_hints} />}
+            {run.skip_hints && <ContextBlock label="Skip" value={run.skip_hints} />}
+            {run.credentials && <ContextBlock label="Auth Notes" value={run.credentials} />}
+            {run.api_docs && <ContextBlock label="API Docs" value={run.api_docs} />}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ContextBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-1">{label}</p>
+      <p className="text-[12px] text-[var(--text-secondary)] whitespace-pre-wrap line-clamp-6">{value}</p>
+    </div>
+  );
 }
 
 // Live events timeline
@@ -298,6 +421,30 @@ function VideoPlayer({ run, events: runEvents }: { run: TestRun; events: RunEven
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = React.useState(0);
 
+  const duration = run.video_duration || 0;
+
+  // Use precise step timestamps from events if available, otherwise approximate
+  const stepMarkers = React.useMemo(() => {
+    // Try precise timestamps from step_started events
+    const preciseMarkers = runEvents
+      .filter((e) => e.type === "step_started" && e.metadata?.timestamp_ms)
+      .map((e) => ({
+        label: e.metadata?.step || e.message,
+        time: parseInt(e.metadata!.timestamp_ms!) / 1000,
+        precise: true,
+      }));
+
+    if (preciseMarkers.length > 0) return preciseMarkers;
+
+    // Fallback: approximate from test plan
+    const steps = run.test_plan?.scenarios?.flatMap((s) => s.steps) || [];
+    if (duration > 0 && steps.length > 0) {
+      const stepDuration = duration / steps.length;
+      return steps.map((s, i) => ({ label: s, time: i * stepDuration, precise: false }));
+    }
+    return [];
+  }, [runEvents, run.test_plan, duration]);
+
   if (!run.video_url || run.video_status === "none") {
     return (
       <EmptyState
@@ -317,6 +464,10 @@ function VideoPlayer({ run, events: runEvents }: { run: TestRun; events: RunEven
     );
   }
 
+  const videoSrc = run.video_url?.startsWith("http") ? run.video_url : `${API}${run.video_url}`;
+  const hasFailure = run.run_result && run.run_result.failed > 0;
+  const failureAt = run.video_failure_marker_at || 0;
+
   if (run.video_status === "failed") {
     return (
       <EmptyState
@@ -327,31 +478,6 @@ function VideoPlayer({ run, events: runEvents }: { run: TestRun; events: RunEven
     );
   }
 
-  const videoSrc = run.video_url.startsWith("http") ? run.video_url : `${API}${run.video_url}`;
-  const hasFailure = run.run_result && run.run_result.failed > 0;
-  const failureAt = run.video_failure_marker_at || 0;
-  const duration = run.video_duration || 0;
-
-  // Use precise step timestamps from events if available, otherwise approximate
-  const stepMarkers = React.useMemo(() => {
-    // Try precise timestamps from step_started events
-    const preciseMarkers = runEvents
-      .filter((e) => e.type === "step_started" && e.metadata?.timestamp_ms)
-      .map((e) => ({
-        label: e.metadata?.step || e.message,
-        time: parseInt(e.metadata!.timestamp_ms!) / 1000,
-        precise: true,
-      }));
-
-    if (preciseMarkers.length > 0) return preciseMarkers;
-
-    // Fallback: approximate from test plan
-    const steps = run.test_plan?.scenarios?.flatMap((s) => s.steps) || [];
-    if (duration > 0 && steps.length > 0) {
-      return steps.map((step, i) => ({ label: step, time: (duration / (steps.length + 1)) * (i + 1), precise: false }));
-    }
-    return [];
-  }, [runEvents, run.test_plan, duration]);
 
   const seekTo = (time: number) => {
     if (videoRef.current) {

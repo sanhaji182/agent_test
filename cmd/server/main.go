@@ -7,12 +7,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/go-go-golems/gotest-agent/internal/agent"
 	"github.com/go-go-golems/gotest-agent/internal/api"
 	"github.com/go-go-golems/gotest-agent/internal/config"
 	"github.com/go-go-golems/gotest-agent/internal/db"
-	"github.com/go-go-golems/gotest-agent/internal/schedule"
-	"github.com/google/uuid"
 )
 
 func main() {
@@ -20,6 +17,7 @@ func main() {
 	ctx := context.Background()
 
 	var store db.RunStore
+	var settingsStore *db.SettingsStore
 
 	if cfg.DatabaseURL != "" {
 		pgStore, err := db.NewStore(ctx, cfg.DatabaseURL)
@@ -32,15 +30,16 @@ func main() {
 				slog.Warn("migrations failed", "error", err)
 			}
 			store = pgStore
+			settingsStore = db.NewSettingsStore(pgStore.Pool())
 		}
 	} else {
 		store = db.NewMemoryStore()
 	}
 
-	srv := api.NewServer(cfg, store)
+	srv := api.NewServer(cfg, store, settingsStore)
 
 	// Background scheduler: polls due schedules every 60s and enqueues runs
-	go runScheduler(srv.Schedules(), store)
+	go runScheduler(srv)
 
 	addr := ":" + cfg.AppPort
 	slog.Info("starting server", "addr", addr)
@@ -50,7 +49,7 @@ func main() {
 	}
 }
 
-func runScheduler(schedStore *schedule.Store, runStore db.RunStore) {
+func runScheduler(srv *api.Server) {
 	slog.Info("scheduler started", "interval", "60s")
 	for {
 		func() {
@@ -59,46 +58,11 @@ func runScheduler(schedStore *schedule.Store, runStore db.RunStore) {
 					slog.Error("scheduler panic recovered", "error", r)
 				}
 			}()
-			processDueSchedules(schedStore, runStore)
+			processed := srv.ProcessDueSchedules(context.Background(), time.Now())
+			if processed > 0 {
+				slog.Info("scheduler: processed due schedules", "count", processed)
+			}
 		}()
 		time.Sleep(60 * time.Second)
-	}
-}
-
-func processDueSchedules(schedStore *schedule.Store, runStore db.RunStore) {
-	now := time.Now()
-	due := schedStore.GetDue(now)
-	if len(due) == 0 {
-		return
-	}
-
-	slog.Info("scheduler: found due schedules", "count", len(due))
-	ctx := context.Background()
-
-	for _, sch := range due {
-		run := &agent.TestRun{
-			ID:           uuid.New().String(),
-			ProjectPath:  sch.ProjectPath,
-			Requirements: sch.Requirements,
-			Mode:         sch.Mode,
-			State:        agent.StateIdle,
-			CreatedAt:    now,
-			UpdatedAt:    now,
-		}
-
-		if err := runStore.CreateRun(ctx, run); err != nil {
-			slog.Error("scheduler: failed to create run", "schedule", sch.Name, "error", err)
-			continue
-		}
-
-		// Update schedule with last run info and compute next run
-		schedStore.Update(sch.ID, func(s *schedule.Schedule) {
-			s.LastRunAt = &now
-			s.LastRunID = run.ID
-			s.LastRunStatus = string(run.State)
-			s.NextRunAt = schedule.CalcNextRun(s.Frequency, s.CronExpr, now)
-		})
-
-		slog.Info("scheduler: enqueued run", "schedule", sch.Name, "run_id", run.ID, "next_run", schedule.CalcNextRun(sch.Frequency, sch.CronExpr, now).Format(time.RFC3339))
 	}
 }

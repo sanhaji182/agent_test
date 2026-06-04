@@ -19,13 +19,13 @@ func TestHealthEndpoint(t *testing.T) {
 }
 
 func TestAPIKeyAuth_NoKey(t *testing.T) {
-	srv := api.NewServer(&config.Config{APIKey: "secret"}, db.NewMemoryStore())
+	srv := api.NewServer(&config.Config{APIKey: "secret"}, db.NewMemoryStore(), nil)
 	w := get(srv, "/api/v1/runs")
 	assertStatus(t, w, 401)
 }
 
 func TestAPIKeyAuth_ValidKey(t *testing.T) {
-	srv := api.NewServer(&config.Config{APIKey: "secret"}, db.NewMemoryStore())
+	srv := api.NewServer(&config.Config{APIKey: "secret"}, db.NewMemoryStore(), nil)
 	req := httptest.NewRequest("GET", "/api/v1/runs", nil)
 	req.Header.Set("X-Api-Key", "secret")
 	w := httptest.NewRecorder()
@@ -47,6 +47,40 @@ func TestCreateAndGetRun(t *testing.T) {
 
 	w = get(srv, "/api/v1/runs/"+runID)
 	assertStatus(t, w, 200)
+}
+
+func TestCreateRun_WithTestSpriteMetadata(t *testing.T) {
+	srv := newTestServer()
+	body := `{
+		"project_path":"https://app.example.com",
+		"requirements":"test login and checkout",
+		"test_type":"ui",
+		"prd":"Feature: Login\nUse case: Returning users can sign in\nFeature: Checkout\nUse case: Buyers can pay",
+		"auth_type":"login",
+		"credentials":"use seeded test account",
+		"focus_hints":"checkout happy path",
+		"skip_hints":"do not submit real payment"
+	}`
+	w := post(srv, "/api/v1/runs", body)
+	assertStatus(t, w, 202)
+
+	var resp map[string]string
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	w = get(srv, "/api/v1/runs/"+resp["run_id"])
+	assertStatus(t, w, 200)
+
+	var run map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&run)
+	if run["test_type"] != "ui" {
+		t.Fatalf("expected test_type=ui, got %v", run["test_type"])
+	}
+	if run["auth_type"] != "login" {
+		t.Fatalf("expected auth_type=login, got %v", run["auth_type"])
+	}
+	if run["feature_map"] == nil {
+		t.Fatal("expected feature_map")
+	}
 }
 
 func TestListRuns(t *testing.T) {
@@ -74,6 +108,22 @@ func TestReport_NotFound(t *testing.T) {
 	srv := newTestServer()
 	w := get(srv, "/api/v1/runs/nonexistent/report")
 	assertStatus(t, w, 404)
+}
+
+func TestAnalyzeFailure(t *testing.T) {
+	srv := newTestServer()
+	w := post(srv, "/api/v1/runs", `{"project_path":"/tmp/app","requirements":"checkout failure"}`)
+	assertStatus(t, w, 202)
+	var cr map[string]string
+	json.NewDecoder(w.Body).Decode(&cr)
+
+	w = postNoBody(srv, "/api/v1/runs/"+cr["run_id"]+"/analyze-failure")
+	assertStatus(t, w, 200)
+	var analysis map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&analysis)
+	if analysis["run_id"] != cr["run_id"] || analysis["summary"] == "" || analysis["next_action"] == "" {
+		t.Fatalf("expected failure analysis payload, got %v", analysis)
+	}
 }
 
 func TestRerun(t *testing.T) {
@@ -212,7 +262,7 @@ func TestVisualArtifacts_Empty(t *testing.T) {
 // --- Helpers ---
 
 func newTestServer() *api.Server {
-	return api.NewServer(&config.Config{}, db.NewMemoryStore())
+	return api.NewServer(&config.Config{}, db.NewMemoryStore(), nil)
 }
 
 func get(srv *api.Server, path string) *httptest.ResponseRecorder {

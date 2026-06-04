@@ -41,9 +41,15 @@ func (s *Store) Add(a Artifact) *Artifact {
 	if a.CreatedAt.IsZero() {
 		a.CreatedAt = time.Now()
 	}
-	// Hitung similarity score deterministik jika kedua URL tersedia
+	// Hitung similarity score menggunakan perbandingan pixel nyata jika file lokal tersedia
 	if a.BaselineURL != "" && a.CurrentURL != "" && a.SimilarityScore == 0 {
-		a.SimilarityScore = deterministicScore(a.BaselineURL, a.CurrentURL)
+		// Asumsikan URL adalah local path
+		sim, err := CompareImages(a.BaselineURL, a.CurrentURL, a.DiffURL)
+		if err == nil {
+			a.SimilarityScore = sim
+		} else {
+			a.SimilarityScore = deterministicScore(a.BaselineURL, a.CurrentURL)
+		}
 		a.Passed = a.SimilarityScore >= 0.95
 	}
 	s.artifacts = append(s.artifacts, a)
