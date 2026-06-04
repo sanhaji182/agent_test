@@ -1,6 +1,14 @@
 # GoTest Agent
 
-Self-hosted AI testing agent that reads your codebase, generates tests, executes them, and auto-fixes failures — all from your IDE or a web dashboard.
+[![Built by AI](https://img.shields.io/badge/Built_by-AI-blueviolet?style=for-the-badge)](https://github.com/sanhaji182)
+[![Created by sanhaji182](https://img.shields.io/badge/Creator-sanhaji182-blue?style=for-the-badge&logo=github)](https://github.com/sanhaji182)
+
+Self-hosted AI testing agent that reads your codebase, generates tests, executes them, and auto-fixes failures — all from your IDE or a web dashboard. 
+
+> **About the Creator**  
+> This project was envisioned, architected, and built under the direction of **[sanhaji182](https://github.com/sanhaji182)** — a passionate software engineer and AI enthusiast pushing the boundaries of what AI-assisted development can achieve. The codebase itself was largely written by an AI agent acting as an autonomous software engineering partner, demonstrating the power of human-AI collaboration in modern software development.
+
+---
 
 ## What it does
 
@@ -157,23 +165,6 @@ curl -X POST http://localhost:8080/api/v1/reviews/{id}/approve \
         └──────────┘ └─────────┘ └──────────────┘
 ```
 
-## API Reference
-
-See the full endpoint list at `GET /health` or browse the source in `internal/api/server.go`.
-
-Key endpoints:
-- `POST /api/v1/runs` — create test run
-- `GET /api/v1/runs/:id` — get run detail
-- `GET /api/v1/runs/:id/stream` — SSE live events
-- `GET /api/v1/runs/:id/events` — step-level events
-- `POST /api/v1/runs/:id/rerun` — rerun
-- `GET /api/v1/runs/:id/compare/:other` — compare
-- `GET /api/v1/metrics/risk` — risk scores
-- `GET /api/v1/metrics/recommendations` — suggestions
-- `POST /api/v1/schedules` — create schedule
-- `POST /api/v1/releases` — create release
-- `GET /api/v1/releases/:id/confidence` — confidence score
-
 ## Security Considerations
 
 This setup is optimized for **local development and demo**. For production deployment:
@@ -199,33 +190,13 @@ This setup is optimized for **local development and demo**. For production deplo
 - **Enable rate limiting** — Add rate limiting middleware to prevent API abuse (currently not implemented)
 - **Use Docker secrets** — For sensitive values, use Docker secrets or external secret managers instead of env vars
 - **Network isolation** — Consider running database/Redis on a private Docker network without host port exposure
-- **Steel Browser hardening** — The `SYS_ADMIN` capability is required for headless Chrome but increases attack surface. In production:
-  - Use a dedicated container runtime (gVisor, Firecracker)
-  - Apply seccomp profiles to restrict syscalls
-  - Monitor and limit concurrent sessions
 
-### 📋 Security Checklist
+## Credits
 
-Before deploying to production:
+Created with ❤️ by **[sanhaji182](https://github.com/sanhaji182)**  
+> Software Engineer | AI Enthusiast | Builder
 
-- [ ] Changed `POSTGRES_PASSWORD` from `password`
-- [ ] Set strong `JWT_SECRET` (32+ random characters)
-- [ ] Set strong `API_KEY` for backend authentication
-- [ ] Removed or restricted exposed ports (5432, 6379)
-- [ ] Configured reverse proxy with TLS (HTTPS)
-- [ ] Set `CORS_ALLOWED_ORIGINS` to specific domains
-- [ ] Reviewed and rotated all API keys (Anthropic, Steel, etc.)
-- [ ] Enabled database SSL (`sslmode=require` in `DATABASE_URL`)
-- [ ] Set up monitoring and logging for security events
-- [ ] Regular security updates for base images
-
-### 🔍 Automated Security Scanning
-
-This project uses [gitleaks](https://github.com/gitleaks/gitleaks) to prevent accidental secret commits. See `.github/workflows/security.yml` for CI configuration.
-
-### 🐛 Reporting Vulnerabilities
-
-If you discover a security vulnerability, please email [security@yourdomain.com] instead of opening a public issue.
+*"Empowering developers through autonomous AI tooling."*
 
 ## License
 
