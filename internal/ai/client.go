@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -48,7 +49,8 @@ func New(cfg Config) Client {
 		if cfg.APIKey == "" && provider != "ollama" && provider != "local" {
 			return nil
 		}
-		return &OpenAICompatibleClient{cfg: cfg, http: http.DefaultClient}
+		// Bounded client: a hung LLM endpoint must not pin callers forever.
+		return &OpenAICompatibleClient{cfg: cfg, http: &http.Client{Timeout: 2 * time.Minute}}
 	default:
 		return nil
 	}

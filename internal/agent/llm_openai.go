@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // OpenAILLM implements the LLM interface using the OpenAI-compatible REST API
@@ -30,7 +31,9 @@ func NewOpenAILLM(apiKey, model, baseURL string) *OpenAILLM {
 		apiKey:  apiKey,
 		model:   model,
 		baseURL: baseURL,
-		client:  &http.Client{},
+		// LLM completions can be slow (large prompts, reasoning models), but a
+		// hung connection must not pin a run goroutine forever.
+		client: &http.Client{Timeout: 2 * time.Minute},
 	}
 }
 
