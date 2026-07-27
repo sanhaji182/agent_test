@@ -71,6 +71,9 @@ func main() {
 	defer cancel()
 	go runScheduler(ctx, srv)
 
+	// Failure notifier: records notifications (+ schedule webhooks) on run_failed
+	go srv.StartFailureNotifier(ctx)
+
 	addr := ":" + cfg.AppPort
 	slog.Info("starting server", "addr", addr)
 	hs := &http.Server{
