@@ -3,12 +3,18 @@ import httpx
 
 
 GOTEST_API_URL = os.getenv("GOTEST_API_URL", "http://app:8080")
-GOTEST_API_KEY = os.getenv("GOTEST_API_KEY", "")
+# Internal API key for backend calls. Both sidecar and backend run on the same
+# internal Docker network (sidecar has no public port — ADR-005 Phase 3).
+# This is the same API_KEY used by CLI/API clients; scoped service tokens
+# will replace it in the future per ADR-005 Phase 3.
+API_KEY = os.getenv("API_KEY", "")
 
 
 def executor_node(state: dict) -> dict:
     """Trigger test execution via Go API and return results."""
-    headers = {"X-Api-Key": GOTEST_API_KEY} if GOTEST_API_KEY else {}
+    headers = {}
+    if API_KEY:
+        headers["X-Api-Key"] = API_KEY
 
     try:
         resp = httpx.post(
