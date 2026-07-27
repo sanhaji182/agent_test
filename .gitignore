@@ -71,3 +71,7 @@ logs/
 
 # Documents
 planning/
+
+# Claude Code / OMC
+.claude/
+.omc/

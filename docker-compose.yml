@@ -55,14 +55,15 @@ services:
       retries: 3
 
   # --- PostgreSQL ---
+  # No public port — internal Docker network only (AUDIT SEC-03).
+  # Use docker-compose exec postgres psql for direct access.
   postgres:
     image: postgres:16.14-alpine
     environment:
       POSTGRES_DB: gotest_agent
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
-    ports:
-      - "5432:5432"
+    ports: []
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
@@ -74,10 +75,11 @@ services:
       retries: 5
 
   # --- Redis ---
+  # No public port — internal Docker network only (AUDIT SEC-03/D3).
+  # The async job queue is not yet wired to cmd/server.
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    ports: []
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -86,9 +88,10 @@ services:
       start_period: 3s
       retries: 3
 
-  # --- Steel Browser (self-hosted) ---
+  # --- Steel Browser (self-hosted, EXPERIMENTAL) ---
   steel-browser:
     image: ghcr.io/steel-dev/steel-browser:latest
+    # Internal-only: remove port mapping in production (AUDIT SEC-03/D3)
     ports:
       - "3010:3000"
     environment:
@@ -109,17 +112,17 @@ services:
       start_period: 15s
       retries: 3
 
-  # --- LangGraph Python Sidecar ---
+  # --- LangGraph Python Sidecar (internal network only — see ADR-005 Phase 3)
   langgraph-sidecar:
     build:
       context: ./sidecar
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
+    # No public port — internal Docker network only. Backend communicates via internal DNS.
     environment:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       GOTEST_API_URL: "http://backend:8080"
-      GOTEST_API_KEY: "${API_KEY:-}"
+      API_KEY: "${API_KEY:-}"
+      SIDECAR_AUTH_TOKEN: "${SIDECAR_AUTH_TOKEN:-}"
     depends_on:
       backend:
         condition: service_healthy

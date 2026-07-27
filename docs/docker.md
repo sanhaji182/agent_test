@@ -29,7 +29,7 @@ make smoke-test
 | frontend | 3001 | Next.js dashboard |
 | postgres | 5432 | PostgreSQL database |
 | redis | 6379 | Job queue (Asynq) |
-| steel-browser | 3000 | Headless browser for Playwright |
+| steel-browser | 3010 | Headless browser for Playwright (container port 3000) |
 | langgraph-sidecar | 8000 | Python multi-agent orchestrator |
 
 ## Commands
@@ -63,7 +63,9 @@ All services communicate via the default Docker Compose network using service na
 | `ANTHROPIC_API_KEY` | Yes (for LLM) | Anthropic API key |
 | `LLM_MODEL` | No | Model name (default: claude-sonnet-4-5) |
 | `STEEL_API_KEY` | No | Steel Browser auth key |
-| `API_KEY` | No | Backend API key (empty = no auth) |
+| `API_KEY` | No | API authentication key (required in production when APP_ENV ≠ development) |
+| `APP_ENV` | No | Environment: "development" (default) or "production". Production requires API_KEY. |
+| `GITHUB_WEBHOOK_SECRET` | No | Shared secret for GitHub webhook verification (falls back to API_KEY) |
 
 ## Health Checks
 
