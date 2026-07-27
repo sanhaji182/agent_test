@@ -40,9 +40,9 @@
 - **Database migrations:** None
 - **Deployment steps:** None (behavior identical for static tokens; now also picks up rotated tokens without restart)
 - **Documentation updated:** this entry
-- **Verification completed:** pip deps installed via `--break-system-packages`. `python3 -m pytest sidecar/tests/` — 3/13 passed before fix, remaining 10 were 401s from the import-time capture. Post-fix re-run BLOCKED by intermittent shell-classifier outage (`ds temporarily unavailable`); a recurring retry is scheduled to confirm 13/13 and finalize. Health + status-shape + validation tests already green.
-- **Facts added/removed or confidence changed:** sidecar auth now rotation-safe.
-- **Open unknowns:** final 13/13 pytest confirmation pending classifier recovery.
+- **Verification completed:** pip deps installed via `--break-system-packages`. `python3 -m pytest sidecar/tests/` — 3/13 passed before fix, remaining 10 were 401s from the import-time capture. Post-fix re-run (2026-07-28): **13 passed, 0 failed** in 0.54s — auth, run-endpoint, status-endpoint, and health tests all green. One benign StarletteDeprecationWarning (httpx testclient) noted.
+- **Facts added/removed or confidence changed:** sidecar auth now rotation-safe; sidecar test suite fully green (13/13).
+- **Open unknowns:** none for this change.
 - **Related ADRs/TODOs:** sidecar EXPERIMENTAL tag; deferred test-execution item.
 
 ## 2026-07-27 — LLM timeouts, failure notifier (UW-6), race fixes, debt cleanup
