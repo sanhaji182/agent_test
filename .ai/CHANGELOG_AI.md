@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-27 — LLM timeouts, failure notifier (UW-6), race fixes, debt cleanup
+
+- **Task:** Continue engineering improvement: LLM HTTP timeouts, wire failure notifications, fix data races surfaced by `-race`, update stale debt entries.
+- **Source revision before change:** 1276fda
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/agent/llm_openai.go`, `internal/ai/client.go` (2-min timeouts); new `internal/api/failure_notifier.go` + test; `cmd/server/main.go` (notifier goroutine); `internal/db/memory.go` (cloneRun snapshot semantics); `internal/api/handlers_{runs,planning,schedules}.go` (pre-launch response snapshots); `.ai/TECHNICAL_DEBT.md` (UW-1, UW-6, LF-1, DC-1, DC-2, DC-4 resolved; DC-3 relocated); `PROJECT_STATE.md`.
+- **Summary:** (1) OpenAI-compatible clients previously had no HTTP timeout — a hung endpoint pinned run goroutines forever; now 2 minutes. (2) `notify.TriggerFailure` gains its production caller: `StartFailureNotifier` subscribes to the global event stream and fires notifications + schedule webhooks on `run_failed`. (3) `go test -race` exposed that MemoryStore shared live `*TestRun` pointers with the execution goroutine; MemoryStore now clones on read/write, and handlers snapshot response fields before `launchRun`.
+- **Reason:** PROJECT_STATE deferred item (timeouts); TECHNICAL_DEBT UW-6 HIGH; race-safety is a production-grade requirement.
+- **Risk:** Medium (MemoryStore semantics change from shared-pointer to snapshot — this matches DBStore semantics, and full suite passes)
+- **Breaking changes:** None (MemoryStore callers already treated results as snapshots in DB mode)
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** TECHNICAL_DEBT.md, PROJECT_STATE.md
+- **Verification completed:** `go build ./...` clean; `go test ./internal/... -race` all pass (previously 10+ race failures); `gofmt` clean; failure-notifier tests 2/2 PASS.
+- **Facts added/removed or confidence changed:** MemoryStore now snapshot-semantics (was shared-pointer); notify package no longer unwired.
+- **Open unknowns:** npm audit fix / sidecar pytest / govulncheck still classifier-blocked.
+- **Related ADRs/TODOs:** ADR-001, TECHNICAL_DEBT UW-6/DC-2.
+
 ## 2026-07-27 — Commit batch, server.go domain split, Launch lifecycle tests, optional Redis/Asynq queue
 
 - **Task:** Execute all recommended next actions: (1) commit the verified working tree as 7 atomic commits, (2) split `internal/api/server.go` into domain handler files, (3) add `Agent.Launch()` lifecycle integration tests, (4) wire optional Redis/Asynq durable run queue behind `QUEUE_ENABLED`.

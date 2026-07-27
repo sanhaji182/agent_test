@@ -19,10 +19,10 @@
 
 | ID | Location | Description | Severity | Evidence |
 |---|---|---|---|---|
-| DC-1 | `internal/api/server.go:1955-2049` | `simulateMockRun` — 95-line mock execution simulator with no call site found | MEDIUM | Full text search of `cmd/` and `internal/` found no `simulateMockRun` caller |
-| DC-2 | `internal/api/server.go:2508-2510` | `handleDeleteRun` returns 204 without deleting anything | HIGH | Returns `StatusNoContent`; `RunStore` has no delete method |
-| DC-3 | `internal/api/server.go:2275-2295` | API logs endpoint returns an explicit empty placeholder | MEDIUM | `json.NewEncoder(w).Encode(map[string]interface{}{"logs": []interface{}{}})` |
-| DC-4 | `internal/auth/auth.go:21-95` | Full JWT implementation with zero production route usage | MEDIUM | `cmd/server` and `internal/api` do not construct or import `auth.New`/`Auth.Middleware`/`GetClaims` |
+| DC-1 | `internal/api/server.go` | ~~`simulateMockRun`~~ ✅ Resolved: function removed from codebase (grep 2026-07-27 finds no definition or caller) | ✅ Resolved | — |
+| DC-2 | `internal/api/handlers_runs.go` | ~~`handleDeleteRun` returns 204 without deleting~~ ✅ Resolved: now calls `s.store.DeleteRun` (implemented in both MemoryStore and DBStore) | ✅ Resolved | `internal/db/memory.go:84`, `internal/db/store.go:47` |
+| DC-3 | `internal/api/handlers_runs.go:726-746` (`handleGetAPILogs`) | API logs endpoint returns an explicit empty placeholder | MEDIUM | `json.NewEncoder(w).Encode(map[string]interface{}{"logs": []interface{}{}})` |
+| DC-4 | `internal/auth/auth.go` | ~~JWT with zero production usage~~ ✅ Resolved: `api.NewServer` constructs `auth.New`; JWT cookie auth used by `handleLogin`/`apiKeyAuth` | ✅ Resolved | `internal/api/server.go` (jwtAuth field), `internal/api/handlers_auth.go` |
 | DC-5 | `frontend/src/lib/api.ts` | ~10 exported functions with no frontend call sites (updateProject, uploadApiDocs, updateTestCase, etc.) | LOW | See `DEPENDENCIES.md`; removal requires confirm no planned usage |
 
 ## Unwired Implementations
@@ -36,7 +36,7 @@ These packages have implementation code but no connection from the running serve
 | UW-3 | `internal/agent/sidecar.go` | `SidecarClient` exists; no server construction | MEDIUM | `cmd/server/main.go` does not construct `SidecarClient` |
 | UW-4 | `internal/vision/client.go` | Vision analysis client exists; no wiring | LOW | No construction in either executable |
 | UW-5 | `internal/evals/braintrust.go` | Evaluation logger exists; no instantiation | LOW | `internal/evals/braintrust.go:35-43,86-115` |
-| UW-6 | `internal/notify/store.go` | Notification delivery code exists; `TriggerFailure` has no production caller | HIGH | Full call-site sweep confirmed absence |
+| UW-6 | `internal/notify/store.go` | ✅ Resolved (2026-07-27): `Server.StartFailureNotifier` (global event subscription) calls `TriggerFailure` on `run_failed`; wired in `cmd/server` | ✅ Resolved | `internal/api/failure_notifier.go` |
 
 ## Large Files and Functions
 
