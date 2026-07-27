@@ -8,7 +8,9 @@ import os
 import uuid
 from unittest.mock import patch, MagicMock
 
-os.environ.setdefault("SIDECAR_AUTH_TOKEN", "test-token")
+# Default to development mode (no auth) for endpoint tests; auth tests
+# patch SIDECAR_AUTH_TOKEN explicitly per-case.
+os.environ["SIDECAR_AUTH_TOKEN"] = ""
 
 from fastapi.testclient import TestClient
 from main import app, jobs, RunRequest, RunResponse

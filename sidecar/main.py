@@ -21,7 +21,8 @@ jobs: dict[str, dict] = {}
 # Internal service auth — shared token between backend and sidecar.
 # This replaces the previous GOTEST_API_KEY pattern which passed the
 # user-facing API key across an unauthenticated boundary.
-SIDECAR_AUTH_TOKEN = os.getenv("SIDECAR_AUTH_TOKEN", "")
+# Read at request time (not import time) so token rotation and tests
+# that patch the environment behave correctly.
 
 
 class RunRequest(BaseModel):
@@ -40,9 +41,10 @@ class RunResponse(BaseModel):
 def verify_auth(x_auth_token: Optional[str] = Header(None)) -> None:
     """Validate internal service token. If SIDECAR_AUTH_TOKEN is unset,
     the sidecar is running in development mode and auth is optional."""
-    if not SIDECAR_AUTH_TOKEN:
+    expected = os.getenv("SIDECAR_AUTH_TOKEN", "")
+    if not expected:
         return  # Development mode — no auth required
-    if not x_auth_token or x_auth_token != SIDECAR_AUTH_TOKEN:
+    if not x_auth_token or x_auth_token != expected:
         raise HTTPException(status_code=401, detail="unauthorized")
 
 
