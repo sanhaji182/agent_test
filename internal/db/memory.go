@@ -30,11 +30,40 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{runs: make(map[string]*agent.TestRun)}
 }
 
+// cloneRun returns a deep-enough copy of a run so readers never share mutable
+// state with the execution goroutine (matches DB-store snapshot semantics).
+// Scalars are copied by value; mutated slices (Screenshots, TestFiles) and the
+// RunResult (whose Failures are patched by screenshot capture) are duplicated.
+func cloneRun(run *agent.TestRun) *agent.TestRun {
+	if run == nil {
+		return nil
+	}
+	c := *run
+	if run.Screenshots != nil {
+		c.Screenshots = append([]string(nil), run.Screenshots...)
+	}
+	if run.TestFiles != nil {
+		c.TestFiles = append([]agent.TestFile(nil), run.TestFiles...)
+	}
+	if run.RunResult != nil {
+		rr := *run.RunResult
+		if run.RunResult.Failures != nil {
+			rr.Failures = append([]agent.Failure(nil), run.RunResult.Failures...)
+		}
+		c.RunResult = &rr
+	}
+	if run.FinishedAt != nil {
+		t := *run.FinishedAt
+		c.FinishedAt = &t
+	}
+	return &c
+}
+
 // CreateRun menyimpan run baru ke memori
 func (m *MemoryStore) CreateRun(_ context.Context, run *agent.TestRun) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.runs[run.ID] = run
+	m.runs[run.ID] = cloneRun(run)
 	m.order = append([]string{run.ID}, m.order...) // Terbaru di depan
 	return nil
 }
@@ -43,7 +72,7 @@ func (m *MemoryStore) CreateRun(_ context.Context, run *agent.TestRun) error {
 func (m *MemoryStore) UpdateRun(_ context.Context, run *agent.TestRun) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.runs[run.ID] = run
+	m.runs[run.ID] = cloneRun(run)
 	return nil
 }
 
@@ -55,7 +84,7 @@ func (m *MemoryStore) GetRun(_ context.Context, id string) (*agent.TestRun, erro
 	if !ok {
 		return nil, ErrNotFound
 	}
-	return run, nil
+	return cloneRun(run), nil
 }
 
 // ListRuns menampilkan daftar run dengan pagination
@@ -74,7 +103,7 @@ func (m *MemoryStore) ListRuns(_ context.Context, limit, offset int) ([]*agent.T
 	var result []*agent.TestRun
 	for _, id := range m.order[offset:end] {
 		if run, ok := m.runs[id]; ok {
-			result = append(result, run)
+			result = append(result, cloneRun(run))
 		}
 	}
 	return result, nil

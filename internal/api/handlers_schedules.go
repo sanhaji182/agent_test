@@ -178,11 +178,13 @@ func (s *Server) handleRunNow(w http.ResponseWriter, r *http.Request) {
 	})
 	// Trigger async execution — matches handleCreateRun and webhook paths
 	s.events.Emit(run.ID, "run_started", "idle", "Run created via schedule run-now", map[string]string{"project": sch.ProjectPath, "mode": sch.Mode, "schedule_id": id})
+	// Snapshot response fields BEFORE launching (run is mutated async after launch).
+	resp := map[string]string{"run_id": run.ID, "state": string(run.State)}
 	s.launchRun(run)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]string{"run_id": run.ID, "state": string(run.State)})
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) ProcessDueSchedules(ctx context.Context, now time.Time) int {

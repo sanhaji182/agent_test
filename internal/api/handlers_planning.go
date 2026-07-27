@@ -762,8 +762,11 @@ func (s *Server) startTestCaseRun(ctx context.Context, tc *planning.TestCase, te
 	if err := s.store.CreateRun(ctx, run); err != nil {
 		return nil, err
 	}
+	// Snapshot BEFORE launching: the goroutine mutates run, and callers read
+	// ID/State from the returned value (race otherwise).
+	snapshot := *run
 	go s.executeApprovedTestCaseRun(run, tc)
-	return run, nil
+	return &snapshot, nil
 }
 
 func (s *Server) executeApprovedTestCaseRun(run *agent.TestRun, tc *planning.TestCase) {

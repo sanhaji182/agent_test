@@ -65,12 +65,16 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 	// Audit: run created
 	s.events.Emit(run.ID, "run_started", "idle", "Run created via API", map[string]string{"project": req.ProjectPath, "mode": mode})
 
+	// Snapshot response fields BEFORE launching: the run object is mutated by
+	// the execution goroutine after launchRun returns (race otherwise).
+	resp := map[string]string{"run_id": run.ID, "state": string(run.State), "created_at": run.CreatedAt.Format(time.RFC3339)}
+
 	// Start async real execution
 	s.launchRun(run)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]string{"run_id": run.ID, "state": string(run.State), "created_at": run.CreatedAt.Format(time.RFC3339)})
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) deriveFeatureMap(ctx context.Context, prd, requirements string) *agent.FeatureMap {
@@ -636,12 +640,15 @@ func (s *Server) handleRerun(w http.ResponseWriter, r *http.Request) {
 	// Audit: run created for rerun
 	s.events.Emit(run.ID, "run_started", "idle", "Rerun triggered via API", map[string]string{"project": run.ProjectPath, "mode": run.Mode})
 
+	// Snapshot response fields BEFORE launching (run is mutated async after launch).
+	resp := map[string]string{"run_id": run.ID, "state": string(run.State), "created_at": run.CreatedAt.Format(time.RFC3339)}
+
 	// Start async real execution
 	s.launchRun(run)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]string{"run_id": run.ID, "state": string(run.State), "created_at": run.CreatedAt.Format(time.RFC3339)})
+	json.NewEncoder(w).Encode(resp)
 }
 
 // handleSSEStream streams granular events + state changes via SSE
