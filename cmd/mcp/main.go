@@ -13,7 +13,11 @@ import (
 func main() {
 	cfg := config.Load()
 
-	llm := agent.NewAnthropicLLM(cfg.AnthropicAPIKey, cfg.LLMModel)
+	llm := agent.NewLLM(cfg.LLMProvider, cfg.LLMModel, cfg.AnthropicAPIKey, cfg.LLMBaseURL)
+	if llm == nil {
+		slog.Error("unsupported LLM provider", "provider", cfg.LLMProvider)
+		os.Exit(1)
+	}
 	r := runner.NewDockerRunner(cfg.TimeoutSeconds)
 	a := agent.New(llm, r, cfg.MaxFixAttempts)
 

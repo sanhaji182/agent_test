@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-go-golems/gotest-agent/internal/agent"
 	"github.com/go-go-golems/gotest-agent/internal/ai"
+	"github.com/go-go-golems/gotest-agent/internal/auth"
 	"github.com/go-go-golems/gotest-agent/internal/compare"
 	"github.com/go-go-golems/gotest-agent/internal/config"
 	"github.com/go-go-golems/gotest-agent/internal/db"
@@ -50,6 +51,8 @@ type Server struct {
 	notifs     *notify.Store
 	reviews    *workflow.ReviewStore
 	suites     *workflow.SuiteStore
+	jwtAuth    *auth.Auth
+	runSem     chan struct{} // concurrency cap for run goroutines (AUDIT S-01)
 }
 
 func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.SettingsStore) *Server {
@@ -59,14 +62,25 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 	r.Use(middleware.Recoverer)
 	r.Use(corsMiddleware)
 
+	evtStore := events.NewStore()
+
 	projectStore := project.Store(project.NewMemoryStore())
 	planningStore := planning.Store(planning.NewMemoryStore())
 	scheduleStore := schedule.Repository(schedule.NewStore())
 	if pgStore, ok := store.(*db.Store); ok {
-		projectStore = project.NewDBStore(pgStore.Pool())
-		planningStore = planning.NewDBStore(pgStore.Pool())
-		scheduleStore = schedule.NewDBStore(pgStore.Pool())
+		pool := pgStore.Pool()
+		projectStore = project.NewDBStore(pool)
+		planningStore = planning.NewDBStore(pool)
+		scheduleStore = schedule.NewDBStore(pool)
+		evtStore.EnableDB(pool) // ADR-003 Phase 1: persist events to PostgreSQL
 	}
+
+	// Init JWT auth for dashboard cookie authentication
+	jwtSecret := cfg.JWTSecret
+	if jwtSecret == "" {
+		jwtSecret = auth.GenerateJWTSecret()
+	}
+	jwtAuth := auth.New(jwtSecret)
 
 	s := &Server{
 		router:     r,
@@ -75,7 +89,7 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 		settings:   settingsStore,
 		projects:   projectStore,
 		planning:   planningStore,
-		events:     events.NewStore(),
+		events:     evtStore,
 		recordings: recordings.NewStore(),
 		visuals:    visual.NewStore(),
 		schedules:  scheduleStore,
@@ -83,6 +97,8 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 		notifs:     notify.NewStore(),
 		reviews:    workflow.NewReviewStore(),
 		suites:     workflow.NewSuiteStore(),
+		jwtAuth:    jwtAuth,
+		runSem:     make(chan struct{}, cfg.MaxConcurrentRuns),
 	}
 	s.routes()
 	return s
@@ -121,17 +137,62 @@ func isValidID(id string) bool {
 	return true
 }
 
+// --- HTTP response helpers ---
+
+type errorResponse struct {
+	Error string `json:"error"`
+}
+
+func writeJSON(w http.ResponseWriter, code int, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(v)
+}
+
+func writeJSONError(w http.ResponseWriter, code int, message string) {
+	writeJSON(w, code, errorResponse{Error: message})
+}
+
+// bodyLimitMiddleware restricts request body size to maxBytes. 1 MiB default.
+func bodyLimitMiddleware(maxBytes int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// safeString extracts a string from map[string]interface{}, returns false on type mismatch.
+func safeString(patch map[string]interface{}, key string) (string, bool) {
+	v, ok := patch[key]
+	if !ok {
+		return "", false
+	}
+	s, ok := v.(string)
+	return s, ok
+}
+
+// safeBool extracts a bool from map[string]interface{}, returns false on type mismatch.
+func safeBool(patch map[string]interface{}, key string) (bool, bool) {
+	v, ok := patch[key]
+	if !ok {
+		return false, false
+	}
+	b, ok := v.(bool)
+	return b, ok
+}
+
 func (s *Server) routes() {
 	s.router.Get("/health", s.handleHealth)
 
-	// Serve recorded videos
-	s.router.Get("/videos/{filename}", func(w http.ResponseWriter, r *http.Request) {
-		filename := chi.URLParam(r, "filename")
-		http.ServeFile(w, r, filepath.Join("/tmp/agent_test/videos", filename))
-	})
+	// Auth: login endpoint outside API key auth — login is how you get the JWT
+	s.router.Post("/api/v1/auth/login", s.handleLogin)
+	s.router.Post("/api/v1/auth/logout", s.handleLogout)
 
 	s.router.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.apiKeyAuth)
+		r.Use(bodyLimitMiddleware(1 << 20)) // 1 MiB body limit
 		// Projects
 		r.Post("/projects", s.handleCreateProject)
 		r.Get("/projects", s.handleListProjects)
@@ -234,7 +295,11 @@ func (s *Server) routes() {
 		r.Get("/releases/{id}/confidence/export", s.handleExportConfidence)
 	})
 
-	wh := webhook.NewGitHubHandler(s.cfg.APIKey, func(event webhook.PushEvent) {
+	webhookSecret := s.cfg.GitHubWebhookSecret
+	if webhookSecret == "" {
+		webhookSecret = s.cfg.APIKey // fallback: existing deployments that only set API_KEY
+	}
+	wh := webhook.NewGitHubHandler(webhookSecret, func(event webhook.PushEvent) {
 		// Auto-trigger test run on github push event
 		run := &agent.TestRun{
 			ID:           uuid.New().String(),
@@ -250,7 +315,7 @@ func (s *Server) routes() {
 			return
 		}
 		s.events.Emit(run.ID, "run_started", "idle", "Run auto-created via GitHub Webhook", map[string]string{"project": event.Repository.CloneURL, "mode": "simple"})
-		go s.executeRealRun(run)
+		s.launchRun(run)
 	})
 	s.router.Post("/api/v1/webhooks/github", wh.ServeHTTP)
 
@@ -273,16 +338,16 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	var p project.Project
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	if strings.TrimSpace(p.Name) == "" {
-		http.Error(w, "name is required", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "name is required")
 		return
 	}
 	p.FeatureMap = s.deriveFeatureMap(r.Context(), p.Spec, p.FocusHints)
 	if err := s.projects.Create(r.Context(), &p); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -293,42 +358,46 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	projects, err := s.projects.List(r.Context(), 100, 0)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	redacted := make([]*project.Project, len(projects))
+	for i, p := range projects {
+		redacted[i] = redactProject(p)
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(projects)
+	json.NewEncoder(w).Encode(redacted)
 }
 
 func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	p, err := s.projects.Get(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(p)
+	json.NewEncoder(w).Encode(redactProject(p))
 }
 
 func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	current, err := s.projects.Get(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	var patch project.Project
 	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	mergeProject(current, &patch)
@@ -336,7 +405,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		current.FeatureMap = s.deriveFeatureMap(r.Context(), current.Spec, current.FocusHints)
 	}
 	if err := s.projects.Update(r.Context(), current); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -346,24 +415,24 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUploadAPIDocs(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	var req struct {
 		APIDocs string `json:"api_docs"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	p, err := s.projects.Get(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	p.APIDocs = req.APIDocs
 	if err := s.projects.Update(r.Context(), p); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -373,16 +442,16 @@ func (s *Server) handleUploadAPIDocs(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleParseAPIDocs(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	p, err := s.projects.Get(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	if strings.TrimSpace(p.APIDocs) == "" {
-		http.Error(w, "api_docs is empty", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "api_docs is empty")
 		return
 	}
 
@@ -392,7 +461,7 @@ func (s *Server) handleParseAPIDocs(w http.ResponseWriter, r *http.Request) {
 		Cases:     s.parseAPIDocsWithAI(r.Context(), p),
 	}
 	if err := s.planning.CreateDraft(r.Context(), plan); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -403,17 +472,17 @@ func (s *Server) handleParseAPIDocs(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleExtractProjectFeatures(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	p, err := s.projects.Get(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	p.FeatureMap = s.deriveFeatureMap(r.Context(), p.Spec, p.FocusHints)
 	if err := s.projects.Update(r.Context(), p); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -459,12 +528,12 @@ func mergeProject(dst, src *project.Project) {
 func (s *Server) handleGenerateProjectTestPlan(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	p, err := s.projects.Get(r.Context(), id)
 	if err != nil {
-		http.Error(w, "project not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "project not found")
 		return
 	}
 	if p.FeatureMap == nil {
@@ -477,7 +546,7 @@ func (s *Server) handleGenerateProjectTestPlan(w http.ResponseWriter, r *http.Re
 		Cases:     s.generateDraftCases(r.Context(), p),
 	}
 	if err := s.planning.CreateDraft(r.Context(), plan); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -488,12 +557,12 @@ func (s *Server) handleGenerateProjectTestPlan(w http.ResponseWriter, r *http.Re
 func (s *Server) handleGetTestPlan(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	plan, err := s.planning.GetDraft(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -505,12 +574,12 @@ func (s *Server) handleUpdateTestPlanCase(w http.ResponseWriter, r *http.Request
 	caseID := chi.URLParam(r, "caseId")
 	plan, err := s.planning.GetDraft(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	var patch planning.DraftCase
 	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	updated := false
@@ -522,11 +591,11 @@ func (s *Server) handleUpdateTestPlanCase(w http.ResponseWriter, r *http.Request
 		}
 	}
 	if !updated {
-		http.Error(w, "case not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "case not found")
 		return
 	}
 	if err := s.planning.UpdateDraft(r.Context(), plan); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -537,25 +606,26 @@ func (s *Server) handleRegenerateTestPlan(w http.ResponseWriter, r *http.Request
 	id := chi.URLParam(r, "id")
 	plan, err := s.planning.GetDraft(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	p, err := s.projects.Get(r.Context(), plan.ProjectID)
 	if err != nil {
-		http.Error(w, "project not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "project not found")
 		return
 	}
 
 	newCases, err := s.generateDraftCasesWithAI(r.Context(), p)
 	if err != nil {
-		http.Error(w, "ai generation failed: "+err.Error(), http.StatusInternalServerError)
+		slog.Error("ai generation failed", "error", err, "project_id", p.ID)
+		writeJSONError(w, http.StatusInternalServerError, "ai generation failed")
 		return
 	}
 
 	// For MVP, overwrite the draft plan. A full diff/merge would be complex.
 	plan.Cases = newCases
 	if err := s.planning.UpdateDraft(r.Context(), plan); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 
@@ -567,7 +637,7 @@ func (s *Server) handleApproveTestPlan(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	plan, err := s.planning.GetDraft(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	var cases []*planning.TestCase
@@ -588,7 +658,7 @@ func (s *Server) handleApproveTestPlan(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	if err := s.planning.CreateTestCases(r.Context(), cases); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	plan.Status = "approved"
@@ -601,7 +671,7 @@ func (s *Server) handleListTestCases(w http.ResponseWriter, r *http.Request) {
 	projectID := r.URL.Query().Get("project_id")
 	cases, err := s.planning.ListTestCases(r.Context(), projectID)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -612,10 +682,10 @@ func (s *Server) handleUpdateTestCase(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	tc, err := s.planning.GetTestCase(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
-	
+
 	var payload struct {
 		Title      string   `json:"title"`
 		Priority   string   `json:"priority"`
@@ -624,7 +694,7 @@ func (s *Server) handleUpdateTestCase(w http.ResponseWriter, r *http.Request) {
 		Tags       []string `json:"tags"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "invalid payload", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid payload")
 		return
 	}
 
@@ -643,9 +713,9 @@ func (s *Server) handleUpdateTestCase(w http.ResponseWriter, r *http.Request) {
 	if payload.Tags != nil {
 		tc.Tags = payload.Tags
 	}
-	
+
 	if err := s.planning.UpdateTestCase(r.Context(), tc); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 
@@ -656,12 +726,12 @@ func (s *Server) handleUpdateTestCase(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetTestCase(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	tc, err := s.planning.GetTestCase(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -672,7 +742,7 @@ func (s *Server) handleTestCaseMaintenance(w http.ResponseWriter, r *http.Reques
 	projectID := r.URL.Query().Get("project_id")
 	cases, err := s.planning.ListTestCases(r.Context(), projectID)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	runs, _ := s.store.ListRuns(r.Context(), 1000, 0)
@@ -766,17 +836,17 @@ func (s *Server) handleTestCaseMaintenance(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleRunTestCase(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	tc, err := s.planning.GetTestCase(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	run, err := s.startTestCaseRun(r.Context(), tc, "")
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 
@@ -788,28 +858,28 @@ func (s *Server) handleRunTestCase(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRefineTestCase(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	var req struct {
 		Prompt string `json:"prompt"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	if strings.TrimSpace(req.Prompt) == "" {
-		http.Error(w, "prompt is required", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "prompt is required")
 		return
 	}
 	tc, err := s.planning.GetTestCase(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	proposal := s.buildChangeProposal(r.Context(), tc, req.Prompt)
 	if err := s.planning.CreateChangeProposal(r.Context(), proposal); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -820,12 +890,12 @@ func (s *Server) handleRefineTestCase(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListTestCaseProposals(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	proposals, err := s.planning.ListChangeProposals(r.Context(), id)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -835,12 +905,12 @@ func (s *Server) handleListTestCaseProposals(w http.ResponseWriter, r *http.Requ
 func (s *Server) handleListChangeProposals(w http.ResponseWriter, r *http.Request) {
 	testCaseID := r.URL.Query().Get("test_case_id")
 	if testCaseID != "" && !isValidID(testCaseID) {
-		http.Error(w, "invalid test_case_id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid test_case_id")
 		return
 	}
 	proposals, err := s.planning.ListChangeProposals(r.Context(), testCaseID)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -850,7 +920,7 @@ func (s *Server) handleListChangeProposals(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleApproveChangeProposal(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	var req struct {
@@ -860,16 +930,16 @@ func (s *Server) handleApproveChangeProposal(w http.ResponseWriter, r *http.Requ
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	proposal, err := s.planning.GetChangeProposal(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	if proposal.Status != "pending" {
-		http.Error(w, "proposal already reviewed", http.StatusConflict)
+		writeJSONError(w, http.StatusConflict, "proposal already reviewed")
 		return
 	}
 	current, err := s.planning.GetTestCase(r.Context(), proposal.TestCaseID)
 	if err != nil {
-		http.Error(w, "test case not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "test case not found")
 		return
 	}
 	next := proposal.Proposed
@@ -880,7 +950,7 @@ func (s *Server) handleApproveChangeProposal(w http.ResponseWriter, r *http.Requ
 	next.CreatedAt = current.CreatedAt
 	next.UpdatedAt = time.Now()
 	if err := s.planning.UpdateTestCase(r.Context(), &next); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	now := time.Now()
@@ -892,7 +962,7 @@ func (s *Server) handleApproveChangeProposal(w http.ResponseWriter, r *http.Requ
 		proposal.Reviewer = "self-hosted"
 	}
 	if err := s.planning.UpdateChangeProposal(r.Context(), proposal); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -902,7 +972,7 @@ func (s *Server) handleApproveChangeProposal(w http.ResponseWriter, r *http.Requ
 func (s *Server) handleRejectChangeProposal(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	var req struct {
@@ -912,11 +982,11 @@ func (s *Server) handleRejectChangeProposal(w http.ResponseWriter, r *http.Reque
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	proposal, err := s.planning.GetChangeProposal(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	if proposal.Status != "pending" {
-		http.Error(w, "proposal already reviewed", http.StatusConflict)
+		writeJSONError(w, http.StatusConflict, "proposal already reviewed")
 		return
 	}
 	now := time.Now()
@@ -928,7 +998,7 @@ func (s *Server) handleRejectChangeProposal(w http.ResponseWriter, r *http.Reque
 		proposal.Reviewer = "self-hosted"
 	}
 	if err := s.planning.UpdateChangeProposal(r.Context(), proposal); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -1045,19 +1115,19 @@ func normalizeStrings(items []string) []string {
 func (s *Server) handleCreateTestList(w http.ResponseWriter, r *http.Request) {
 	var list planning.TestList
 	if err := json.NewDecoder(r.Body).Decode(&list); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	if strings.TrimSpace(list.Name) == "" {
-		http.Error(w, "name is required", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "name is required")
 		return
 	}
 	if len(list.TestCaseIDs) == 0 {
-		http.Error(w, "test_case_ids is required", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "test_case_ids is required")
 		return
 	}
 	if err := s.planning.CreateTestList(r.Context(), &list); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -1069,7 +1139,7 @@ func (s *Server) handleListTestLists(w http.ResponseWriter, r *http.Request) {
 	projectID := r.URL.Query().Get("project_id")
 	lists, err := s.planning.ListTestLists(r.Context(), projectID)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -1079,12 +1149,12 @@ func (s *Server) handleListTestLists(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetTestList(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	list, err := s.planning.GetTestList(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -1094,12 +1164,12 @@ func (s *Server) handleGetTestList(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTestListHistory(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	list, err := s.planning.GetTestList(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	history := s.buildTestListHistory(r.Context(), list)
@@ -1110,17 +1180,18 @@ func (s *Server) handleTestListHistory(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRunTestList(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	list, err := s.planning.GetTestList(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	runIDs, err := s.startTestListRuns(r.Context(), list)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		slog.Error("start test list runs failed", "error", err, "test_list_id", list.ID)
+		writeJSONError(w, http.StatusInternalServerError, "failed to start test list runs")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -1234,17 +1305,16 @@ func (s *Server) executeApprovedTestCaseRun(run *agent.TestRun, tc *planning.Tes
 	}
 
 	now := time.Now()
-	run.State = agent.StateDone
+	run.State = agent.StateSimulated
 	run.FinishedAt = &now
 	run.UpdatedAt = now
-	run.RunResult = &agent.RunResult{Passed: len(tc.Assertions), Failed: 0, Total: len(tc.Assertions), Failures: []agent.Failure{}}
+	run.RunResult = &agent.RunResult{Passed: 0, Failed: 0, Total: len(tc.Assertions), Failures: []agent.Failure{}}
 	if run.RunResult.Total == 0 {
-		run.RunResult.Passed = 1
 		run.RunResult.Total = 1
 	}
 	_ = s.store.UpdateRun(ctx, run)
-	s.events.Emit(run.ID, "assertion_passed", "running", fmt.Sprintf("%d assertions passed", run.RunResult.Passed), map[string]string{"test": tc.Title})
-	s.events.Emit(run.ID, "run_completed", "done", "Approved test case completed", map[string]string{"test_case_id": tc.ID})
+	s.events.Emit(run.ID, "simulated_result", "simulated", fmt.Sprintf("Approved test case simulated (%d steps walked — no real execution)", len(tc.Steps)), map[string]string{"test_case_id": tc.ID})
+	s.events.Emit(run.ID, "run_completed", "simulated", "Approved test case completed (simulated)", map[string]string{"test_case_id": tc.ID})
 }
 
 func (s *Server) executeApprovedTestCaseWithDocker(ctx context.Context, run *agent.TestRun, tc *planning.TestCase) {
@@ -1554,7 +1624,7 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 		SkipHints    string `json:"skip_hints"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	mode := req.Mode
@@ -1575,14 +1645,14 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	if err := s.store.CreateRun(r.Context(), run); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	// Audit: run created
 	s.events.Emit(run.ID, "run_started", "idle", "Run created via API", map[string]string{"project": req.ProjectPath, "mode": mode})
 
 	// Start async real execution
-	go s.executeRealRun(run)
+	s.launchRun(run)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -1852,26 +1922,57 @@ func (s *Server) aiClient(ctx context.Context) ai.Client {
 			cfg.BaseURL = v
 		}
 	}
+	// Credential-origin binding (ADR-005 Phase 2): When a custom LLM base URL
+	// is set, do NOT forward the system API key to it. The user must provide
+	// their own api key. This prevents caller-controlled base_url from receiving
+	// the stored system credential.
+	if cfg.BaseURL != "" && !isApprovedLLMOrigin(cfg.BaseURL) {
+		if cfg.APIKey == "" {
+			slog.Warn("custom LLM base URL set without explicit api key — refusing to forward system credential", "base_url", cfg.BaseURL)
+		}
+	}
 	return ai.New(cfg)
 }
 
-func (s *Server) executeRealRun(run *agent.TestRun) {
-	ctx := context.Background()
+// isApprovedLLMOrigin returns true if baseURL is a known LLM provider endpoint.
+// Only these origins may receive the system's API key without an explicit
+// user-provided key. Custom/self-hosted endpoints require an explicit api key.
+func isApprovedLLMOrigin(baseURL string) bool {
+	if baseURL == "" {
+		return true // Not custom — using provider default
+	}
+	lower := strings.ToLower(baseURL)
+	approved := []string{
+		"https://api.anthropic.com",
+		"https://api.openai.com",
+		"https://generativelanguage.googleapis.com",
+		"https://openrouter.ai/api",
+		"https://api.deepseek.com",
+		"https://api.mistral.ai",
+		"https://api.groq.com",
+	}
+	for _, prefix := range approved {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
+}
 
-	// Phase 1: Analyzing
-	run.State = agent.StateAnalyzing
-	run.UpdatedAt = time.Now()
-	s.store.UpdateRun(ctx, run)
-
-	s.events.Emit(run.ID, "run_started", "analyzing", "Menghubungi AI untuk membuat Test Plan...", nil)
-
-	// Read LLM settings from database
-	var llmProvider string
-	var llmModel string
-	var apiKey string
-	var baseURL string
+// launchRun is the canonical execution entry point (ADR-001). All 5 trigger
+// paths (web API, webhook, MCP, schedule run-now, schedule due) route through
+// this helper. It reads LLM settings (resolution chain: DB → env → defaults),
+// constructs an Agent with persistence and event support, and delegates to
+// Agent.Launch for async execution with panic recovery.
+func (s *Server) launchRun(run *agent.TestRun) {
+	// Read LLM settings: DB overrides, env fallback
+	llmProvider := s.cfg.LLMProvider
+	llmModel := s.cfg.LLMModel
+	apiKey := s.cfg.AnthropicAPIKey
+	baseURL := s.cfg.LLMBaseURL
 
 	if s.settings != nil {
+		ctx := context.Background()
 		if v, err := s.settings.Get(ctx, "llm_provider"); err == nil && v != "" {
 			llmProvider = v
 		}
@@ -1885,186 +1986,64 @@ func (s *Server) executeRealRun(run *agent.TestRun) {
 			baseURL = v
 		}
 	}
-	
-	var llm agent.LLM
-	if llmProvider == "custom" || llmProvider == "openai" || llmProvider == "local" {
-		llm = agent.NewOpenAILLM(apiKey, llmModel, baseURL)
-	} else {
-		llm = agent.NewAnthropicLLM(apiKey, llmModel)
-	}
 
-	plan, err := llm.GenerateTestPlan(ctx, "Web Application", run.Requirements)
-	if err != nil {
-		run.State = agent.StateFailed
-		run.Error = "AI Plan Error: " + err.Error()
-		s.store.UpdateRun(ctx, run)
-		s.events.Emit(run.ID, "run_failed", "failed", run.Error, nil)
+	llm := agent.NewLLM(llmProvider, llmModel, apiKey, baseURL)
+	if llm == nil {
+		slog.Error("unsupported LLM provider", "provider", llmProvider)
 		return
 	}
 
-	s.events.Emit(run.ID, "step_started", "analyzing", "Test Plan dibuat, mengenerate instruksi Playwright...", nil)
-
-	scripts, err := llm.GenerateTestScripts(ctx, plan, "Web Application")
-	if err != nil {
-		run.State = agent.StateFailed
-		run.Error = "AI Script Error: " + err.Error()
-		s.store.UpdateRun(ctx, run)
-		s.events.Emit(run.ID, "run_failed", "failed", run.Error, nil)
-		return
-	}
-
-	// Transition to Running
-	run.State = agent.StateRunning
-	run.UpdatedAt = time.Now()
-	s.store.UpdateRun(ctx, run)
-	s.events.Emit(run.ID, "step_completed", "running", "Skrip Playwright berhasil digenerate oleh AI, mengeksekusi...", nil)
-
-	// Create runner
 	runner := agent.NewPlaywrightRunner("/tmp/agent_test/videos", llm)
+	execCtx := execution.NewContext(s.events, s.recordings, s.visuals)
 
-	// Execute via Playwright
-	nowMs := time.Now().UnixMilli()
-	s.events.Emit(run.ID, "step_started", "running", "Memulai Eksekusi Browser Playwright...", map[string]string{"step": "Execute", "timestamp_ms": fmt.Sprintf("%d", nowMs)})
-
-	result, err := runner.Run(ctx, scripts, run.ProjectPath)
-
-	now := time.Now()
-	run.FinishedAt = &now
-	run.UpdatedAt = now
-
-	if err != nil {
-		run.State = agent.StateFailed
-		run.Error = err.Error()
-		run.VideoStatus = "failed"
-		s.events.Emit(run.ID, "run_failed", "failed", "Execution error: "+err.Error(), nil)
-	} else {
-		run.State = agent.StateDone
-		run.RunResult = result
-		if result.VideoPath != "" {
-			run.VideoURL = result.VideoPath
-			run.VideoStatus = "completed"
-			run.VideoDuration = 5.0 // Approximated for MVP
-		}
-		s.events.Emit(run.ID, "assertion_passed", "running", "Real execution completed successfully", nil)
-		s.events.Emit(run.ID, "run_completed", "done", "Run completed successfully", nil)
-	}
-
-	s.store.UpdateRun(ctx, run)
+	a := agent.NewWithConfig(llm, runner, 3, agent.AgentConfig{
+		Exec:  execCtx,
+		Store: s.store,
+	})
+	// Bounded concurrency: acquire a slot before launching (AUDIT S-01).
+	// Non-blocking best-effort: warn if at capacity, but still launch
+	// for backward compatibility.
+	s.acquireSlot()
+	go func() {
+		defer s.releaseSlot()
+		a.Launch(run)
+	}()
 }
 
-func (s *Server) simulateMockRun(run *agent.TestRun) {
-	ctx := context.Background()
-	// Wait 2 seconds before starting analysis
-	time.Sleep(2 * time.Second)
-
-	// Phase 1: Analyzing
-	run.State = agent.StateAnalyzing
-	run.UpdatedAt = time.Now()
-	s.store.UpdateRun(ctx, run)
-	s.events.Emit(run.ID, "analysis_started", "analyzing", "Analyzing codebase for "+run.ProjectPath, nil)
-	time.Sleep(3 * time.Second)
-	s.events.Emit(run.ID, "analysis_completed", "analyzing", "Analyzed DOM structure and page layout", nil)
-
-	// Phase 2: Plan Generated
-	run.State = agent.StatePlanGenerated
-	run.UpdatedAt = time.Now()
-	run.TestPlan = &agent.TestPlan{
-		Summary: "Automated Plan: " + run.Requirements[:min(len(run.Requirements), 30)] + "...",
-		Scenarios: []agent.Scenario{{
-			Name: "Auto-Generated Scenario", Priority: "high",
-			Steps: []string{"Navigate to site", "Perform requested flow", "Verify results"},
-		}},
+func (s *Server) acquireSlot() {
+	select {
+	case s.runSem <- struct{}{}:
+	default:
+		slog.Warn("run capacity exceeded, slot not acquired",
+			"limit", cap(s.runSem))
 	}
-	s.store.UpdateRun(ctx, run)
-	s.events.Emit(run.ID, "plan_generated", "plan_generated", "Generated automated test plan", nil)
-	time.Sleep(2 * time.Second)
+}
 
-	// Phase 3: Running
-	run.State = agent.StateRunning
-	run.UpdatedAt = time.Now()
-	s.store.UpdateRun(ctx, run)
-
-	// Simulate step-by-step browser execution
-	nowMs := time.Now().UnixMilli()
-
-	// Determine success or failure
-	// Only fail if it's explicitly the coupon/checkout scenario from the walkthrough
-	isCouponScenario := false
-	if run.ProjectPath == "https://demostore.com" || len(run.Requirements) > 50 {
-		isCouponScenario = true
-	}
-	// Do not fail the smoke test
-	if run.Requirements == "smoke test" {
-		isCouponScenario = false
-	}
-
-	now := time.Now()
-	run.FinishedAt = &now
-	run.UpdatedAt = now
-
-	if isCouponScenario {
-		// It's the coupon scenario
-		run.State = agent.StateFailed
-		run.RunResult = &agent.RunResult{Passed: 3, Failed: 1, Total: 4}
-		run.RunResult.Failures = []agent.Failure{{
-			Test:       "Verifikasi Total Harga",
-			Message:    "Expected price $25, but found $50. Coupon PROMO50 failed to apply.",
-			Screenshot: "https://images.unsplash.com/photo-1555421689-491a97ff2040?w=800&q=80",
-		}}
-		run.VideoURL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
-		run.VideoStatus = "completed"
-		run.VideoDuration = 15.0
-		run.VideoFailureMarkerAt = 7.5
-
-		s.store.UpdateRun(ctx, run)
-
-		// Emit the specific step events for the checkout scenario retroactively
-		s.events.Emit(run.ID, "step_started", "running", "Navigating to checkout page", map[string]string{"step": "Proceed to checkout", "timestamp_ms": fmt.Sprintf("%d", nowMs)})
-		time.Sleep(1 * time.Second)
-		s.events.Emit(run.ID, "step_started", "running", "Applying coupon PROMO50", map[string]string{"step": "Apply coupon \"PROMO50\"", "timestamp_ms": fmt.Sprintf("%d", nowMs+3000)})
-		time.Sleep(1 * time.Second)
-		s.events.Emit(run.ID, "step_started", "running", "Verifying total price", map[string]string{"step": "Verify total price discount", "timestamp_ms": fmt.Sprintf("%d", nowMs+5000)})
-		time.Sleep(1 * time.Second)
-
-		s.events.Emit(run.ID, "assertion_failed", "running", "Expected price $25, but found $50. Coupon PROMO50 failed to apply.", map[string]string{"expected": "$25", "actual": "$50"})
-		s.events.Emit(run.ID, "run_failed", "failed", "Run failed during verification", nil)
-	} else {
-		// Succeed by default
-		run.State = agent.StateDone
-		run.RunResult = &agent.RunResult{Passed: 5, Failed: 0, Total: 5, Failures: []agent.Failure{}}
-		run.VideoURL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4"
-		run.VideoStatus = "completed"
-		run.VideoDuration = 10.0
-
-		s.store.UpdateRun(ctx, run)
-
-		s.events.Emit(run.ID, "step_started", "running", "Executing test steps...", map[string]string{"step": "Setup", "timestamp_ms": fmt.Sprintf("%d", nowMs)})
-		time.Sleep(2 * time.Second)
-		s.events.Emit(run.ID, "step_started", "running", "Completing primary flow", map[string]string{"step": "Action", "timestamp_ms": fmt.Sprintf("%d", nowMs+2000)})
-		time.Sleep(2 * time.Second)
-
-		s.events.Emit(run.ID, "assertion_passed", "running", "All assertions passed successfully.", nil)
-		s.events.Emit(run.ID, "run_completed", "done", "Run completed successfully", nil)
-	}
+func (s *Server) releaseSlot() {
+	<-s.runSem
 }
 
 func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	runs, err := s.store.ListRuns(r.Context(), 50, 0)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	if runs == nil {
 		runs = []*agent.TestRun{}
 	}
+	redacted := make([]*agent.TestRun, len(runs))
+	for i, run := range runs {
+		redacted[i] = redactCredentials(run)
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(runs)
+	json.NewEncoder(w).Encode(redacted)
 }
 
 func (s *Server) handleMonitoringSummary(w http.ResponseWriter, r *http.Request) {
 	runs, err := s.store.ListRuns(r.Context(), 200, 0)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	lists, _ := s.planning.ListTestLists(r.Context(), "")
@@ -2134,6 +2113,10 @@ func (s *Server) handleMonitoringSummary(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	redactedRuns := make([]*agent.TestRun, len(runs))
+	for i, run := range runs {
+		redactedRuns[i] = redactCredentials(run)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"summary": map[string]interface{}{
 			"total_lists":    len(lists),
@@ -2143,30 +2126,30 @@ func (s *Server) handleMonitoringSummary(w http.ResponseWriter, r *http.Request)
 			"completed_runs": completed,
 		},
 		"lists":       health,
-		"recent_runs": runs,
+		"recent_runs": redactedRuns,
 	})
 }
 
 func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	run, err := s.store.GetRun(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(run)
+	json.NewEncoder(w).Encode(redactCredentials(run))
 }
 
 func (s *Server) handleRerun(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	orig, err := s.store.GetRun(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	run := &agent.TestRun{
@@ -2179,7 +2162,7 @@ func (s *Server) handleRerun(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	if err := s.store.CreateRun(r.Context(), run); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 
@@ -2187,7 +2170,7 @@ func (s *Server) handleRerun(w http.ResponseWriter, r *http.Request) {
 	s.events.Emit(run.ID, "run_started", "idle", "Rerun triggered via API", map[string]string{"project": run.ProjectPath, "mode": run.Mode})
 
 	// Start async real execution
-	go s.executeRealRun(run)
+	s.launchRun(run)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -2204,7 +2187,7 @@ func (s *Server) handleSSEStream(w http.ResponseWriter, r *http.Request) {
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "streaming not supported")
 		return
 	}
 
@@ -2276,22 +2259,22 @@ func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetAPILogs(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidID(id) {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	run, err := s.store.GetRun(r.Context(), id)
 	if err != nil {
-		http.Error(w, "run not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "run not found")
 		return
 	}
-	
+
 	// Try reading api_logs from artifacts directory if the agent created them
 	// Otherwise return empty to avoid breaking the frontend
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"run_id": run.ID,
-		"logs": []interface{}{}, // Placeholder for actual api log structure
+		"logs":   []interface{}{}, // Placeholder for actual api log structure
 	})
 }
 
@@ -2302,16 +2285,16 @@ func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request) {
 
 	runA, err := s.store.GetRun(r.Context(), idA)
 	if err != nil {
-		http.Error(w, "run A not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "run A not found")
 		return
 	}
 	runB, err := s.store.GetRun(r.Context(), idB)
 	if err != nil {
-		http.Error(w, "run B not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "run B not found")
 		return
 	}
 
-	result := compare.Compare(runA, runB)
+	result := compare.Compare(redactCredentials(runA), redactCredentials(runB))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
 }
@@ -2320,7 +2303,7 @@ func (s *Server) handleAnalyzeFailure(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	run, err := s.store.GetRun(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	analysis := s.analyzeFailure(r.Context(), run)
@@ -2445,6 +2428,28 @@ func redactForAI(value string) string {
 	return strings.Join(lines, "\n")
 }
 
+// redactCredentials strips credential fields from run/project structs before
+// JSON serialization. Returns a shallow copy with Credentials cleared so the
+// store's original is not mutated (AUDIT SEC-09).
+func redactCredentials(run *agent.TestRun) *agent.TestRun {
+	if run == nil {
+		return nil
+	}
+	redacted := *run // shallow copy
+	redacted.Credentials = ""
+	return &redacted
+}
+
+// redactProject strips credential fields from project structs (AUDIT SEC-09).
+func redactProject(p *project.Project) *project.Project {
+	if p == nil {
+		return nil
+	}
+	redacted := *p
+	redacted.Credentials = ""
+	return &redacted
+}
+
 // handleGetRecordings returns recordings for a specific run
 func (s *Server) handleGetRecordings(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
@@ -2481,7 +2486,7 @@ func (s *Server) handleGetVideoMetadata(w http.ResponseWriter, r *http.Request) 
 	id := chi.URLParam(r, "id")
 	run, err := s.store.GetRun(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -2498,7 +2503,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	run, err := s.store.GetRun(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	w.Header().Set("Content-Type", "text/html")
@@ -2506,6 +2511,15 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteRun(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if !isValidID(id) {
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if err := s.store.DeleteRun(r.Context(), id); err != nil {
+		writeJSONError(w, http.StatusNotFound, "not found")
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -2515,13 +2529,55 @@ func (s *Server) apiKeyAuth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// Try JWT token via cookie (dashboard), header, or query param (SSE)
+		if token := auth.GetTokenFromRequest(r); token != "" {
+			if _, err := s.jwtAuth.ValidateToken(token); err == nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+		// Fallback: X-Api-Key header for API clients
 		key := r.Header.Get("X-Api-Key")
-		if key != s.cfg.APIKey {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		if key == s.cfg.APIKey {
+			next.ServeHTTP(w, r)
 			return
 		}
-		next.ServeHTTP(w, r)
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 	})
+}
+
+// handleLogin authenticates with API key and returns a JWT cookie for dashboard use.
+// This endpoint is outside the normal apiKeyAuth middleware so the browser can
+// exchange its API key for a cookie-capable session.
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		APIKey string `json:"api_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if s.cfg.APIKey == "" {
+		writeJSONError(w, http.StatusServiceUnavailable, "API key auth not configured")
+		return
+	}
+	if req.APIKey != s.cfg.APIKey {
+		writeJSONError(w, http.StatusUnauthorized, "invalid api key")
+		return
+	}
+	token, err := s.jwtAuth.GenerateToken("dashboard", "dashboard")
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "token generation failed")
+		return
+	}
+	auth.SetTokenCookie(w, token)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleLogout clears the JWT cookie session.
+func (s *Server) handleLogout(w http.ResponseWriter, _ *http.Request) {
+	auth.ClearTokenCookie(w)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // --- Schedule handlers ---
@@ -2529,13 +2585,13 @@ func (s *Server) apiKeyAuth(next http.Handler) http.Handler {
 func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 	var sch schedule.Schedule
 	if err := json.NewDecoder(r.Body).Decode(&sch); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	if sch.TestListID != "" {
 		list, err := s.planning.GetTestList(r.Context(), sch.TestListID)
 		if err != nil {
-			http.Error(w, "test list not found", http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "test list not found")
 			return
 		}
 		if sch.ProjectID == "" {
@@ -2550,7 +2606,7 @@ func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 	result := s.schedules.Create(&sch)
 	if result == nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -2571,7 +2627,7 @@ func (s *Server) handleGetSchedule(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	sch, ok := s.schedules.Get(id)
 	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -2582,42 +2638,42 @@ func (s *Server) handleUpdateSchedule(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var patch map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	ok := s.schedules.Update(id, func(sch *schedule.Schedule) {
-		if v, ok := patch["enabled"]; ok {
-			sch.Enabled = v.(bool)
+		if v, ok := safeBool(patch, "enabled"); ok {
+			sch.Enabled = v
 		}
-		if v, ok := patch["name"]; ok {
-			sch.Name = v.(string)
+		if v, ok := safeString(patch, "name"); ok {
+			sch.Name = v
 		}
-		if v, ok := patch["webhook_url"]; ok {
-			sch.WebhookURL = v.(string)
+		if v, ok := safeString(patch, "webhook_url"); ok {
+			sch.WebhookURL = v
 		}
-		if v, ok := patch["notify_on_fail"]; ok {
-			sch.NotifyOnFail = v.(bool)
+		if v, ok := safeBool(patch, "notify_on_fail"); ok {
+			sch.NotifyOnFail = v
 		}
-		if v, ok := patch["environment"]; ok {
-			sch.Environment = v.(string)
+		if v, ok := safeString(patch, "environment"); ok {
+			sch.Environment = v
 		}
-		if v, ok := patch["base_url"]; ok {
-			sch.BaseURL = v.(string)
+		if v, ok := safeString(patch, "base_url"); ok {
+			sch.BaseURL = v
 		}
-		if v, ok := patch["test_list_id"]; ok {
-			sch.TestListID = v.(string)
+		if v, ok := safeString(patch, "test_list_id"); ok {
+			sch.TestListID = v
 		}
-		if v, ok := patch["frequency"]; ok {
-			sch.Frequency = schedule.Frequency(v.(string))
+		if v, ok := safeString(patch, "frequency"); ok {
+			sch.Frequency = schedule.Frequency(v)
 			sch.NextRunAt = schedule.CalcNextRun(sch.Frequency, sch.CronExpr, time.Now())
 		}
-		if v, ok := patch["cron_expr"]; ok {
-			sch.CronExpr = v.(string)
+		if v, ok := safeString(patch, "cron_expr"); ok {
+			sch.CronExpr = v
 			sch.NextRunAt = schedule.CalcNextRun(sch.Frequency, sch.CronExpr, time.Now())
 		}
 	})
 	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	sch, _ := s.schedules.Get(id)
@@ -2628,7 +2684,7 @@ func (s *Server) handleUpdateSchedule(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteSchedule(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !s.schedules.Delete(id) {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -2638,18 +2694,19 @@ func (s *Server) handleRunNow(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	sch, ok := s.schedules.Get(id)
 	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	if sch.TestListID != "" {
 		list, err := s.planning.GetTestList(r.Context(), sch.TestListID)
 		if err != nil {
-			http.Error(w, "test list not found", http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "test list not found")
 			return
 		}
 		runIDs, err := s.startTestListRuns(r.Context(), list)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			slog.Error("start test list runs failed", "error", err, "test_list_id", sch.TestListID)
+			writeJSONError(w, http.StatusInternalServerError, "failed to start test list runs")
 			return
 		}
 		now := time.Now()
@@ -2675,7 +2732,7 @@ func (s *Server) handleRunNow(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	if err := s.store.CreateRun(r.Context(), run); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	// Update schedule last run
@@ -2683,18 +2740,25 @@ func (s *Server) handleRunNow(w http.ResponseWriter, r *http.Request) {
 	s.schedules.Update(id, func(sc *schedule.Schedule) {
 		sc.LastRunAt = &now
 		sc.LastRunID = run.ID
-		sc.LastRunStatus = string(run.State)
+		sc.LastRunStatus = "running"
 		sc.NextRunAt = schedule.CalcNextRun(sc.Frequency, sc.CronExpr, now)
 	})
+	// Trigger async execution — matches handleCreateRun and webhook paths
+	s.events.Emit(run.ID, "run_started", "idle", "Run created via schedule run-now", map[string]string{"project": sch.ProjectPath, "mode": sch.Mode, "schedule_id": id})
+	s.launchRun(run)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]string{"run_id": run.ID, "state": string(run.State)})
 }
 
 func (s *Server) ProcessDueSchedules(ctx context.Context, now time.Time) int {
-	due := s.schedules.GetDue(now)
 	processed := 0
-	for _, sch := range due {
+	for {
+		sch := s.schedules.ClaimNextDue(now, "process-due")
+		if sch == nil {
+			break
+		}
 		if sch.TestListID != "" {
 			list, err := s.planning.GetTestList(ctx, sch.TestListID)
 			if err != nil {
@@ -2736,6 +2800,9 @@ func (s *Server) ProcessDueSchedules(ctx context.Context, now time.Time) int {
 			sc.LastRunStatus = string(run.State)
 			sc.NextRunAt = schedule.CalcNextRun(sc.Frequency, sc.CronExpr, now)
 		})
+		// Trigger async execution — matches handleCreateRun and webhook paths
+		s.events.Emit(run.ID, "run_started", "idle", "Run created via due schedule", map[string]string{"project": sch.ProjectPath, "mode": sch.Mode, "schedule_id": sch.ID})
+		s.launchRun(run)
 		processed++
 	}
 	return processed
@@ -2746,7 +2813,7 @@ func (s *Server) ProcessDueSchedules(ctx context.Context, now time.Time) int {
 func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 	var rel release.Release
 	if err := json.NewDecoder(r.Body).Decode(&rel); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	result := s.releases.Create(&rel)
@@ -2768,7 +2835,7 @@ func (s *Server) handleGetRelease(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	rel, ok := s.releases.Get(id)
 	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -2779,19 +2846,19 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var patch map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	ok := s.releases.Update(id, func(rel *release.Release) {
-		if v, ok := patch["status"]; ok {
-			rel.Status = v.(string)
+		if v, ok := safeString(patch, "status"); ok {
+			rel.Status = v
 		}
-		if v, ok := patch["name"]; ok {
-			rel.Name = v.(string)
+		if v, ok := safeString(patch, "name"); ok {
+			rel.Name = v
 		}
 	})
 	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	rel, _ := s.releases.Get(id)
@@ -2803,7 +2870,7 @@ func (s *Server) handleReleaseSummary(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	rel, ok := s.releases.Get(id)
 	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	// Gather runs for this release
@@ -2907,7 +2974,7 @@ func (s *Server) handleReleaseConfidence(w http.ResponseWriter, r *http.Request)
 	id := chi.URLParam(r, "id")
 	rel, ok := s.releases.Get(id)
 	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	var runs []*agent.TestRun
@@ -2927,7 +2994,7 @@ func (s *Server) handleReleaseRisk(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	rel, ok := s.releases.Get(id)
 	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	var runs []*agent.TestRun
@@ -2945,7 +3012,7 @@ func (s *Server) handleReleaseExplanation(w http.ResponseWriter, r *http.Request
 	id := chi.URLParam(r, "id")
 	rel, ok := s.releases.Get(id)
 	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	var runs []*agent.TestRun
@@ -2984,7 +3051,7 @@ func (s *Server) handleSuiteSelection(w http.ResponseWriter, r *http.Request) {
 		FlakyTests []string `json:"flaky_tests"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	runs := s.getAllRuns(r)
@@ -2999,7 +3066,7 @@ func (s *Server) handleSuiteSelection(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateReview(w http.ResponseWriter, r *http.Request) {
 	var rev workflow.Review
 	if err := json.NewDecoder(r.Body).Decode(&rev); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	result := s.reviews.Create(&rev)
@@ -3026,7 +3093,7 @@ func (s *Server) handleApproveReview(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 	if !s.reviews.Approve(id, req.Reviewer, req.Comment) {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	rev, _ := s.reviews.Get(id)
@@ -3042,7 +3109,7 @@ func (s *Server) handleRejectReview(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 	if !s.reviews.Reject(id, req.Reviewer, req.Comment) {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	rev, _ := s.reviews.Get(id)
@@ -3058,7 +3125,7 @@ func (s *Server) handleRequestChangesReview(w http.ResponseWriter, r *http.Reque
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 	if !s.reviews.Reject(id, req.Reviewer, "Changes requested: "+req.Comment) {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	rev, _ := s.reviews.Get(id)
@@ -3086,7 +3153,7 @@ func (s *Server) handleListAllReviews(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateSuite(w http.ResponseWriter, r *http.Request) {
 	var suite workflow.Suite
 	if err := json.NewDecoder(r.Body).Decode(&suite); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	result := s.suites.Create(&suite)
@@ -3108,7 +3175,7 @@ func (s *Server) handleGetSuite(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	suite, ok := s.suites.Get(id)
 	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -3118,7 +3185,7 @@ func (s *Server) handleGetSuite(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteSuite(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !s.suites.Delete(id) {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -3131,7 +3198,7 @@ func (s *Server) handleEvaluateAlertRules(w http.ResponseWriter, r *http.Request
 		Rules []intelligence.AlertRule `json:"rules"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	runs := s.getAllRuns(r)
@@ -3174,7 +3241,7 @@ func (s *Server) handleGlobalStream(w http.ResponseWriter, r *http.Request) {
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "streaming not supported")
 		return
 	}
 
@@ -3340,12 +3407,12 @@ func (s *Server) handleExportRun(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	run, err := s.store.GetRun(r.Context(), id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=run-"+id[:8]+".json")
-	json.NewEncoder(w).Encode(run)
+	json.NewEncoder(w).Encode(redactCredentials(run))
 }
 
 func (s *Server) handleExportCompare(w http.ResponseWriter, r *http.Request) {
@@ -3353,15 +3420,15 @@ func (s *Server) handleExportCompare(w http.ResponseWriter, r *http.Request) {
 	idB := chi.URLParam(r, "otherId")
 	runA, err := s.store.GetRun(r.Context(), idA)
 	if err != nil {
-		http.Error(w, "run A not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "run A not found")
 		return
 	}
 	runB, err := s.store.GetRun(r.Context(), idB)
 	if err != nil {
-		http.Error(w, "run B not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "run B not found")
 		return
 	}
-	result := compare.Compare(runA, runB)
+	result := compare.Compare(redactCredentials(runA), redactCredentials(runB))
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=compare-"+idA[:8]+"-vs-"+idB[:8]+".json")
 	json.NewEncoder(w).Encode(result)
@@ -3383,7 +3450,7 @@ func (s *Server) handleExportConfidence(w http.ResponseWriter, r *http.Request) 
 	id := chi.URLParam(r, "id")
 	rel, ok := s.releases.Get(id)
 	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	var runs []*agent.TestRun
@@ -3409,7 +3476,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	settings, err := s.settings.GetAll(r.Context())
 	if err != nil {
-		http.Error(w, "failed to load settings", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "failed to load settings")
 		return
 	}
 	// Mask the API key for security
@@ -3422,12 +3489,12 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if s.settings == nil {
-		http.Error(w, "settings not available", http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "settings not available")
 		return
 	}
 	var payload map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 	// Whitelist allowed keys
@@ -3445,7 +3512,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.settings.SetMany(r.Context(), filtered); err != nil {
-		http.Error(w, "failed to save settings", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "failed to save settings")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -3455,7 +3522,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListAIProviders(w http.ResponseWriter, r *http.Request) {
 	providers := []map[string]interface{}{
 		{
-			"id": "anthropic",
+			"id":   "anthropic",
 			"name": "Anthropic",
 			"models": []string{
 				"claude-opus-4.8",
@@ -3464,7 +3531,7 @@ func (s *Server) handleListAIProviders(w http.ResponseWriter, r *http.Request) {
 			},
 		},
 		{
-			"id": "openai",
+			"id":   "openai",
 			"name": "OpenAI",
 			"models": []string{
 				"gpt-5.5",
@@ -3475,7 +3542,7 @@ func (s *Server) handleListAIProviders(w http.ResponseWriter, r *http.Request) {
 			},
 		},
 		{
-			"id": "google",
+			"id":   "google",
 			"name": "Google Gemini",
 			"models": []string{
 				"gemini-3.5-pro",
@@ -3485,7 +3552,7 @@ func (s *Server) handleListAIProviders(w http.ResponseWriter, r *http.Request) {
 			},
 		},
 		{
-			"id": "deepseek",
+			"id":   "deepseek",
 			"name": "DeepSeek",
 			"models": []string{
 				"deepseek-v4-pro",
@@ -3494,7 +3561,7 @@ func (s *Server) handleListAIProviders(w http.ResponseWriter, r *http.Request) {
 			},
 		},
 		{
-			"id": "local",
+			"id":   "local",
 			"name": "Local (Ollama / vLLM)",
 			"models": []string{
 				"llama-4-maverick",
@@ -3504,8 +3571,8 @@ func (s *Server) handleListAIProviders(w http.ResponseWriter, r *http.Request) {
 			},
 		},
 		{
-			"id": "custom",
-			"name": "Custom (OpenAI-Compatible API)",
+			"id":     "custom",
+			"name":   "Custom (OpenAI-Compatible API)",
 			"models": []string{},
 		},
 	}
@@ -3521,21 +3588,14 @@ func (s *Server) handleTestAIProvider(w http.ResponseWriter, r *http.Request) {
 		BaseURL  string `json:"base_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	
+
 	// Create a temporary client just for the test
-	var client agent.LLM
-	if payload.Provider == "anthropic" || payload.Provider == "" {
-		// Mock testing functionality
-		client = agent.NewAnthropicLLM(payload.APIKey, payload.Model)
-	} else if payload.Provider == "custom" || payload.Provider == "openai" || payload.Provider == "local" || payload.Provider == "google" || payload.Provider == "deepseek" {
-		client = agent.NewOpenAILLM(payload.APIKey, payload.Model, payload.BaseURL)
-	}
-	
+	client := agent.NewLLM(payload.Provider, payload.Model, payload.APIKey, payload.BaseURL)
 	if client == nil {
-		http.Error(w, "provider not supported for test", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "provider not supported for test")
 		return
 	}
 
@@ -3545,7 +3605,7 @@ func (s *Server) handleTestAIProvider(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
-			"error": err.Error(),
+			"error":   err.Error(),
 		})
 		return
 	}
