@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-27 — Sidecar auth token read-at-request-time fix
+
+- **Task:** Execute the deferred sidecar pytest suite (12+ tests) and fix any failures.
+- **Source revision before change:** 5b9ae48
+- **Source revision after change:** 06a9115
+- **Files modified:** `sidecar/main.py`, `sidecar/tests/test_api.py`
+- **Summary:** Running the suite exposed a real bug: `verify_auth` captured `SIDECAR_AUTH_TOKEN` in a module-level constant at import time, so 10/13 tests failed with 401 (their `patch.dict` env changes were invisible to the already-captured constant). More importantly this is a production defect — token rotation would require a full process restart. Fixed by reading `os.getenv("SIDECAR_AUTH_TOKEN")` inside `verify_auth` on each request. Test bootstrap now defaults to dev mode (empty token); auth cases patch the env explicitly.
+- **Reason:** Deferred verification item (sidecar tests never executed); import-time env capture is a latent config-rotation bug.
+- **Risk:** Low (auth logic unchanged; only when the token is read)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None (behavior identical for static tokens; now also picks up rotated tokens without restart)
+- **Documentation updated:** this entry
+- **Verification completed:** pip deps installed via `--break-system-packages`. `python3 -m pytest sidecar/tests/` — 3/13 passed before fix, remaining 10 were 401s from the import-time capture. Post-fix re-run BLOCKED by intermittent shell-classifier outage (`ds temporarily unavailable`); a recurring retry is scheduled to confirm 13/13 and finalize. Health + status-shape + validation tests already green.
+- **Facts added/removed or confidence changed:** sidecar auth now rotation-safe.
+- **Open unknowns:** final 13/13 pytest confirmation pending classifier recovery.
+- **Related ADRs/TODOs:** sidecar EXPERIMENTAL tag; deferred test-execution item.
+
 ## 2026-07-27 — LLM timeouts, failure notifier (UW-6), race fixes, debt cleanup
 
 - **Task:** Continue engineering improvement: LLM HTTP timeouts, wire failure notifications, fix data races surfaced by `-race`, update stale debt entries.
