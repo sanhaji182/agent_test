@@ -3,7 +3,7 @@
 **Owner:** Engineering  
 **Authoritative sources:** Static source inspection against verified audit/discovery evidence  
 **Last verified revision:** `7b54053642e614cccf5e1128defabd25ac88b437`  
-**Last updated:** 2026-07-26  
+**Last updated:** 2026-07-28  
 **Confidence:** High for source-verified items; runtime impact partly UNKNOWN
 
 ## Debt Severity
@@ -67,11 +67,11 @@ These packages have implementation code but no connection from the running serve
 
 | ID | Issue | Severity | Evidence |
 |---|---|---|---|
-| UC-1 | `.env.example` declares `JWT_SECRET`, `BRAINTRUST_API_KEY`, `VISION_MODEL`, `GITHUB_WEBHOOK_SECRET`, `GOOGLE_API_KEY`, `DEEPSEEK_API_KEY` with no runtime consumer | MEDIUM | `internal/config/config.go:7-41` has no corresponding fields; `README.md:80-84` lists Google/DeepSeek with no code consumer |
+| UC-1 | `.env.example` declares `BRAINTRUST_API_KEY`, `VISION_MODEL`, `GOOGLE_API_KEY`, `DEEPSEEK_API_KEY` with no runtime consumer (updated 2026-07-28: `JWT_SECRET` and `GITHUB_WEBHOOK_SECRET` removed from this item — both now consumed: `internal/api/server.go:69,288`) | LOW | grep 2026-07-28: zero Go references to the four remaining vars |
 | UC-2 | ~~`.env.example` declares `MAX_FIX_ATTEMPTS=3` and `DEFAULT_TIMEOUT_SECONDS=300` but runtime values are hard-coded~~ ✅ Resolved (2026-07-28): `config.Load` now reads both via `getEnvInt` with unchanged defaults; covered by `internal/config/config_test.go` | ✅ Resolved | `internal/config/config.go`; consumers: `cmd/mcp/main.go`, `internal/api/handlers_planning.go` |
 | UC-3 | ~~`STEEL_MAX_SESSIONS` in `.env.example` is unused; config hard-codes `10`~~ ✅ Resolved (2026-07-28): read via `getEnvInt("STEEL_MAX_SESSIONS", 10)` | ✅ Resolved | `internal/config/config.go` |
 | UC-4 | Frontend `class-variance-authority` declared but no source import found | LOW | `frontend/package.json:12`; full `src/` text search |
-| UC-5 | Redis 7 is defined in Compose, Asynq code exists, but the server does not enqueue or consume jobs | MEDIUM | `docker-compose.yml:76-87`; `internal/queue/worker.go:27-92`; `cmd/server/main.go:15-49` |
+| UC-5 | ~~Redis defined in Compose, Asynq code exists, but the server does not enqueue or consume jobs~~ ✅ Resolved (2026-07-27, with UW-1): `QUEUE_ENABLED=true` wires `RunWorker` + enqueuer in `cmd/server`; Redis remains optional | ✅ Resolved | `cmd/server/main.go`; `internal/queue/run_worker.go` |
 
 ## Obsolete Abstractions
 
@@ -85,7 +85,7 @@ None identified at this point. The established patterns (`Store` + `MemoryStore`
 | CL-2 | `internal/api/handlers_schedules.go` (`handleUpdateSchedule`) | ✅ Resolved: PATCH now uses checked `safeBool`/`safeString` helpers (verified 2026-07-27) | ✅ Resolved |
 | CL-3 | `internal/api/handlers_releases.go` (`handleUpdateRelease`) | ✅ Resolved: same checked-helper pattern (verified 2026-07-27) | ✅ Resolved |
 | CL-4 | `internal/agent/playwright_runner.go:104-163` | Nested try/heal/retry loop with DOM snapshot, screenshot, and LLM healing — correct behavior depends on error handling at each nesting level | MEDIUM |
-| CL-5 | `internal/schedule/store.go:321-339` | `CalcNextRun` handles daily/weekly/monthly/custom cron but ignores the stored timezone | MEDIUM |
+| CL-5 | `internal/schedule/store.go` | ~~`CalcNextRun` ignores the stored timezone~~ ✅ Resolved (2026-07-27, commit 5b9ae48): `CalcNextRunInTZ` evaluates cron in the schedule's IANA timezone; all call sites pass `Timezone`; 3 TZ tests added | ✅ Resolved |
 
 ## Prioritized Cleanup Order
 
