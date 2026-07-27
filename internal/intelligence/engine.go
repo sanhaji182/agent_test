@@ -16,7 +16,7 @@ import (
 
 type RiskItem struct {
 	Name        string  `json:"name"`
-	Type        string  `json:"type"` // "test", "schedule", "project"
+	Type        string  `json:"type"`       // "test", "schedule", "project"
 	RiskScore   float64 `json:"risk_score"` // 0.0-1.0
 	Reason      string  `json:"reason"`
 	Environment string  `json:"environment,omitempty"`
@@ -75,8 +75,8 @@ func ComputeRisk(runs []*agent.TestRun, schedules []*schedule.Schedule) []RiskIt
 // --- Recommendations ---
 
 type Recommendation struct {
-	Action   string  `json:"action"`   // "run_now", "investigate", "disable", "prioritize"
-	Target   string  `json:"target"`   // schedule/test name
+	Action   string  `json:"action"` // "run_now", "investigate", "disable", "prioritize"
+	Target   string  `json:"target"` // schedule/test name
 	Reason   string  `json:"reason"`
 	Priority float64 `json:"priority"` // 0.0-1.0
 }
@@ -159,12 +159,12 @@ func SelectSuiteWithPath(mode SelectionMode, allTests []string, risks []RiskItem
 // --- Release Confidence ---
 
 type Confidence struct {
-	Score       float64 `json:"score"`       // 0.0-1.0
-	Grade       string  `json:"grade"`       // A, B, C, D, F
+	Score       float64 `json:"score"` // 0.0-1.0
+	Grade       string  `json:"grade"` // A, B, C, D, F
 	PassRate    float64 `json:"pass_rate"`
 	FlakeRate   float64 `json:"flake_rate"`
 	RiskScore   float64 `json:"risk_score"`
-	Freshness   float64 `json:"freshness"`   // 1.0 = recent, 0.0 = stale
+	Freshness   float64 `json:"freshness"` // 1.0 = recent, 0.0 = stale
 	Explanation string  `json:"explanation"`
 }
 

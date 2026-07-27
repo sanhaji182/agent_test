@@ -43,6 +43,18 @@ func (s *Store) Pool() *pgxpool.Pool {
 	return s.pool
 }
 
+// DeleteRun menghapus test run dari database
+func (s *Store) DeleteRun(ctx context.Context, id string) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM test_runs WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // CreateRun menyimpan test run baru ke database
 func (s *Store) CreateRun(ctx context.Context, run *agent.TestRun) error {
 	featureMap, _ := json.Marshal(run.FeatureMap)
@@ -245,6 +257,9 @@ func (s *Store) ListRuns(ctx context.Context, limit, offset int) ([]*agent.TestR
 		}
 		run.FinishedAt = finishedAt
 		runs = append(runs, &run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return runs, nil
 }

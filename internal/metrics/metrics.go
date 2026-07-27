@@ -4,10 +4,10 @@ import "github.com/go-go-golems/gotest-agent/internal/agent"
 
 // Hotspot is a test that fails frequently
 type Hotspot struct {
-	TestName   string  `json:"test_name"`
-	FailCount  int     `json:"fail_count"`
-	TotalRuns  int     `json:"total_runs"`
-	FailRate   float64 `json:"fail_rate"`
+	TestName  string  `json:"test_name"`
+	FailCount int     `json:"fail_count"`
+	TotalRuns int     `json:"total_runs"`
+	FailRate  float64 `json:"fail_rate"`
 }
 
 // FlakyTest is a test that alternates between pass and fail
@@ -28,12 +28,12 @@ type TrendPoint struct {
 
 // Summary is an overview of all runs
 type Summary struct {
-	TotalRuns    int     `json:"total_runs"`
-	PassRate     float64 `json:"pass_rate"`
-	AvgDuration  int     `json:"avg_duration_ms"`
-	TotalTests   int     `json:"total_tests"`
-	TotalPassed  int     `json:"total_passed"`
-	TotalFailed  int     `json:"total_failed"`
+	TotalRuns   int     `json:"total_runs"`
+	PassRate    float64 `json:"pass_rate"`
+	AvgDuration int     `json:"avg_duration_ms"`
+	TotalTests  int     `json:"total_tests"`
+	TotalPassed int     `json:"total_passed"`
+	TotalFailed int     `json:"total_failed"`
 }
 
 // ComputeHotspots finds tests that fail most often across runs

@@ -15,7 +15,7 @@ import (
 
 // GitHubHandler menangani webhook push event dari GitHub
 type GitHubHandler struct {
-	secret string              // Secret untuk verifikasi HMAC signature
+	secret string                // Secret untuk verifikasi HMAC signature
 	onPush func(event PushEvent) // Callback saat menerima push event
 }
 

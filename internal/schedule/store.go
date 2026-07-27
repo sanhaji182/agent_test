@@ -51,6 +51,10 @@ type Repository interface {
 	Update(string, func(*Schedule)) bool
 	Delete(string) bool
 	GetDue(time.Time) []*Schedule
+	// ClaimNextDue atomically claims the next due schedule, preventing
+	// duplicate processing across concurrent workers (ADR-004, implemented 2026-07-27).
+	// Returns the claimed schedule or nil if nothing is due.
+	ClaimNextDue(now time.Time, claimID string) *Schedule
 }
 
 type Store struct {
@@ -130,6 +134,58 @@ func (s *Store) GetDue(now time.Time) []*Schedule {
 		}
 	}
 	return due
+}
+
+// ClaimNextDue atomically claims the next due schedule. For the memory store,
+// this is a locked select-and-advance operation that prevents double-claiming
+// within a single process (but not across processes — see DBStore for that).
+func (s *DBStore) ClaimNextDue(now time.Time, _ string) *Schedule {
+	advanceTo := now.Add(1 * time.Minute)
+	row := s.pool.QueryRow(context.Background(), `
+		WITH next AS (
+			SELECT id FROM schedules
+			WHERE enabled = true AND next_run_at <= $1
+			ORDER BY next_run_at ASC
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE schedules SET next_run_at = $2, updated_at = NOW()
+		FROM next
+		WHERE schedules.id = next.id
+		RETURNING
+			schedules.id, COALESCE(schedules.project_id::text, ''),
+			COALESCE(schedules.test_list_id::text, ''), schedules.name,
+			schedules.project_path, schedules.requirements, schedules.mode,
+			schedules.environment, schedules.base_url, schedules.frequency,
+			COALESCE(schedules.cron_expr, ''), schedules.timezone, schedules.enabled,
+			schedules.next_run_at, schedules.last_run_at,
+			COALESCE(schedules.last_run_id::text, ''),
+			COALESCE(schedules.last_run_status, ''),
+			schedules.notify_on_fail, COALESCE(schedules.webhook_url, ''),
+			schedules.created_at, schedules.updated_at`,
+		now, advanceTo)
+	sch, err := scanSchedule(row)
+	if err != nil {
+		return nil
+	}
+	return sch
+}
+
+func (s *Store) ClaimNextDue(now time.Time, _ string) *Schedule {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var best *Schedule
+	for _, sch := range s.schedules {
+		if sch.Enabled && !sch.NextRunAt.After(now) {
+			if best == nil || sch.NextRunAt.Before(best.NextRunAt) {
+				best = sch
+			}
+		}
+	}
+	if best != nil {
+		best.NextRunAt = CalcNextRun(best.Frequency, best.CronExpr, now)
+	}
+	return best
 }
 
 type DBStore struct {

@@ -14,6 +14,7 @@ type RunStore interface {
 	UpdateRun(ctx context.Context, run *agent.TestRun) error
 	GetRun(ctx context.Context, id string) (*agent.TestRun, error)
 	ListRuns(ctx context.Context, limit, offset int) ([]*agent.TestRun, error)
+	DeleteRun(ctx context.Context, id string) error
 }
 
 // MemoryStore adalah implementasi RunStore di memori (tanpa database).
@@ -77,4 +78,21 @@ func (m *MemoryStore) ListRuns(_ context.Context, limit, offset int) ([]*agent.T
 		}
 	}
 	return result, nil
+}
+
+// DeleteRun menghapus run berdasarkan ID
+func (m *MemoryStore) DeleteRun(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.runs[id]; !ok {
+		return ErrNotFound
+	}
+	delete(m.runs, id)
+	for i, oid := range m.order {
+		if oid == id {
+			m.order = append(m.order[:i], m.order[i+1:]...)
+			break
+		}
+	}
+	return nil
 }

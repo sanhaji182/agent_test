@@ -8,13 +8,13 @@ type Result struct {
 	RunA           string   `json:"run_a"`
 	RunB           string   `json:"run_b"`
 	Summary        string   `json:"summary"`
-	TotalDelta     int      `json:"total_delta"`      // B.total - A.total
-	PassedDelta    int      `json:"passed_delta"`     // B.passed - A.passed
-	FailedDelta    int      `json:"failed_delta"`     // B.failed - A.failed
-	NewFailures    []string `json:"new_failures"`     // Test yang gagal di B tapi pass di A
-	Recovered      []string `json:"recovered"`        // Test yang pass di B tapi gagal di A
-	CommonFailures []string `json:"common_failures"`  // Test yang gagal di keduanya
-	ScreenshotDiff int      `json:"screenshot_diff"`  // Perbedaan jumlah screenshot
+	TotalDelta     int      `json:"total_delta"`     // B.total - A.total
+	PassedDelta    int      `json:"passed_delta"`    // B.passed - A.passed
+	FailedDelta    int      `json:"failed_delta"`    // B.failed - A.failed
+	NewFailures    []string `json:"new_failures"`    // Test yang gagal di B tapi pass di A
+	Recovered      []string `json:"recovered"`       // Test yang pass di B tapi gagal di A
+	CommonFailures []string `json:"common_failures"` // Test yang gagal di keduanya
+	ScreenshotDiff int      `json:"screenshot_diff"` // Perbedaan jumlah screenshot
 }
 
 // Compare membandingkan dua run yang sudah selesai

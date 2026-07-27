@@ -63,3 +63,65 @@ func TestSubscribe_Unsubscribe(t *testing.T) {
 		// OK - channel closed, no read
 	}
 }
+
+func TestEnableDB_NoPanicOnNilPool(t *testing.T) {
+	s := events.NewStore()
+	// GetDBEvents should not panic when dbPool is nil
+	events, err := s.GetDBEvents(t.Context(), "nonexistent")
+	if err != nil {
+		t.Fatalf("expected nil error with nil pool, got %v", err)
+	}
+	if events != nil {
+		t.Fatal("expected nil events with nil db pool")
+	}
+}
+
+func TestEmitWithDBDisabled(t *testing.T) {
+	// Default store with no DB enabled should work normally
+	s := events.NewStore()
+	s.Emit("run-1", events.RunStarted, "idle", "started", nil)
+
+	evts := s.GetEvents("run-1")
+	if len(evts) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(evts))
+	}
+}
+
+func TestNewStore_SubscribersInitialized(t *testing.T) {
+	s := events.NewStore()
+	// Global subscription should not panic
+	ch, unsub := s.SubscribeAll()
+	defer unsub()
+
+	s.Emit("any-run", events.RunStarted, "idle", "global test", nil)
+
+	select {
+	case evt := <-ch:
+		if evt.Type != events.RunStarted {
+			t.Fatalf("expected run_started, got %s", evt.Type)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("timeout waiting for global event")
+	}
+}
+
+func TestEmit_CapsPerRunEvents(t *testing.T) {
+	s := events.NewStore()
+	// Emit MaxEventsPerRun + 100 events — should keep only the last MaxEventsPerRun
+	n := events.MaxEventsPerRun + 100
+	for i := 0; i < n; i++ {
+		s.Emit("run-1", events.StepStarted, "running", "event", nil)
+	}
+	got := s.GetEvents("run-1")
+	if len(got) != events.MaxEventsPerRun {
+		t.Fatalf("expected %d events after cap, got %d", events.MaxEventsPerRun, len(got))
+	}
+	// The first events should have been pruned — the earliest surviving event
+	// should be the 101st event (index 100 in zero-based).
+	if got[0].ID != "run-1-101" {
+		t.Fatalf("expected first event to be run-1-101, got %s", got[0].ID)
+	}
+	if got[len(got)-1].ID != "run-1-10100" {
+		t.Fatalf("expected last event to be run-1-10100, got %s", got[len(got)-1].ID)
+	}
+}

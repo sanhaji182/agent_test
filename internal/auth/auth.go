@@ -112,3 +112,51 @@ func HashAPIKey(key string) string {
 	h := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(h[:])
 }
+
+// GenerateJWTSecret menghasilkan JWT secret acak untuk cookie auth
+func GenerateJWTSecret() string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// CookieName adalah nama cookie yang digunakan untuk menyimpan JWT token dashboard
+const CookieName = "gotest_token"
+
+// SetTokenCookie menyetel JWT token sebagai httpOnly cookie
+func SetTokenCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     CookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   false, // Set true in production behind TLS
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   86400, // 24 hours
+	})
+}
+
+// ClearTokenCookie menghapus cookie JWT
+func ClearTokenCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     CookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+	})
+}
+
+// GetTokenFromRequest mengekstrak JWT token dari cookie, lalu fallback ke Authorization header, lalu query param
+func GetTokenFromRequest(r *http.Request) string {
+	// Try cookie first (browser dashboard)
+	if cookie, err := r.Cookie(CookieName); err == nil && cookie.Value != "" {
+		return cookie.Value
+	}
+	// Try Authorization header (API clients)
+	if authHeader := r.Header.Get("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
+		return strings.TrimPrefix(authHeader, "Bearer ")
+	}
+	// Try query param (SSE EventSource)
+	return r.URL.Query().Get("token")
+}

@@ -1,5 +1,8 @@
 // Package evals menyediakan integrasi dengan Braintrust untuk evaluasi kualitas LLM.
 // Mencatat skor untuk: test plan quality, script validity, fix success rate.
+//
+// EXPERIMENTAL: Not wired to any execution path. No logger is instantiated
+// in cmd/server or Agent. Wire this if you want Braintrust eval tracking.
 package evals
 
 import (

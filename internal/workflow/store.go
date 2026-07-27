@@ -103,13 +103,13 @@ func (s *ReviewStore) Reject(id, reviewer, comment string) bool {
 // --- Suite/Tag Management ---
 
 type Suite struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	ProjectID   string   `json:"project_id,omitempty"`
-	Environment string   `json:"environment,omitempty"`
-	Tags        []string `json:"tags"`
-	Pinned      bool     `json:"pinned"`
-	RunIDs      []string `json:"run_ids"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	ProjectID   string    `json:"project_id,omitempty"`
+	Environment string    `json:"environment,omitempty"`
+	Tags        []string  `json:"tags"`
+	Pinned      bool      `json:"pinned"`
+	RunIDs      []string  `json:"run_ids"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 

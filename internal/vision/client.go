@@ -1,5 +1,9 @@
 // Package vision menyediakan client untuk analisis visual menggunakan GPT-4o Vision.
 // Digunakan untuk: visual regression, identifikasi elemen UI, analisis screenshot.
+//
+// EXPERIMENTAL: Not wired to any execution path. The package provides a
+// vision-capable client but no handler or service constructs it. Wire this
+// into the Agent or a dedicated visual regression pipeline.
 package vision
 
 import (

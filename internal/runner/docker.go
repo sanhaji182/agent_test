@@ -55,11 +55,12 @@ func (r *DockerRunner) Run(ctx context.Context, testFiles []agent.TestFile, proj
 	}
 
 	// Buat konfigurasi Playwright dengan JSON reporter + video recording
+	escapedURL, _ := json.Marshal(projectURL)
 	config := `import { defineConfig } from '@playwright/test';
 export default defineConfig({
   reporter: [['json', { outputFile: '/results/results.json' }]],
   use: {
-    baseURL: '` + projectURL + `',
+    baseURL: ` + string(escapedURL) + `,
     video: { mode: 'on', size: { width: 1280, height: 720 } },
   },
 });`
@@ -68,10 +69,12 @@ export default defineConfig({
 	}
 
 	// Jalankan test di Docker container
+	// Use host.docker.internal for host access (Docker Desktop Mac/Win, or --add-host on Linux)
+	// instead of --network host, which grants full host network access.
 	cmd := exec.CommandContext(ctx, "docker", "run", "--rm",
 		"-v", tmpDir+":/tests",
 		"-v", tmpDir+":/results",
-		"--network", "host",
+		"--add-host", "host.docker.internal:host-gateway",
 		r.image,
 		"npx", "playwright", "test", "--config=/tests/playwright.config.ts",
 	)

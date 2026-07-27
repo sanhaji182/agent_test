@@ -1,5 +1,9 @@
 // Package steel menyediakan client untuk berkomunikasi dengan Steel Browser API.
 // Steel Browser adalah headless browser self-hosted untuk menjalankan Playwright test.
+//
+// EXPERIMENTAL: Not wired to cmd/server. The primary browser backend is
+// playwright-go (local) or Docker Playwright runner. Wire this if you want
+// Steel Browser as an alternative execution backend.
 package steel
 
 import (
@@ -21,9 +25,9 @@ type Client struct {
 
 // Session merepresentasikan satu sesi browser di Steel
 type Session struct {
-	ID          string `json:"sessionId"`    // ID unik sesi
-	CDPURL      string `json:"cdpUrl"`       // WebSocket URL untuk Chrome DevTools Protocol
-	SeleniumURL string `json:"seleniumUrl"`  // URL Selenium (alternatif)
+	ID          string `json:"sessionId"`   // ID unik sesi
+	CDPURL      string `json:"cdpUrl"`      // WebSocket URL untuk Chrome DevTools Protocol
+	SeleniumURL string `json:"seleniumUrl"` // URL Selenium (alternatif)
 	CreatedAt   string `json:"createdAt"`
 }
 
