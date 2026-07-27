@@ -13,8 +13,8 @@ import (
 // SteelScreenshotter mengambil screenshot melalui Steel Browser API
 type SteelScreenshotter struct {
 	client    *steel.Client
-	outputDir string    // Direktori untuk menyimpan file screenshot
-	sessionID string   // ID sesi Steel yang aktif
+	outputDir string // Direktori untuk menyimpan file screenshot
+	sessionID string // ID sesi Steel yang aktif
 }
 
 // NewSteelScreenshotter membuat screenshotter baru dengan Steel client

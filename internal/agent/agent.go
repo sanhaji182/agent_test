@@ -5,11 +5,19 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/go-go-golems/gotest-agent/internal/events"
 	"github.com/go-go-golems/gotest-agent/internal/execution"
 )
+
+// RunPersistence is a minimal interface for saving run state transitions.
+// Defined here to avoid circular dependencies (db package imports agent).
+type RunPersistence interface {
+	CreateRun(ctx context.Context, run *TestRun) error
+	UpdateRun(ctx context.Context, run *TestRun) error
+}
 
 // State merepresentasikan status dari sebuah test run
 type State string
@@ -23,6 +31,7 @@ const (
 	StateFixing        State = "fixing"         // Sedang memperbaiki test yang gagal
 	StateDone          State = "done"           // Selesai
 	StateFailed        State = "failed"         // Gagal
+	StateSimulated     State = "simulated"      // No real execution — synthetic result
 )
 
 // TestPlan adalah rencana pengujian yang dihasilkan oleh LLM
@@ -132,6 +141,7 @@ type AgentConfig struct {
 	Sidecar       *SidecarClient
 	Screenshotter ScreenshotCapturer
 	Exec          *execution.Context
+	Store         RunPersistence // Optional: auto-saves state transitions + panic-safe completion
 }
 
 // Agent adalah orchestrator utama yang menjalankan seluruh alur testing
@@ -142,6 +152,7 @@ type Agent struct {
 	sidecar        *SidecarClient
 	screenshotter  ScreenshotCapturer
 	exec           *execution.Context
+	store          RunPersistence
 }
 
 // New membuat Agent baru dengan konfigurasi minimal
@@ -149,7 +160,7 @@ func New(llm LLM, runner Runner, maxFixes int) *Agent {
 	return &Agent{llm: llm, runner: runner, maxFixAttempts: maxFixes}
 }
 
-// NewWithConfig membuat Agent dengan konfigurasi lengkap (sidecar + screenshot + events)
+// NewWithConfig membuat Agent dengan konfigurasi lengkap (sidecar + screenshot + events + store)
 func NewWithConfig(llm LLM, runner Runner, maxFixes int, cfg AgentConfig) *Agent {
 	return &Agent{
 		llm:            llm,
@@ -158,10 +169,13 @@ func NewWithConfig(llm LLM, runner Runner, maxFixes int, cfg AgentConfig) *Agent
 		sidecar:        cfg.Sidecar,
 		screenshotter:  cfg.Screenshotter,
 		exec:           cfg.Exec,
+		store:          cfg.Store,
 	}
 }
 
 // Execute menjalankan test run. Jika mode=advanced, delegasi ke sidecar.
+// When a RunPersistence store is configured, state transitions are automatically
+// persisted and panics are recovered gracefully.
 func (a *Agent) Execute(ctx context.Context, run *TestRun) error {
 	if run.Mode == "" {
 		run.Mode = "simple"
@@ -173,6 +187,38 @@ func (a *Agent) Execute(ctx context.Context, run *TestRun) error {
 	}
 
 	return a.executeSimple(ctx, run)
+}
+
+// Launch runs Execute in a background goroutine with panic recovery and automatic
+// persistence. This replaces the server.launchRun wrapper — all 5 execution trigger
+// paths (web API, webhook, MCP, schedule run-now, schedule due) can call Launch
+// directly on a configured Agent (ADR-001).
+func (a *Agent) Launch(run *TestRun) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("run execution panicked", "run_id", run.ID, "panic", r)
+				run.State = StateFailed
+				run.Error = fmt.Sprintf("execution panic: %v", r)
+				run.FinishedAt = func() *time.Time { t := time.Now(); return &t }()
+				run.UpdatedAt = time.Now()
+				if a.store != nil {
+					_ = a.store.UpdateRun(context.Background(), run)
+				}
+				if a.exec != nil && a.exec.Events != nil {
+					a.exec.Events.Emit(run.ID, "run_failed", "failed", fmt.Sprintf("Run panicked: %v", r), nil)
+				}
+			}
+		}()
+		// Save final state on exit regardless of error
+		err := a.Execute(context.Background(), run)
+		if a.store != nil {
+			_ = a.store.UpdateRun(context.Background(), run)
+		}
+		if err != nil {
+			slog.Error("run execution failed", "run_id", run.ID, "error", err)
+		}
+	}()
 }
 
 // executeAdvanced mendelegasikan eksekusi ke Python LangGraph sidecar
@@ -222,11 +268,13 @@ func (a *Agent) executeAdvanced(ctx context.Context, run *TestRun) error {
 
 // executeSimple menjalankan alur testing langsung di Go (tanpa sidecar)
 func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
+	a.save(run)
 	a.emit(run.ID, "run_started", "idle", "Run started", nil)
 
 	// Langkah 1: Analisis kode project
 	run.State = StateAnalyzing
 	run.UpdatedAt = time.Now()
+	a.save(run)
 	a.emit(run.ID, "analysis_started", "analyzing", "Analyzing codebase", nil)
 
 	analysis, err := a.llm.AnalyzeCodebase(ctx, run.ProjectPath)
@@ -245,6 +293,7 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 		return a.fail(run, fmt.Errorf("plan: %w", err))
 	}
 	run.TestPlan = plan
+	a.save(run)
 	a.emit(run.ID, "plan_generated", "plan_generated", fmt.Sprintf("Generated %d scenarios", len(plan.Scenarios)), nil)
 
 	// Langkah 3: Generate file test Playwright
@@ -255,6 +304,7 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 		return a.fail(run, fmt.Errorf("write: %w", err))
 	}
 	run.TestFiles = files
+	a.save(run)
 	a.emit(run.ID, "script_generated", "writing_tests", fmt.Sprintf("Generated %d test files", len(files)), nil)
 
 	// Langkah 4: Jalankan test + fix loop (maks 3x percobaan)
@@ -268,6 +318,7 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 
 	for {
 		run.State = StateRunning
+		a.save(run)
 		a.emit(run.ID, "test_started", "running", "Executing tests", nil)
 
 		var result *RunResult
@@ -284,6 +335,7 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 			return a.fail(run, fmt.Errorf("run: %w", err))
 		}
 		run.RunResult = result
+		a.save(run)
 
 		// Populate video fields jika runner menghasilkan video
 		if result.VideoPath != "" {
@@ -326,6 +378,7 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 		// Minta LLM untuk memperbaiki test yang gagal
 		run.State = StateFixing
 		run.FixAttempts++
+		a.save(run)
 		a.emit(run.ID, "fix_attempt_started", "fixing", fmt.Sprintf("Fix attempt %d", run.FixAttempts), nil)
 
 		fixed, err := a.llm.SuggestFixes(ctx, result.Failures, run.TestFiles)
@@ -341,6 +394,7 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 	now := time.Now()
 	run.FinishedAt = &now
 	run.UpdatedAt = now
+	a.save(run)
 	a.emit(run.ID, "run_completed", "done", "Run completed", nil)
 	return nil
 }
@@ -372,10 +426,19 @@ func (a *Agent) emit(runID, eventType, phase, message string, metadata map[strin
 	}
 }
 
+// save persists the run's current state if a store is configured.
+func (a *Agent) save(run *TestRun) {
+	if a.store != nil {
+		_ = a.store.UpdateRun(context.Background(), run)
+	}
+}
+
 // fail menandai run sebagai gagal dan menyimpan pesan error
 func (a *Agent) fail(run *TestRun, err error) error {
 	run.State = StateFailed
 	run.Error = err.Error()
+	run.FinishedAt = func() *time.Time { t := time.Now(); return &t }()
 	run.UpdatedAt = time.Now()
+	a.save(run)
 	return err
 }

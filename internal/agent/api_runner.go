@@ -5,29 +5,27 @@ import (
 	"time"
 )
 
-type APIRunner struct {}
+type APIRunner struct{}
 
 func NewAPIRunner() *APIRunner {
 	return &APIRunner{}
 }
 
 func (r *APIRunner) Run(ctx context.Context, testFiles []TestFile, projectURL string) (*RunResult, error) {
-	// For MVP, we pretend the API executes via a generic mock response
-	// The real implementation would parse testFiles and send net/http requests,
-	// asserting the response and recording the redacted logs.
-	
+	// API runner is not yet implemented — no real HTTP assertions are performed.
+	// Return zero passed to signal no meaningful result was produced.
 	result := &RunResult{
 		Passed:   0,
 		Failed:   0,
 		Total:    0,
 		Failures: []Failure{},
 	}
-	
-	for _ = range testFiles {
-		// Mock execution
+
+	for range testFiles {
+		// Placeholder: real implementation would send net/http requests,
+		// assert responses, and record redacted logs.
 		time.Sleep(500 * time.Millisecond)
 		result.Total++
-		result.Passed++
 	}
 
 	return result, nil

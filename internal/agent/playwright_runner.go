@@ -5,11 +5,63 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/url"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/playwright-community/playwright-go"
 )
+
+var playwrightInstallOnce sync.Once
+var playwrightInstallErr error
+
+// isSafeBrowserURL validates that a URL won't navigate the browser to internal
+// infrastructure (AUDIT SEC-06). Rejects loopback, RFC1918 private networks,
+// link-local, and cloud metadata endpoints.
+func isSafeBrowserURL(rawURL string) bool {
+	if rawURL == "" {
+		return false
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	if host == "" {
+		return false
+	}
+	lower := strings.ToLower(host)
+
+	// Block cloud metadata endpoints
+	if lower == "169.254.169.254" || lower == "metadata.google.internal" || lower == "metadata" {
+		return false
+	}
+
+	ip := net.ParseIP(host)
+	if ip != nil {
+		if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return false
+		}
+		if ip.IsPrivate() {
+			return false
+		}
+		return true
+	}
+
+	// Block hostnames that resolve to loopback
+	if ips, err := net.LookupIP(host); err == nil {
+		for _, resolved := range ips {
+			if resolved.IsLoopback() || resolved.IsLinkLocalUnicast() || resolved.IsPrivate() {
+				return false
+			}
+		}
+	}
+
+	return true
+}
 
 type PlaywrightRunner struct {
 	VideoDir string
@@ -30,12 +82,14 @@ type BrowserAction struct {
 }
 
 func (r *PlaywrightRunner) Run(ctx context.Context, testFiles []TestFile, projectURL string) (*RunResult, error) {
-	// Initialize Playwright
-	err := playwright.Install()
-	if err != nil {
-		return nil, fmt.Errorf("could not install playwright: %w", err)
+	// Install Playwright once per process lifetime (AUDIT P-01)
+	playwrightInstallOnce.Do(func() {
+		playwrightInstallErr = playwright.Install()
+	})
+	if playwrightInstallErr != nil {
+		return nil, fmt.Errorf("playwright not available: %w", playwrightInstallErr)
 	}
-	
+
 	pw, err := playwright.Run()
 	if err != nil {
 		return nil, fmt.Errorf("could not start playwright: %w", err)
@@ -81,12 +135,15 @@ func (r *PlaywrightRunner) Run(ctx context.Context, testFiles []TestFile, projec
 			// If not JSON or empty, ignore
 			continue
 		}
-		
+
 		for i := 0; i < len(actions); i++ {
 			a := actions[i]
 			var err error
 			switch a.Action {
 			case "goto":
+				if !isSafeBrowserURL(a.URL) {
+					return nil, fmt.Errorf("browser egress blocked: unsafe URL %q", a.URL)
+				}
 				_, err = page.Goto(a.URL)
 				page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
 					State: playwright.LoadStateNetworkidle,
@@ -100,7 +157,7 @@ func (r *PlaywrightRunner) Run(ctx context.Context, testFiles []TestFile, projec
 			case "wait":
 				time.Sleep(time.Duration(a.Ms) * time.Millisecond)
 			}
-			
+
 			if err != nil && r.llm != nil {
 				// SELF-HEALING LOOP
 				for attempt := 1; attempt <= 3; attempt++ {
@@ -114,7 +171,7 @@ func (r *PlaywrightRunner) Run(ctx context.Context, testFiles []TestFile, projec
 						});
 						return result;
 					}`)
-					
+
 					// Capture screenshot for Vision AI
 					var imageBase64 string
 					if screenshot, errImg := page.Screenshot(playwright.PageScreenshotOptions{
@@ -123,7 +180,7 @@ func (r *PlaywrightRunner) Run(ctx context.Context, testFiles []TestFile, projec
 					}); errImg == nil {
 						imageBase64 = base64.StdEncoding.EncodeToString(screenshot)
 					}
-					
+
 					actionJSON, _ := json.Marshal(a)
 					var newActionStr string
 					var healErr error
@@ -132,32 +189,35 @@ func (r *PlaywrightRunner) Run(ctx context.Context, testFiles []TestFile, projec
 					} else {
 						newActionStr, healErr = r.llm.HealAction(ctx, string(actionJSON), fmt.Sprintf("%v", domSnapshot), err.Error())
 					}
-					
+
 					if healErr != nil {
 						break // AI could not provide a healing suggestion
 					}
-					
+
 					var newAction BrowserAction
 					if json.Unmarshal([]byte(newActionStr), &newAction) == nil {
 						a = newAction
-						
+
 						// Retry the healed action
 						switch a.Action {
 						case "goto":
+							if !isSafeBrowserURL(a.URL) {
+								return nil, fmt.Errorf("browser egress blocked: unsafe URL %q", a.URL)
+							}
 							_, err = page.Goto(a.URL)
 						case "fill":
 							err = page.Locator(a.Selector).Fill(a.Value, playwright.LocatorFillOptions{Timeout: playwright.Float(3000)})
 						case "click":
 							err = page.Locator(a.Selector).First().Click(playwright.LocatorClickOptions{Timeout: playwright.Float(3000)})
 						}
-						
+
 						if err == nil {
 							break // Healing successful!
 						}
 					}
 				}
 			}
-			
+
 			time.Sleep(500 * time.Millisecond)
 		}
 	}
@@ -178,7 +238,7 @@ func (r *PlaywrightRunner) Run(ctx context.Context, testFiles []TestFile, projec
 	}
 
 	return &RunResult{
-		Passed:    1,
+		Passed:    0,
 		Failed:    0,
 		Total:     1,
 		Failures:  []Failure{},

@@ -25,7 +25,7 @@ func NewOpenAILLM(apiKey, model, baseURL string) *OpenAILLM {
 	}
 	// Pastikan baseURL tidak diakhiri dengan slash
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	
+
 	return &OpenAILLM{
 		apiKey:  apiKey,
 		model:   model,
