@@ -12,7 +12,7 @@
 | Backend (Go API) | 8080 | 8080 | `GET /health` | PostgreSQL + /tmp/agent_test/videos |
 | Frontend (Next.js) | 3001 | 3001 | HTTP 200 | None (static; API-dependent) |
 | PostgreSQL | — (internal) | 5432 | `pg_isready` | `pgdata` volume |
-| Redis | — (internal) | 6379 | `redis-cli ping` | None (experimental) |
+| Redis | — (internal) | 6379 | `redis-cli ping` | Asynq jobs (only when `QUEUE_ENABLED=true`; default off) |
 | Steel Browser | 3010 | 3000 | HTTP | None |
 | Sidecar | 8000 | 8000 | `GET /health` | In-memory jobs |
 
@@ -27,6 +27,22 @@ make smoke-test
 ```
 
 Access dashboard at `http://localhost:3001` and API at `http://localhost:8080`.
+
+### Durable Run Queue (optional)
+
+By default, runs execute as in-process goroutines (`agent.Launch`, capped by
+`MAX_CONCURRENT_RUNS`). To route execution through Redis/Asynq instead:
+
+```bash
+QUEUE_ENABLED=true
+REDIS_URL=redis:6379   # container network; localhost:6379 for local dev
+```
+
+Behavior: `launchRun` enqueues the run ID (`runs:execute`, max 2 retries,
+15-min timeout); an in-process Asynq worker loads the run from the store and
+executes it. If Redis is unreachable at enqueue time, execution transparently
+falls back in-process, so no run is lost. Terminal-state runs are skipped on
+retry (idempotent).
 
 ## Shutdown
 

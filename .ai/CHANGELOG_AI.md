@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-27 — Commit batch, server.go domain split, Launch lifecycle tests, optional Redis/Asynq queue
+
+- **Task:** Execute all recommended next actions: (1) commit the verified working tree as 7 atomic commits, (2) split `internal/api/server.go` into domain handler files, (3) add `Agent.Launch()` lifecycle integration tests, (4) wire optional Redis/Asynq durable run queue behind `QUEUE_ENABLED`.
+- **Source revision before change:** 7b54053
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/api/server.go` (3,617→~335 lines), new `internal/api/handlers_{projects,planning,runs,auth,schedules,releases,metrics,intelligence,reviews,admin}.go`, new `internal/agent/launch_test.go` (4 tests), new `internal/queue/run_worker.go` (`runs:execute` job), new `internal/api/queue_integration_test.go` (4 tests), `internal/config/config.go` (+`QueueEnabled`), `cmd/server/main.go` (queue wiring), `internal/queue/worker.go` (doc update), `.env.example`, `.ai/OPERATIONS.md`.
+- **Summary:** server.go split is a pure mechanical move (143 functions preserved, imports minimized per file). `launchRun` refactored into `buildAgent()` + queue-aware dispatch: when `SetRunEnqueuer` is installed (cmd/server, `QUEUE_ENABLED=true`), runs are enqueued to Redis/Asynq by ID and executed by an in-process worker via `ExecuteRunByID` (terminal states skipped for idempotent retries); enqueue failure falls back to in-process `Agent.Launch`, so no run is lost. Default path unchanged (goroutines + semaphore).
+- **Reason:** TECHNICAL_DEBT server.go size; PROJECT_STATE deferred item "Redis/Asynq wiring"; test-coverage gap on the canonical async execution path (ADR-001).
+- **Risk:** Medium (launchRun refactor touches the canonical execution path; mitigated by 8 new tests + full suite green)
+- **Breaking changes:** None (queue is opt-in; default behavior identical)
+- **Database migrations:** None
+- **Deployment steps:** Optional: set `QUEUE_ENABLED=true` + `REDIS_URL` to enable durable queue.
+- **Documentation updated:** `.ai/OPERATIONS.md` (Durable Run Queue section, Redis row), `.env.example`
+- **Verification completed:** `go build ./...` clean; `go test ./internal/...` 0 FAIL (agent tests incl. `-race`); `gofmt -l internal/ cmd/` empty; function count preserved (143); new tests: 4 Launch lifecycle + 4 queue integration all PASS.
+- **Facts added/removed or confidence changed:** queue package no longer fully EXPERIMENTAL — `RunWorker`/`runs:execute` is wired opt-in; legacy `TypeTestRun` remains unwired.
+- **Open unknowns:** npm audit fix, sidecar pytest, govulncheck still blocked by shell classifier.
+- **Related ADRs/TODOs:** ADR-001 (canonical executor), TECHNICAL_DEBT server.go split, PROJECT_STATE deferred items.
+
 ## 2026-07-27 — Consolidate LLM provider factory (AUDIT M-04, C-01)
 
 - **Task:** Replace 3 divergent provider-routing sites with single `agent.NewLLM()` factory

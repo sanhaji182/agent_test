@@ -373,12 +373,10 @@ func isApprovedLLMOrigin(baseURL string) bool {
 	return false
 }
 
-// launchRun is the canonical execution entry point (ADR-001). All 5 trigger
-// paths (web API, webhook, MCP, schedule run-now, schedule due) route through
-// this helper. It reads LLM settings (resolution chain: DB → env → defaults),
-// constructs an Agent with persistence and event support, and delegates to
-// Agent.Launch for async execution with panic recovery.
-func (s *Server) launchRun(run *agent.TestRun) {
+// buildAgent constructs a fully-configured Agent using the LLM settings
+// resolution chain (DB overrides → env config → defaults). Returns nil if the
+// resolved provider is unsupported.
+func (s *Server) buildAgent() *agent.Agent {
 	// Read LLM settings: DB overrides, env fallback
 	llmProvider := s.cfg.LLMProvider
 	llmModel := s.cfg.LLMModel
@@ -404,16 +402,39 @@ func (s *Server) launchRun(run *agent.TestRun) {
 	llm := agent.NewLLM(llmProvider, llmModel, apiKey, baseURL)
 	if llm == nil {
 		slog.Error("unsupported LLM provider", "provider", llmProvider)
-		return
+		return nil
 	}
 
 	runner := agent.NewPlaywrightRunner("/tmp/agent_test/videos", llm)
 	execCtx := execution.NewContext(s.events, s.recordings, s.visuals)
 
-	a := agent.NewWithConfig(llm, runner, 3, agent.AgentConfig{
+	return agent.NewWithConfig(llm, runner, 3, agent.AgentConfig{
 		Exec:  execCtx,
 		Store: s.store,
 	})
+}
+
+// launchRun is the canonical execution entry point (ADR-001). All 5 trigger
+// paths (web API, webhook, MCP, schedule run-now, schedule due) route through
+// this helper. When a durable queue enqueuer is configured (QUEUE_ENABLED),
+// the run is enqueued to Redis/Asynq; otherwise it executes in-process via
+// Agent.Launch with panic recovery.
+func (s *Server) launchRun(run *agent.TestRun) {
+	// Durable queue path (optional): enqueue and let the worker execute.
+	// Falls back to in-process execution if enqueue fails.
+	if s.enqueueRun != nil {
+		if err := s.enqueueRun(run.ID); err == nil {
+			return
+		} else {
+			slog.Warn("queue enqueue failed, falling back to in-process execution",
+				"run_id", run.ID, "error", err)
+		}
+	}
+
+	a := s.buildAgent()
+	if a == nil {
+		return
+	}
 	// Bounded concurrency: acquire a slot before launching (AUDIT S-01).
 	// Non-blocking best-effort: warn if at capacity, but still launch
 	// for backward compatibility.
@@ -423,6 +444,38 @@ func (s *Server) launchRun(run *agent.TestRun) {
 		a.Launch(run)
 	}()
 }
+
+// SetRunEnqueuer installs a durable-queue enqueue function. When set,
+// launchRun enqueues run IDs instead of executing in-process (with in-process
+// fallback on enqueue error). Called from cmd/server when QUEUE_ENABLED=true.
+func (s *Server) SetRunEnqueuer(fn func(runID string) error) {
+	s.enqueueRun = fn
+}
+
+// ExecuteRunByID loads a run from the store and executes it synchronously.
+// Used by the Asynq queue worker so job completion/retries track real
+// execution outcome. Final state is persisted by the Agent per transition.
+func (s *Server) ExecuteRunByID(ctx context.Context, runID string) error {
+	run, err := s.store.GetRun(ctx, runID)
+	if err != nil {
+		return err
+	}
+	// Terminal states are not re-executed (idempotent retry safety).
+	if run.State == agent.StateDone || run.State == agent.StateFailed || run.State == agent.StateSimulated {
+		return nil
+	}
+	a := s.buildAgent()
+	if a == nil {
+		return errUnsupportedProvider
+	}
+	execErr := a.Execute(ctx, run)
+	_ = s.store.UpdateRun(context.Background(), run)
+	return execErr
+}
+
+// errUnsupportedProvider is returned when the configured LLM provider cannot
+// be constructed (queue worker path).
+var errUnsupportedProvider = fmt.Errorf("unsupported LLM provider")
 
 func (s *Server) acquireSlot() {
 	select {

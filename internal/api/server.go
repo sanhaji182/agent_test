@@ -41,7 +41,8 @@ type Server struct {
 	reviews    *workflow.ReviewStore
 	suites     *workflow.SuiteStore
 	jwtAuth    *auth.Auth
-	runSem     chan struct{} // concurrency cap for run goroutines (AUDIT S-01)
+	runSem     chan struct{}            // concurrency cap for run goroutines (AUDIT S-01)
+	enqueueRun func(runID string) error // optional durable-queue enqueuer (Redis/Asynq); nil = in-process execution
 }
 
 func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.SettingsStore) *Server {

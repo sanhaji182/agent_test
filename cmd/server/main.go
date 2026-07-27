@@ -12,6 +12,8 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/api"
 	"github.com/go-go-golems/gotest-agent/internal/config"
 	"github.com/go-go-golems/gotest-agent/internal/db"
+	"github.com/go-go-golems/gotest-agent/internal/queue"
+	"github.com/hibiken/asynq"
 )
 
 func main() {
@@ -45,6 +47,24 @@ func main() {
 	}
 
 	srv := api.NewServer(cfg, store, settingsStore)
+
+	// Optional durable queue (QUEUE_ENABLED=true): enqueue runs to Redis/Asynq
+	// and execute them via a worker in this process. Default remains in-process
+	// goroutines (agent.Launch) — no Redis required.
+	if cfg.QueueEnabled {
+		client := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.RedisURL})
+		defer client.Close()
+		worker := queue.NewRunWorker(cfg.RedisURL, srv, cfg.MaxConcurrentRuns)
+		if err := worker.Start(); err != nil {
+			slog.Error("queue worker failed to start; using in-process execution", "error", err)
+		} else {
+			defer worker.Stop()
+			srv.SetRunEnqueuer(func(runID string) error {
+				return queue.EnqueueRunByID(client, runID)
+			})
+			slog.Info("durable run queue enabled", "redis", cfg.RedisURL, "concurrency", cfg.MaxConcurrentRuns)
+		}
+	}
 
 	// Background scheduler: polls due schedules every 60s and enqueues runs
 	ctx, cancel := context.WithCancel(context.Background())

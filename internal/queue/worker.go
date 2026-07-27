@@ -1,9 +1,10 @@
 // Package queue menyediakan job queue menggunakan Asynq (Redis-backed).
 // Digunakan untuk menjalankan test secara async di background.
 //
-// EXPERIMENTAL: Not wired to cmd/server. The primary execution path uses
-// in-process goroutines via agent.Launch. Wire this if you need durable
-// job queuing with Redis.
+// Wiring: set QUEUE_ENABLED=true (plus REDIS_URL) to route run execution
+// through Redis/Asynq via RunWorker (runs:execute). Default is in-process
+// goroutines via agent.Launch. The legacy TypeTestRun payload-based job
+// remains EXPERIMENTAL and unwired.
 package queue
 
 import (

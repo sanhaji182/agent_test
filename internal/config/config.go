@@ -12,6 +12,7 @@ type Config struct {
 	JWTSecret           string // Secret untuk JWT cookie auth dashboard
 	DatabaseURL         string // URL koneksi PostgreSQL
 	RedisURL            string // Alamat Redis untuk job queue
+	QueueEnabled        bool   // Aktifkan durable job queue Redis/Asynq (default: false, in-process goroutines)
 	AnthropicAPIKey     string // API key Anthropic untuk LLM (fallback ketika LLM_API_KEY kosong)
 	LLMModel            string // Model LLM yang digunakan (default: claude-sonnet-4-5)
 	LLMProvider         string // Provider LLM: anthropic, openai, google, deepseek, etc.
@@ -37,6 +38,7 @@ func Load() *Config {
 		JWTSecret:           getEnv("JWT_SECRET", ""),
 		DatabaseURL:         getEnv("DATABASE_URL", "postgres://postgres:password@localhost:5432/gotest_agent?sslmode=disable"),
 		RedisURL:            getEnv("REDIS_URL", "localhost:6379"),
+		QueueEnabled:        getEnv("QUEUE_ENABLED", "") == "true",
 		AnthropicAPIKey:     getEnv("ANTHROPIC_API_KEY", ""),
 		LLMModel:            getEnv("LLM_MODEL", "claude-sonnet-4-5"),
 		LLMProvider:         getEnv("LLM_PROVIDER", "anthropic"),
