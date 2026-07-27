@@ -31,7 +31,7 @@ These packages have implementation code but no connection from the running serve
 
 | ID | Package | Wiring gap | Severity | Evidence |
 |---|---|---|---|---|
-| UW-1 | `internal/queue` | Asynq worker and enqueue exist; no construction in `cmd/server` or `cmd/mcp` | HIGH | `internal/queue/worker.go:27-92`; `cmd/server/main.go:15-49` does not import or start it |
+| UW-1 | `internal/queue` | ✅ Resolved (2026-07-27): `RunWorker`/`runs:execute` wired opt-in via `QUEUE_ENABLED=true` in `cmd/server`; legacy `TypeTestRun` job remains unwired | ✅ Resolved | `internal/queue/run_worker.go`; `cmd/server/main.go` |
 | UW-2 | `internal/runner/steel.go`, `internal/steel/` | Steel client and runner exist; no server construction | MEDIUM | `cmd/server/main.go` does not construct `SteelRunner` or `Client` |
 | UW-3 | `internal/agent/sidecar.go` | `SidecarClient` exists; no server construction | MEDIUM | `cmd/server/main.go` does not construct `SidecarClient` |
 | UW-4 | `internal/vision/client.go` | Vision analysis client exists; no wiring | LOW | No construction in either executable |
@@ -42,7 +42,7 @@ These packages have implementation code but no connection from the running serve
 
 | ID | Location | Size | Severity | Notes |
 |---|---|---|---|---|
-| LF-1 | `internal/api/server.go` | ~3,556 lines | HIGH | Combines router, middleware, composition root, 85+ handlers, application logic, and integration code |
+| LF-1 | `internal/api/server.go` | ✅ Resolved (2026-07-27): split into 10 domain handler files (`handlers_*.go`); server.go now ~335 lines (Server struct, NewServer, routes, middleware, helpers) | ✅ Resolved | 143 functions preserved; pure mechanical move |
 | LF-2 | `internal/api/server.go` `launchRun` | ~35 lines | LOW | Agent constructor in server: reads LLM settings, constructs Agent, delegates to `Agent.Launch` |
 | LF-3 | `internal/api/server.go` `handleApproveTestPlan` | ~30 lines | LOW | Multi-step approval (case creation then draft update) without a transaction or service boundary |
 

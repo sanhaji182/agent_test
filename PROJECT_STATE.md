@@ -146,8 +146,9 @@ All **22 TODOs** from `.ai/TODO.md` are **Done**. For detailed provenance, see `
 | Browser egress validation | Scheme/DNS/IP/redirect policy tests (ADR-002 remaining). |
 | Full Playwright Docker path integration tests | Requires API key + browser runtime. |
 | Multi-provider LLM docs | Current docs imply Anthropic-only but runtime supports configurable settings. |
-| Server file split | `server.go` at 3,642 lines — domain extraction deferred. |
-| Redis/Asynq wiring | Queue package exists, not wired. |
+| ~~Server file split~~ | ✅ Done 2026-07-27: server.go split into 10 domain handler files (~335 lines remain). |
+| ~~Redis/Asynq wiring~~ | ✅ Done 2026-07-27: opt-in via `QUEUE_ENABLED=true` (`runs:execute` job, in-process fallback). |
+| ~~LLM client timeouts~~ | ✅ Done 2026-07-27: 2-minute timeout on OpenAI-compatible HTTP clients. |
 | Steel Browser wiring | Client exists, not wired. |
 | Frontend E2E tests | Full create→run→complete flow. |
 
