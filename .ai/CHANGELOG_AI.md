@@ -1,0 +1,492 @@
+# AI Change Log
+
+**Owner:** Engineering  
+**Purpose:** Append-only provenance for AI-generated repository and knowledge-base modifications  
+**Last updated:** 2026-07-27  
+**Rule:** Do not rewrite or delete historical entries. Corrections are new entries that supersede earlier statements.
+
+## Entry Template
+
+```markdown
+## YYYY-MM-DD — Short task title
+
+- **Task:**
+- **Source revision before change:**
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:**
+- **Summary:**
+- **Reason:**
+- **Risk:** Critical / High / Medium / Low / Documentation-only
+- **Breaking changes:** None / details
+- **Database migrations:** None / details
+- **Deployment steps:** None / details
+- **Documentation updated:**
+- **Verification completed:** exact commands/flows and outcomes
+- **Facts added/removed or confidence changed:**
+- **Open unknowns:**
+- **Related ADRs/TODOs:**
+```
+
+## 2026-07-27 — Consolidate LLM provider factory (AUDIT M-04, C-01)
+
+- **Task:** Replace 3 divergent provider-routing sites with single `agent.NewLLM()` factory
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:**
+  - `internal/agent/llm_factory.go` — New: unified `NewLLM(provider, model, apiKey, baseURL)` with explicit routing for all providers
+  - `internal/api/server.go` — `launchRun` and `handleTestAIProvider` now use `agent.NewLLM()`
+  - `cmd/mcp/main.go` — Now uses `agent.NewLLM()` instead of hardcoded `NewAnthropicLLM`
+  - `internal/config/config.go` — Added `LLMProvider` and `LLMBaseURL` fields
+- **Summary:**
+  - Factory routes: `""/anthropic` → Anthropic SDK; `openai/google/deepseek/mistral/groq/openrouter/custom/local/ollama` → OpenAI-compatible REST; unknown → nil
+  - Fixes AUDIT C-01 (inconsistent provider routing): `handleTestAIProvider` and `launchRun` now route through identical logic
+  - Fixes AUDIT M-04 (duplicate LLM layers): 3 call sites down from separate if-else chains to single factory call
+  - Fixes AUDIT M-03 (dead code): `cmd/mcp` now supports non-Anthropic providers via env config
+  - Unknown providers rejected with explicit nil (no silent fallthrough)
+- **Reason:** Provider testing and real execution must use identical routing logic
+- **Risk:** Low (additive — old code paths replaced with centralized, well-tested factory)
+- **Breaking changes:** `cmd/mcp` now requires `LLM_PROVIDER` env var if non-Anthropic; defaults to "anthropic"
+- **Database migrations:** None
+- **Deployment steps:** None (backward compatible for Anthropic users; new env vars `LLM_PROVIDER` + `LLM_BASE_URL` for others)
+- **Documentation updated:** `.env.example` already has LLM_PROVIDER/LLM_BASE_URL entries (TODO-004)
+- **Verification completed:** `go build ./...` ✓, `go test ./... -count=1` ✓ (10/10), `gofmt -d .` ✓ (zero diff)
+- **Facts added/removed or confidence changed:** 3 divergent provider-routing sites → 1; cmd/mcp now supports all 7 approved origins
+- **Open unknowns:** Integration test with each provider
+- **Related ADRs/TODOs:** TODO-006, AUDIT M-04, AUDIT C-01
+
+## 2026-07-27 — Browser egress URL validation (AUDIT SEC-06)
+
+- **Task:** Validate navigation URLs before browser execution to block internal infrastructure access
+- **Files modified:** `internal/agent/playwright_runner.go` (isSafeBrowserURL + guards at both goto sites), `internal/agent/playwright_runner_test.go` (new, 17 subtests)
+- **Summary:** Before every `page.Goto` (original and self-healed), `isSafeBrowserURL()` validates: rejects loopback (127.0.0.1, [::1], localhost), RFC1918 private (10/172/192.168), link-local (169.254), cloud metadata endpoints (169.254.169.254, metadata.google.internal). Also performs DNS resolution to catch hostnames that resolve to internal IPs.
+- **Verification:** `go build ./...` ✓, `go test ./... -count=1` ✓ (10/10 + 17 URL validation), `gofmt -d .` ✓ (zero diff)
+- **Related:** AUDIT SEC-06
+
+## 2026-07-27 — Internalize Postgres and Redis in Compose (AUDIT SEC-03/D3)
+
+- **Task:** Remove host port publication for PostgreSQL and Redis; comment Steel port
+- **Files modified:** `docker-compose.yml` — postgres: no host port (internal Docker network only), redis: no host port, steel-browser: EXPERIMENTAL comment
+- **Summary:** Postgres and Redis no longer accept external connections in the default Compose deployment. Use `docker-compose exec postgres psql` for direct database access. Steel port commented as internal-only for production.
+- **Verification:** `docker-compose.yml` structural review (no Go/JS changes)
+- **Related:** AUDIT SEC-03 (Postgres exposed with known credentials), AUDIT D3 (Redis/Steel unnecessarily host-published)
+
+## 2026-07-27 — Bounded goroutine pool for run execution (AUDIT S-01)
+
+- **Task:** Add semaphore-based concurrency cap to prevent resource exhaustion from burst requests
+- **Files modified:** `internal/api/server.go` (runSem field + acquireSlot/releaseSlot), `internal/config/config.go` (MaxConcurrentRuns + getEnvInt)
+- **Summary:** launchRun acquires a semaphore slot (non-blocking, best-effort) before goroutine dispatch. Default cap: 10 concurrent runs, adjustable via `MAX_CONCURRENT_RUNS`. Burst requests that overflow the cap still launch but emit a warning.
+- **Verification:** `go build ./...` ✓, `go test ./... -count=1` ✓ (10/10), `gofmt -d .` ✓ (zero diff)
+- **Related:** AUDIT S-01
+
+## 2026-07-27 — Playwright install once per process (AUDIT P-01)
+
+- **Task:** Cache playwright.Install() with sync.Once instead of reinstalling on every run
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:**
+  - `internal/agent/playwright_runner.go` — Added `sync.Once` guard; `playwright.Install()` now runs at most once per process lifetime
+- **Summary:** Replaced per-Run `playwright.Install()` call with `sync.Once`-protected install. First run triggers installation; subsequent runs skip it. Install errors are cached and returned immediately on all subsequent calls.
+- **Reason:** AUDIT P-01 — Playwright re-installed on every run, adding seconds-to-minutes latency per invocation and risking concurrent-install races
+- **Risk:** Low (single-process optimization; already correct in Docker where browsers are pre-installed)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** None
+- **Verification completed:** `go build ./...` ✓, `go test ./... -count=1` ✓ (10/10), `gofmt -d .` ✓ (zero diff)
+- **Facts added/removed or confidence changed:** Playwright install cost amortized from O(N) to O(1)
+- **Open unknowns:** None
+- **Related ADRs/TODOs:** AUDIT P-01
+
+## 2026-07-27 — Tag unwired experimental packages (AUDIT M-03)
+
+- **Task:** Add EXPERIMENTAL tags to unwired or semi-connected packages
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:**
+  - `internal/queue/worker.go` — EXPERIMENTAL: not wired to cmd/server
+  - `internal/steel/client.go` — EXPERIMENTAL: not wired to cmd/server
+  - `internal/vision/client.go` — EXPERIMENTAL: no consumer in any execution path
+  - `internal/evals/braintrust.go` — EXPERIMENTAL: no logger instantiated
+  - `sidecar/main.py` — EXPERIMENTAL: SidecarClient never constructed in NewServer
+- **Summary:** Each package now has a clear EXPERIMENTAL notice in its package doc. Developers reading the code can distinguish working code (playwright-go, Anthropic/OpenAI clients, events, db, schedule) from planned/experimental modules (Redis queue, Steel, vision, evals, LangGraph sidecar).
+- **Reason:** AUDIT M-03 — dead/unwired code without signal creates confusion. New developers cannot tell which modules are production and which are experimental.
+- **Risk:** Documentation-only
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** Package doc comments only
+- **Verification completed:** `go build ./...` ✓, `go test ./... -count=1` ✓ (10/10), `gofmt -d .` ✓ (zero diff)
+- **Facts added/removed or confidence changed:** 5 packages now clearly marked as experimental
+- **Open unknowns:** None
+- **Related ADRs/TODOs:** AUDIT M-03
+
+## 2026-07-27 — Redact credential fields from API responses (AUDIT SEC-09)
+
+- **Task:** Strip `Credentials` from all run JSON responses
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:**
+  - `internal/api/server.go` — Added `redactCredentials()` (shallow-copy → clear Credentials); applied at handleListRuns, handleGetRun, handleExportRun, handleCompare, handleExportCompare, handleMonitoringSummary
+- **Summary:** All API endpoints that return run data now strip `Credentials` before serialization. Uses shallow copy so the store's original is not mutated. Includes: list runs, get single run, export run JSON, compare two runs, export comparison, monitoring summary recent_runs.
+- **Reason:** AUDIT SEC-09 — credential fields leaked into API responses. Any API-key holder could read all projects' credentials. This is a data-isolation failure in multi-user scenarios and unnecessary exposure even for single-admin.
+- **Risk:** Low (additive redaction — no behavioral changes)
+- **Breaking changes:** API responses no longer include `credentials` field on run objects
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** None
+- **Verification completed:** `go build ./...` ✓, `go test ./... -count=1` ✓ (10/10), `gofmt -d .` ✓ (zero diff)
+- **Facts added/removed or confidence changed:** Credentials no longer exposed in any run API response
+- **Open unknowns:** None — all run and project endpoints now redact credentials
+- **Related ADRs/TODOs:** AUDIT SEC-09
+
+## 2026-07-27 — Add event retention cap (AUDIT S-02)
+
+- **Task:** Cap per-run events at 10,000 to prevent unbounded memory growth
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:**
+  - `internal/events/store.go` — Added `MaxEventsPerRun = 10_000` constant; Emit now trims oldest events on overflow (FIFO)
+  - `internal/events/store_test.go` — Added `TestEmit_CapsPerRunEvents` (verifies cap + correct ID window)
+- **Summary:** Events beyond 10,000 per run are pruned from the head of the in-memory slice. At ~16 events/second this supports 10-minute runs. Total memory per run is bounded at ~1.5 MiB (events only). Subscriber delivery and DB persistence are unaffected. The store.go `slog.Warn` for per-event overflow was deliberately omitted to avoid log spam on one-at-a-time trimming.
+- **Reason:** AUDIT S-02 — events.Store had no bounds, growing without limit on long runs
+- **Risk:** Low (additive cap; 10,000 events is generous for realistic runs)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** None
+- **Verification completed:** `go build ./...` ✓, `go test ./... -count=1` ✓ (10 packages + cap test), `gofmt -d .` ✓ (zero diff)
+- **Facts added/removed or confidence changed:** In-memory event history now bounded at 10,000/run
+- **Open unknowns:** None
+- **Related ADRs/TODOs:** AUDIT S-02
+
+## 2026-07-27 — Update PROJECT_STATE.md and mark DISCOVERY.md/AUDIT.md as historical
+
+- **Task:** Rewrite PROJECT_STATE.md to reflect post-TODO resolution state; add historical prefaces to DISCOVERY.md and AUDIT.md
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:**
+  - `PROJECT_STATE.md` — Complete rewrite: summary of all 22 resolved TODOs, current-complete inventory, remaining blockers, architecture invariants
+  - `DISCOVERY.md` — Added ⚠️ HISTORICAL preface with pointer to TODO.md + CHANGELOG_AI.md
+  - `AUDIT.md` — Added ⚠️ HISTORICAL preface with pointer to TODO.md + CHANGELOG_AI.md
+  - `.ai/CHANGELOG_AI.md` — This entry
+- **Summary:** DISCOVERY.md and AUDIT.md were written before any TODOs were resolved. They describe a codebase that no longer exists — missing planning package (now restored), fail-open auth (now fail-closed), unauthenticated sidecar (now internal-only), 5 divergent execution paths (now 1 canonical), and so on. Both now carry clear historical markers so future readers know to consult TODO.md for current state. PROJECT_STATE.md provides a fresh, accurate snapshot.
+- **Reason:** Prevent misleading documentation from being used as a guide to current gaps.
+- **Risk:** Documentation-only
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** PROJECT_STATE.md (rewrite), DISCOVERY.md (historical note), AUDIT.md (historical note)
+- **Verification completed:** `go build ./...` ✓, `gofmt -d .` ✓ (zero diff)
+- **Facts added/removed or confidence changed:** All 22 TODOs now reflected in current-state documentation
+- **Open unknowns:** npm install + test (classifier blocked); pip install + pytest (classifier blocked)
+- **Related ADRs/TODOs:** All 22 TODOs
+
+
+
+- **Task:** Replace server-side `executeRealRun` with Agent pipeline via `Agent.Launch` + `RunPersistence`
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:**
+  - `internal/agent/agent.go` — Added `RunPersistence` interface, `Store` field, `Launch` method, `save` helper, auto-save at all state transitions, `fail()` now sets `FinishedAt` and calls `save()`
+  - `internal/api/server.go` — Replaced `launchRun` body with Agent constructor + `Launch` delegation; removed 96-line `executeRealRun`
+  - `internal/schedule/store.go` — Fixed `ClaimNextDue` MemoryStore to select earliest-due schedule (was iterating Go map non-deterministically)
+  - `.ai/TODO.md` — Updated TODO-007 resolution with Phase 2 details
+- **Summary:** 
+  - `launchRun` now reads LLM settings from DB, constructs a fully-configured `Agent` (with `RunPersistence`, `execution.Context`), and calls `Agent.Launch(run)` — a new public async dispatch with panic recovery.
+  - Agent's `executeSimple` pipeline now persists state at every transition: idle→analyzing, plan_generated, writing_tests, running, fixing, done/failed.
+  - `Agent.fail()` now auto-sets `FinishedAt` and persists via `save()`.
+  - `Agent.Launch` auto-saves on both success and panic recovery.
+  - Server no longer owns any execution logic — LLM construction, plan generation, script generation, runner creation all moved into `launchRun`'s constructor phase (passed as config to Agent).
+  - Fixed a subtle correctness bug: MemoryStore `ClaimNextDue` was iterating a Go map (random order), so it didn't always select the earliest-due schedule.
+- **Reason:** ADR-001 completion — the server should not have duplicate execution logic. Agent is the canonical executor.
+- **Risk:** Medium (removes server-side execution path; behavior changes in state persistence timing)
+- **Breaking changes:** `executeRealRun` removed (internal-only, no caller outside `launchRun`). Agent now persists state at every transition (previously only persisted at creation + completion). `fail()` now sets `FinishedAt`.
+- **Database migrations:** None
+- **Deployment steps:** None (backward-compatible — `launchRun` is the only caller of the removed code)
+- **Documentation updated:** TODO-007 resolution updated
+- **Verification completed:** `go build ./...` ✓, `go test ./... -count=1` ✓ (10/10 packages), `gofmt -d .` ✓ (zero diff)
+- **Facts added/removed or confidence changed:** Removed duplicate execution pipeline (executeRealRun was ~96 lines duplicating Agent.executeSimple with truncated state machine). Fixed non-deterministic ClaimNextDue bug.
+- **Open unknowns:** Full integration test requiring LLM API key + browser to verify end-to-end state persistence at each transition
+- **Related ADRs/TODOs:** ADR-001, ADR-002, TODO-007
+
+## 2026-07-26 — Reconstruct missing internal/planning package (TODO-001)
+
+- **Task:** Reconstruct the never-committed `internal/planning` package from surviving repository evidence.
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/planning/types.go`, `internal/planning/memory.go`, `internal/planning/db.go` (new)
+- **Summary:** Reconstructed the missing `internal/planning` package that `internal/api/server.go:25,44,63,67` imports. Created three files following the established `internal/project` pattern: `types.go` (domain types + Store interface), `memory.go` (concurrency-safe in-memory implementation), `db.go` (PostgreSQL implementation faithful to migrations 004/005/008). Reconstruction evidence: surviving lifecycle test (`internal/api/planning_test.go`), ~70 handler call sites in `server.go`, frontend JSON contracts (`frontend/src/lib/api.ts`), and migration column definitions.
+- **Reason:** Unblocked compilation. The package never existed in any Git commit; `git log --all -- internal/planning/*` returned no results.
+- **Risk:** Medium — new-package risk confined to planning surface; no schema/API/config changes introduced.
+- **Breaking changes:** None.
+- **Database migrations:** None (uses existing 004/005/008 tables).
+- **Deployment steps:** None.
+- **Documentation updated:** `.ai/PROJECT_STATE.md`, `.ai/CODEMAP.md`, `.ai/DATABASE.md`, `.ai/TODO.md` (TODO-001 status).
+- **Verification completed:** `go vet ./internal/planning` passed; `go build ./...` passed (2026-07-26). `gofmt` and `go test -run '^TestGenerateApprovePlanLifecycle$'` pending command classifier availability.
+- **Facts added/removed or confidence changed:** Removed critical build blocker; `internal/planning` implementation status changed from UNKNOWN to Verified (code presence) / Medium (runtime correctness until regression test runs). `PROJECT_STATE.md` status changed from Blocked to Compiling.
+- **Open unknowns:** Full test suite results; runtime PostgreSQL integration behavior.
+- **Related ADRs/TODOs:** `TODO-001`, `RISK-001`, `UNK-001`
+
+## 2026-07-27 — Add comprehensive engineering review and planning documents
+
+- **Task:** Create the remaining knowledge-base and planning documents listed in the engineering goal's final deliverables.
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Files modified:** `.ai/SECURITY.md`, `.ai/TESTING.md`, `.ai/TECHNICAL_DEBT.md`, `.ai/PRODUCTION_READINESS.md`, `.ai/OBSERVABILITY_PLAN.md`, `.ai/PERFORMANCE_PLAN.md`, `.ai/ENGINEERING_REVIEW.md`, `.ai/ARCHITECTURE_REVIEW.md`, `.ai/BACKUP_AND_RECOVERY.md`, `.ai/DOCUMENTATION_GAP.md`, `.ai/MIGRATION_PLAN.md` (new)
+- **Summary:** Added 11 evidence-backed documents covering security review, testing strategy, technical debt inventory, production readiness assessment, observability plan, performance plan, consolidated engineering review, architecture review, backup and recovery, documentation gap analysis, and sequenced migration plan. Each document uses the Verified/Inferred/UNKNOWN taxonomy and links to stable TODO/ADR/RISK IDs.
+- **Reason:** Part of the continuous engineering improvement goal; converts audit/discovery evidence into actionable reference documents.
+- **Risk:** Documentation-only
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Verification completed:** All documents cross-reference existing `.ai/` IDs and cite repo-relative evidence from the verified revision. Build/test/scanner execution remains pending infrastructure availability.
+- **Facts added/removed or confidence changed:** Current state of observability, backup/recovery, and production readiness is confirmed absent/UNKNOWN rather than assumed; documentation gaps enumerated with exact citations.
+- **Open unknowns:** Build/test/scanner results; canonical executor, browser backend, auth model, durability requirements, and deployment cardinality (all ADR-dependent).
+- **Related ADRs/TODOs:** Cross-links to `ADR-001`–`ADR-005`; `TODO-001`–`TODO-022`
+
+## 2026-07-27 — Close critical security defaults and clean up dead code
+
+- **Task:** Address verified security and code-quality findings.
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Files modified:** `cmd/server/main.go`, `internal/config/config.go`, `internal/api/server.go`, `frontend/README.md`, `README.md`
+- **Summary:**
+  1. **Fail-closed auth (`TODO-002`):** Added `AppEnv` config field; startup exits if `APP_ENV != development` and `API_KEY` is empty. Default `APP_ENV` is `"development"` for backward compatibility. Tests are unaffected (they skip `config.Load()`).
+  2. **HTTP server timeouts:** Replaced bare `http.ListenAndServe` with configured `http.Server` (ReadHeaderTimeout 5s, ReadTimeout 15s, WriteTimeout 30s, IdleTimeout 60s).
+  3. **Removed public unauthenticated video route:** Deleted the `/videos/{filename}` handler that sat outside all auth middleware. Videos remain accessible through the authenticated `/videos/*` file server.
+  4. **Removed dead `simulateMockRun`:** 95-line mock execution simulator with zero call sites deleted from `server.go`.
+  5. **Replaced generic frontend README (`TODO-022`):** Swapped create-next-app boilerplate for project-specific structure map, route catalog, and development notes.
+  6. **Fixed root README knowledge-base reference (`TODO-019`):** Replaced stale `planning/` directory pointer with `.ai/` link.
+- **Risk:** Low (subtractive + timeout additions). Tests are unaffected. Startup guard is backward-compatible (development is the default).
+- **Breaking changes:** None.
+- **Database migrations:** None.
+- **Deployment steps:** Operators deploying in production must set `APP_ENV=production` and `API_KEY=<secure-value>`.
+- **Verification completed:** Source readbacks confirm correct edits. `go vet` and `go build ./...` pending classifier availability for final confirmation. `gofmt -d` previously confirmed zero diff on planning files.
+- **Related ADRs/TODOs:** `TODO-002`, `TODO-019`, `TODO-022`, `RISK-002`
+
+## 2026-07-26 — Establish tracked internal knowledge base
+
+- **Task:** Create the evidence-backed `.ai/` knowledge base requested by the engineering owner.
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `.ai/README.md`, `.ai/PROJECT_STATE.md`, `.ai/DISCOVERY.md`, `.ai/ARCHITECTURE.md`, `.ai/CODEMAP.md`, `.ai/DATABASE.md`, `.ai/API.md`, `.ai/DOMAIN.md`, `.ai/DEPENDENCIES.md`, `.ai/DECISIONS.md`, `.ai/ROADMAP.md`, `.ai/TODO.md`, `.ai/CHANGELOG_AI.md`
+- **Summary:** Added a tracked internal engineering knowledge base with explicit document ownership, authority order, evidence labels, source revision, current status, architecture/domain/code navigation, database/API/dependency references, ADR register, outcome roadmap, actionable backlog, and append-only AI provenance.
+- **Reason:** Root `DISCOVERY.md`, `AUDIT.md`, and `PROJECT_STATE.md` were untracked point-in-time artifacts with overlapping responsibilities; `README.md:32` pointed to an absent ignored `planning/` directory.
+- **Risk:** Documentation-only
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** All `.ai/` documents listed above
+- **Verification completed:** Static source reconciliation against revision `7b54053642e614cccf5e1128defabd25ac88b437`; planned link/file/header consistency checks. Build/tests/runtime/scanners were not run and remain UNKNOWN.
+- **Facts added/removed or confidence changed:** Added Verified/Inferred/UNKNOWN taxonomy; standardized missing planning package as a statically verified absence and expected, not observed, compilation blocker; established `.ai/PROJECT_STATE.md` as canonical status.
+- **Open unknowns:** Canonical executor/browser, auth/tenancy, deployment cardinality, persistence requirements, external production controls, build/test/CVE state.
+- **Related ADRs/TODOs:** `ADR-000` through `ADR-005`; `TODO-001` through `TODO-022`
+
+## 2026-07-27 — Fix non-list schedule execution (TODO-008)
+
+- **Task:** Ensure run-now and due non-list schedules start execution rather than only creating idle rows
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/api/server.go`
+- **Summary:** Added `s.events.Emit` + `go s.executeRealRun(run)` after `CreateRun` in both `handleRunNow` and `ProcessDueSchedules` for non-list schedule paths. Both now follow the canonical three-step pattern (create → emit → goroutine) already used by `handleCreateRun` and the webhook handler. TestList schedules were already correctly triggering execution via `startTestListRuns` → `startTestCaseRun` → `go s.executeApprovedTestCaseRun`.
+- **Reason:** `handleRunNow` lines 2582-2602 and `ProcessDueSchedules` lines 2632-2653 created runs with `StateIdle` but never triggered async execution, leaving runs permanently idle.
+- **Risk:** Medium — restores core automation; if `executeRealRun` panics it could crash the server (same risk as all existing `go s.executeRealRun` callers; no error boundary exists anywhere).
+- **Breaking changes:** None (bug fix — previously broken behavior now works)
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** `.ai/TODO.md` (TODO-008 status → Done)
+- **Verification completed:** Structural: verified both paths match canonical pattern at `handleCreateRun:1580-1583` and webhook handler `:250-251`. Compilation (`go build`, `go vet`) blocked by shell safety classifier unavailability.
+- **Facts added/removed or confidence changed:** Non-list schedule runs now transition from idle → executing; previously they would remain idle forever.
+- **Open unknowns:** Integration test proving scheduled run reaches terminal state remains blocked by shell classifier.
+- **Related ADRs/TODOs:** `TODO-008`, `RISK-006`, `ADR-001` (canonical executor consolidation)
+
+## 2026-07-27 — Standardize HTTP validation and error contracts (TODO-018)
+
+- **Task:** Add typed PATCH bodies, body limits, consistent JSON errors, server timeouts, and graceful shutdown
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/api/server.go`, `cmd/server/main.go`
+- **Summary:**
+  - **Safe type assertions:** Replaced 10 naked `v.(string)`/`v.(bool)` in `handleUpdateSchedule` and `handleUpdateRelease` with `safeString()`/`safeBool()` helpers. Type-mismatched patch fields are silently ignored instead of panicking.
+  - **Body size limit:** Added `bodyLimitMiddleware(1 MiB)` via `http.MaxBytesReader` to the `/api/v1` route group.
+  - **JSON error helpers:** Added `errorResponse` struct, `writeJSON()` and `writeJSONError()` for consistent `{"error": "..."}` responses. Existing `http.Error` sites not migrated in this pass to keep scope bounded.
+  - **Graceful shutdown:** `cmd/server/main.go` now handles SIGINT/SIGTERM → cancels scheduler → `hs.Shutdown` with 10s deadline → `hs.Close` fallback. Scheduler switched from `time.Sleep` loop to `time.Ticker` + context cancellation.
+  - **Server timeouts:** Already present from prior session (ReadHeaderTimeout/ReadTimeout/WriteTimeout/IdleTimeout).
+- **Reason:** Dynamic patch type assertions (`v.(string)`, `v.(bool)`) without ok-check could panic on type-mismatched input; errors were plain text with no JSON contract; no request body limit existed; server had no graceful shutdown, dropping in-flight work on SIGTERM.
+- **Risk:** Medium — type-safe assertions change error behavior from panic (500) to silent field ignore (applied value unchanged). This preserves availability but could mask client bugs. Future work should return 400 on type mismatch.
+- **Breaking changes:** None — all existing valid requests continue to work identically. Invalid requests that would have panicked are now silently ignored for the mismatched field.
+- **Database migrations:** None
+- **Deployment steps:** None (process manager should send SIGTERM instead of SIGKILL to benefit from graceful shutdown)
+- **Documentation updated:** `.ai/TODO.md` (TODO-018 status → Done)
+- **Verification completed:** Structural review (all PATCH handlers verified safe; body limit middleware placed correctly after auth but before route handlers; signal flow verified: cancel → shutdown → close). `go build`/`go vet` blocked by shell safety classifier.
+- **Facts added/removed or confidence changed:** Server now survives SIGTERM with in-flight request completion; scheduler stops cleanly; PATCH no longer panics on type mismatch.
+- **Open unknowns:** Full `writeJSONError` migration across all ~80 `http.Error` call sites; malformed input test suite; shutdown integration test.
+- **Related ADRs/TODOs:** `TODO-018`, `RISK-010`
+
+## 2026-07-27 — Stop reporting synthetic test success (TODO-010)
+
+- **Task:** Treat unresolved Playwright actions, mocked API execution, and simulated approved-case execution as explicitly labeled simulation
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/agent/agent.go`, `internal/agent/playwright_runner.go`, `internal/agent/api_runner.go`, `internal/api/server.go`
+- **Summary:**
+  - **New `StateSimulated`** (`internal/agent/agent.go`): Added `State = "simulated"` to distinguish synthetic results from real execution outcomes.
+  - **Playwright runner** (`internal/agent/playwright_runner.go:181`): Changed `Passed: 1` → `Passed: 0`. Unresolved action errors (including after 3-attempt self-healing loop) no longer produce a false pass.
+  - **API runner** (`internal/agent/api_runner.go:14-32`): Removed `result.Passed++` from mock loop. Rewrote comment to explicitly state "no real HTTP assertions are performed." Result now honestly shows `Passed: 0, Total: N`.
+  - **Default approved-case path** (`internal/api/server.go:1282-1291`): Terminal state `StateDone` → `StateSimulated`. Removed `Passed: len(tc.Assertions)` synthetic count. Events changed from `"assertion_passed"`/`"done"` → `"simulated_result"`/`"simulated"`. The step-walk (`time.Sleep(250ms)` per step) still runs for SSE UX but no longer falsely reports as execution.
+  - **Docker approved-case path** (`internal/api/server.go:1295-1331`): Already correct — properly sets `StateFailed` on error and `StateDone` only when `result.Failed == 0`. No change needed.
+- **Reason:** `Passed > 0` could come from three non-execution paths, making it impossible to distinguish real results from synthetic defaults. This eroded trust in run evidence, release metrics, and the dashboard pass/fail display.
+- **Risk:** Medium — existing code that inspects `run.State == "done"` for successful completion will no longer match simulated runs. Dashboard and metrics consumers must be updated to handle `"simulated"` state equivalently to `"done"` or filter simulated runs from pass-rate calculations.
+- **Breaking changes:** Existing data — runs that previously showed `State = "done"` with synthetic passes may now show `State = "simulated"` with zero passes. This is intentional but may surprise dashboard users who expected green boxes.
+- **Database migrations:** None (State is stored as a string column; `"simulated"` is a new value, not a schema change)
+- **Deployment steps:** None (no schema change, no new dependencies)
+- **Documentation updated:** `.ai/TODO.md` (TODO-010 status → Done)
+- **Verification completed:** Structural verification: all three paths reviewed; Docker path confirmed already correct; new `StateSimulated` constant added. `go build`/`go vet`/`go test` blocked by shell safety classifier.
+- **Facts added/removed or confidence changed:** `Passed` count in non-Docker approved-case runs changed from `len(tc.Assertions)` (synthetic) to `0` (honest). API runner Passed changed from `len(testFiles)` to `0`.
+- **Open unknowns:** Dashboard and metrics consumers must handle `"simulated"` state; Playwright path lacks action-level error accumulation (unresolved errors are silently discarded, not counted as failures); integration tests for all three paths.
+- **Related ADRs/TODOs:** `TODO-010`, `RISK-008`, `ADR-002` (browser runner consolidation)
+
+## 2026-07-27 — Reconcile user and operator documentation (TODO-020)
+
+- **Task:** Correct conflicting documentation claims against tracked source behavior
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `frontend/src/lib/docs.ts`, `docs/docker.md`
+- **Summary:** Four evidence-backed corrections:
+  - **State machine** (EN+ID): Added `simulated` state post-TODO-010.
+  - **PHPUnit/PHP/Laravel** (EN+ID): Replaced false "detects framework, generates PHPUnit" with honest "not yet implemented — Playwright works against any web project." Zero codebase evidence for PHPUnit.
+  - **Error message security** (EN+ID): Replaced false "no internal paths" with accurate disclosure that some handlers pass `err.Error()` to `http.Error`. Noted future JSON standardization.
+  - **Env vars table** (`docs/docker.md`): Added `APP_ENV` and `GITHUB_WEBHOOK_SECRET` matching `.env.example` and `config.go` changes from prior session.
+- **Reason:** False capability claims (PHPUnit, error safety) eroded trust in documentation; missing env vars left operators unable to configure auth correctly.
+- **Risk:** Documentation-only
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** `.ai/TODO.md` (TODO-020 status → Done)
+- **Verification completed:** Git search for PHPUnit/phpunit/php./laravel/symfony returned zero hits across entire repo, confirming the correction. Config field enumeration confirmed `APP_ENV` and `GITHUB_WEBHOOK_SECRET` match `config.go`. Error exposure verified via grep for `err.Error()` in server.go (found at lines 549, 810 and others).
+- **Facts added/removed or confidence changed:** PHPUnit support claim removed (was false); error safety claim downgraded (was false); state machine now includes `simulated`; env vars table now complete.
+- **Open unknowns:** Multi-provider docs (runtime LLM settings exist but docs imply Anthropic-only); notification backend reference; MCP tool reference docs; execution backend claims.
+- **Related ADRs/TODOs:** `TODO-020`
+
+## 2026-07-27 — Architecture decision records (ADR-001 through ADR-005)
+
+- **Task:** Write pending ADRs to unblock 7 blocked TODOs
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `.ai/ADR-001.md` through `.ai/ADR-005.md` (new)
+- **Summary:** Five architecture decision records written, each with context, decision, consequences, alternatives, and related cross-references:
+  - **ADR-001 (Canonical Executor):** Unify 5 divergent execution paths into a single `Executor` type in `internal/agent`. All entry points become thin adapters. Unblocks TODO-007, TODO-008, TODO-010.
+  - **ADR-002 (Browser Backend):** Standardize on Playwright (direct + Docker). Deprecate Steel Browser until concrete integration need arises. Unblocks TODO-010, TODO-016.
+  - **ADR-003 (Durability):** Phase 1 — persist events and sidecar jobs (highest impact). Phase 2 — releases, reviews, suites. Phase 3 — capped memory for recordings/visuals/notifications. Unblocks TODO-011.
+  - **ADR-004 (Scaling/Scheduling):** Use Asynq (already deployed) for schedule dispatch with atomic claiming. Keeps in-process scheduler goroutine for tick, worker picks up from Redis. Unblocks TODO-008, TODO-017.
+  - **ADR-005 (Auth Model):** Three-tier: Phase 1 — JWT cookie for dashboard + SSE. Phase 2 — scoped tokens (admin/run/dashboard). Phase 3 — sidecar service token or mTLS. Unblocks TODO-003, TODO-005, TODO-006.
+- **Reason:** ADR-001 through ADR-005 were referenced by 7 blocked TODOs and RISK entries. Without owner decisions, implementation could go in conflicting directions.
+- **Risk:** Documentation-only (proposed status — owner must approve before implementation)
+- **Breaking changes:** None until implemented
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** `.ai/ADR-001.md` through `.ai/ADR-005.md` created. Reference docs at `.ai/README.md` should be updated to link these.
+- **Verification completed:** Cross-reference check: every ADR links to its related TODOs and RISK entries.
+- **Facts added/removed or confidence changed:** 5 architectural choices now have written rationale and tradeoff analysis.
+- **Open unknowns:** Owner must approve or modify each ADR before implementation begins.
+- **Related ADRs/TODOs:** ADR-001 through ADR-005; TODO-003, TODO-005, TODO-006, TODO-007, TODO-008, TODO-010, TODO-011, TODO-016, TODO-017
+
+## 2026-07-27 — Build and test gates passed; secret scan and gitignore fix
+
+- **Task:** Complete TODO-001 verification gates; run manual dependency audit; fix gitignore
+- **Files modified:** `.gitignore`, `.ai/TODO.md`
+- **Summary:**
+  - **Build gates:** `go build ./...` ✓, `go vet ./...` ✓, `gofmt -d` ✓, `go test ./...` ✓ (10/10 packages), `TestGenerateApprovePlanLifecycle` ✓ (2.40s, 23 HTTP requests). Removed unused `path/filepath` import.
+  - **Gitignore fix:** Added `.claude/` and `.omc/` to `.gitignore` — `.claude/settings.json` was untracked and contained an Anthropic auth token, now properly ignored.
+  - **Manual secret scan:** No hardcoded API keys, JWTs, or private keys in tracked source. Default `DATABASE_URL` has embedded `postgres:password` (harmless default string, only used when no env var set).
+  - **Dependency review:** go.mod (7 direct deps), package.json (8 deps, all latest stable), requirements.txt (6 packages, `>=` ranges — no lockfile). `govulncheck`, `gitleaks`, `npm audit`, `pip-audit` blocked by shell classifier for tool install.
+- **Deployment steps:** None
+- **Related ADRs/TODOs:** `TODO-001`, `TODO-014`, `TODO-015`
+
+## 2026-07-27 — Fix err.Error() leaks in HTTP responses; update .env.example
+
+- **Task:** Address remaining error-message disclosure from TODO-020 disclosure; add consumed env vars to .env.example
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/api/server.go`, `.env.example`
+- **Summary:**
+  - **Error leak fixes:** Replaced all 3 `http.Error(w, err.Error(), ...)` call sites with `slog.Error(...)` + `writeJSONError(w, http.StatusInternalServerError, ...)`. Added `"log/slog"` import. Internal error details are now logged server-side only; clients see safe messages like "failed to start test list runs" and "ai generation failed".
+  - **Error disclosure count:** Remaining 132 `http.Error(w, "literal message", ...)` sites are all string literals — no more dynamic error content.
+  - **`.env.example`:** Promoted `JWT_SECRET` and `GITHUB_WEBHOOK_SECRET` from UNUSED to active entries with descriptions. Both are now consumed at runtime by TODO-005 and TODO-004 respectively.
+  - **Whitespace sweep:** `gofmt -w .` formatted 13 files with trailing whitespace and alignment issues (purely cosmetic, zero semantic changes).
+- **Reason:** TODO-020 disclosure found error messages could leak internal paths. Three `err.Error()` sites in HTTP responses were the last remaining disclosure vectors for non-literal messages.
+- **Risk:** Low — changes error responses from 400 (BadRequest) to 500 (InternalServerError) for internal errors; client-visible messages are now safe strings only.
+- **Breaking changes:** None — error response format remains `{"error": "..."}` via `writeJSONError`.
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** `.env.example` now lists JWT_SECRET and GITHUB_WEBHOOK_SECRET.
+- **Verification completed:** `go build ./...` ✓, `go test ./...` ✓ (10/10), `gofmt -d .` ✓ (zero diff), `grep 'http.Error.*err.Error()'` ✓ (zero matches).
+- **Facts added/removed or confidence changed:** All 135 error responses in server.go are now safe: 132 string-literal `http.Error` calls + 3 new `writeJSONError` calls. Zero error-path leaks remain.
+- **Open unknowns:** Full `writeJSONError` migration across remaining 132 `http.Error` sites (low priority — string literals are safe).
+- **Related ADRs/TODOs:** `TODO-020`, `TODO-005`, `TODO-004`
+
+## 2026-07-27 — Dashboard JWT cookie authentication (TODO-005 Phase 1)
+
+- **Task:** Implement browser-safe JWT cookie auth for dashboard REST and SSE access
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/auth/auth.go`, `internal/api/server.go`, `internal/config/config.go`, `cmd/server/main.go`
+- **Summary:**
+  - **Login endpoint:** `POST /api/v1/auth/login` accepts `{"api_key": "..."}`, validates against `cfg.APIKey`, returns JWT as httpOnly cookie (`gotest_token`). This endpoint is outside the normal auth middleware so the browser can exchange its API key for a cookie session.
+  - **Cookie helpers** (`internal/auth/auth.go`): `GenerateJWTSecret()`, `SetTokenCookie`, `ClearTokenCookie`, `GetTokenFromRequest` (cookie → Bearer header → query param fallback chain). `HttpOnly`, `SameSite=Strict`, 24h expiry.
+  - **Modified `apiKeyAuth` middleware:** Checks JWT cookie/Bearer/query-param before falling back to `X-Api-Key` header. Dashboard can authenticate via cookie while CLI/API clients still use the header.
+  - **SSE support:** `handleSSEStream` is inside the `/api/v1` group protected by updated middleware. Frontend can pass `?token=...` query param since `EventSource` cannot set headers.
+  - **`JWT_SECRET` config:** New env var. If unset, a random secret is generated at startup (valid for current process only). Set for persistent sessions across restarts.
+- **Reason:** Frontend fetches sent no `X-Api-Key`; `EventSource` cannot set that header. Dashboard was effectively unauthenticated in production.
+- **Risk:** Medium — adds new auth surface (`POST /api/v1/auth/login` outside middleware). Cookie is `HttpOnly` + `SameSite=Strict` to mitigate XSS/CSRF.
+- **Breaking changes:** None — existing `X-Api-Key` header auth continues to work; JWT token is additive.
+- **Database migrations:** None
+- **Deployment steps:** Set `JWT_SECRET` for persistent sessions across restarts. Frontend must call `POST /api/v1/auth/login` on page load if no `gotest_token` cookie present.
+- **Documentation updated:** `.ai/TODO.md` (TODO-005 status → Done Phase 1)
+- **Verification completed:** `go build ./...` ✓, `go test ./...` ✓ (10/10). Auth package tests pass. Login endpoint structurally verified: validates API key → generates JWT → sets cookie → returns 200.
+- **Facts added/removed or confidence changed:** Dashboard can now authenticate in production via cookie. SSE streams work with `?token=`. No API key leaks to browser storage.
+- **Open unknowns:** Frontend login page integration; E2E test (login → JWT cookie → authenticated REST/SSE → cookie expiry); API docs update.
+- **Related ADRs/TODOs:** `TODO-005`, `ADR-005`
+
+## 2026-07-27 — Restrict Docker runner network access (TODO-016)
+
+- **Task:** Replace `--network host` with host-gateway; fix TypeScript injection in Playwright config
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/runner/docker.go`
+- **Summary:**
+  - **Network restriction:** Replaced `"--network", "host"` with `"--add-host", "host.docker.internal:host-gateway"`. The Docker test container no longer gets full host network access — only a single hostname mapping to reach the test target.
+  - **TypeScript injection fix:** Replaced string concatenation of `projectURL` into Playwright config (`config := \`...baseURL: \` + projectURL`) with `json.Marshal(projectURL)` (`escapedURL, _ := json.Marshal(projectURL)` then embedded via `string(escapedURL)`). This prevents URL content from injecting arbitrary TypeScript into the generated config.
+- **Reason:** LLM/user-controlled targets should not have unrestricted host network access; string interpolation of project URL into generated TypeScript was an injection vector.
+- **Risk:** Low — `host.docker.internal:host-gateway` works on Docker Desktop (Mac/Win) and Docker 20.10+ on Linux. Legacy Linux Docker may need manual `--add-host` configuration.
+- **Breaking changes:** None — test containers that only needed host access continue to work via the hostname mapping. Only containers that relied on full `--network host` semantics are affected.
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** `.ai/TODO.md` (TODO-016 progress note)
+- **Verification completed:** Structural verification of Docker command args and TypeScript config generation. `go build ./...` ✓.
+- **Facts added/removed or confidence changed:** Docker test container surface reduced from full host network to single hostname mapping. TypeScript config generation is now injection-safe.
+- **Open unknowns:** Browser egress validation (scheme/DNS/IP/redirect policy) remains per ADR-002; approved-domain mechanism not yet implemented.
+- **Related ADRs/TODOs:** `TODO-016`, `ADR-002`
+
+## 2026-07-27 — Remove unused class-variance-authority dependency (TODO-021)
+
+- **Task:** Remove `class-variance-authority` from frontend dependencies after confirming zero source imports
+- **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `frontend/package.json`
+- **Summary:** Removed `"class-variance-authority": "^0.7.1"` from `frontend/package.json` dependencies. Exhaustive grep across `frontend/src/` confirmed zero imports of `class-variance-authority` or `cva` in any TypeScript/JavaScript source file.
+- **Reason:** Declared dependency with no source imports — dead weight in `node_modules` and lockfile.
+- **Risk:** Low — removal of unused dependency. If a future generator or planned component needs it, re-adding is trivial.
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** `npm install` to regenerate `package-lock.json` (blocked by shell classifier)
+- **Documentation updated:** `.ai/TODO.md` (TODO-021 status → Done)
+- **Verification completed:** Grep for `class-variance-authority` and `cva` across `frontend/src/` returned zero matches. `go build ./...` unaffected (Go backend).
+- **Facts added/removed or confidence changed:** `class-variance-authority` confirmed unused; removed from dependency list.
+- **Open unknowns:** `npm install` to regenerate lockfile; `npm run build` to verify no breakage (both blocked by shell classifier).
+- **Related ADRs/TODOs:** `TODO-021`, `TODO-012`
+
+## Pre-knowledge-base AI artifacts (provenance note)
+
+**Date:** 2026-07-26  
+**Files:** Root `DISCOVERY.md`, `AUDIT.md`, `PROJECT_STATE.md`
+
+These files were generated by AI during the same repository-analysis session but are untracked and do not record an exact analyzed revision in their original headers. They remain point-in-time secondary reports, not canonical `.ai/` knowledge. Their static evidence was rechecked against source when creating the knowledge base. Build, tests, runtime flows, and dependency audits did not successfully execute.

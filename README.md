@@ -29,7 +29,7 @@ This project uses modern, up-to-date technologies (as of June 2026):
 - **Browser Automation**: Playwright (Steel Browser)
 - **AI Integration**: Multi-provider support (Anthropic, OpenAI, Google, DeepSeek, Local)
 
-> **Note on Documentation**: All internal architecture blueprints, product requirements (PRDs), and master prompts can be found in the `planning/` directory.
+> **Note on Documentation**: Internal engineering documentation (architecture, database, API, domain model, code map, dependencies, decisions, security, testing strategy, technical debt, production readiness, and migration plan) is maintained in the tracked `.ai/` directory. See `.ai/README.md` for the full document map.
 
 ## Quick Start
 
