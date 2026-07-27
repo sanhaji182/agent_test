@@ -183,7 +183,7 @@ func (s *Store) ClaimNextDue(now time.Time, _ string) *Schedule {
 		}
 	}
 	if best != nil {
-		best.NextRunAt = CalcNextRun(best.Frequency, best.CronExpr, now)
+		best.NextRunAt = CalcNextRunInTZ(best.Frequency, best.CronExpr, best.Timezone, now)
 	}
 	return best
 }
@@ -370,12 +370,27 @@ func prepareSchedule(sch *Schedule) {
 		sch.UpdatedAt = now
 	}
 	if sch.NextRunAt.IsZero() {
-		sch.NextRunAt = CalcNextRun(sch.Frequency, sch.CronExpr, now)
+		sch.NextRunAt = CalcNextRunInTZ(sch.Frequency, sch.CronExpr, sch.Timezone, now)
 	}
 }
 
-// CalcNextRun calculates the next run time based on frequency or cron expression
+// CalcNextRun calculates the next run time based on frequency or cron expression,
+// evaluated in the server's local timezone. Prefer CalcNextRunInTZ when the
+// schedule has an explicit timezone.
 func CalcNextRun(freq Frequency, cronExpr string, from time.Time) time.Time {
+	return CalcNextRunInTZ(freq, cronExpr, "", from)
+}
+
+// CalcNextRunInTZ calculates the next run time honoring the schedule's stored
+// IANA timezone (e.g. "Asia/Jakarta"). Cron expressions are evaluated in that
+// location so "0 9 * * *" means 09:00 local to the schedule, not to the server
+// (TECHNICAL_DEBT CL-5). Empty or invalid tz falls back to server-local time.
+func CalcNextRunInTZ(freq Frequency, cronExpr, tz string, from time.Time) time.Time {
+	if tz != "" {
+		if loc, err := time.LoadLocation(tz); err == nil {
+			from = from.In(loc)
+		}
+	}
 	if freq == Cron && cronExpr != "" {
 		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 		sched, err := parser.Parse(cronExpr)

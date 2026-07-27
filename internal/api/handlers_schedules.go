@@ -35,7 +35,7 @@ func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if sch.Enabled {
-		sch.NextRunAt = schedule.CalcNextRun(sch.Frequency, sch.CronExpr, time.Now())
+		sch.NextRunAt = schedule.CalcNextRunInTZ(sch.Frequency, sch.CronExpr, sch.Timezone, time.Now())
 	}
 	result := s.schedules.Create(&sch)
 	if result == nil {
@@ -98,11 +98,11 @@ func (s *Server) handleUpdateSchedule(w http.ResponseWriter, r *http.Request) {
 		}
 		if v, ok := safeString(patch, "frequency"); ok {
 			sch.Frequency = schedule.Frequency(v)
-			sch.NextRunAt = schedule.CalcNextRun(sch.Frequency, sch.CronExpr, time.Now())
+			sch.NextRunAt = schedule.CalcNextRunInTZ(sch.Frequency, sch.CronExpr, sch.Timezone, time.Now())
 		}
 		if v, ok := safeString(patch, "cron_expr"); ok {
 			sch.CronExpr = v
-			sch.NextRunAt = schedule.CalcNextRun(sch.Frequency, sch.CronExpr, time.Now())
+			sch.NextRunAt = schedule.CalcNextRunInTZ(sch.Frequency, sch.CronExpr, sch.Timezone, time.Now())
 		}
 	})
 	if !ok {
@@ -151,7 +151,7 @@ func (s *Server) handleRunNow(w http.ResponseWriter, r *http.Request) {
 			sc.LastRunAt = &now
 			sc.LastRunID = lastRunID
 			sc.LastRunStatus = string(agent.StateIdle)
-			sc.NextRunAt = schedule.CalcNextRun(sc.Frequency, sc.CronExpr, now)
+			sc.NextRunAt = schedule.CalcNextRunInTZ(sc.Frequency, sc.CronExpr, sc.Timezone, now)
 		})
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
@@ -174,7 +174,7 @@ func (s *Server) handleRunNow(w http.ResponseWriter, r *http.Request) {
 		sc.LastRunAt = &now
 		sc.LastRunID = run.ID
 		sc.LastRunStatus = "running"
-		sc.NextRunAt = schedule.CalcNextRun(sc.Frequency, sc.CronExpr, now)
+		sc.NextRunAt = schedule.CalcNextRunInTZ(sc.Frequency, sc.CronExpr, sc.Timezone, now)
 	})
 	// Trigger async execution — matches handleCreateRun and webhook paths
 	s.events.Emit(run.ID, "run_started", "idle", "Run created via schedule run-now", map[string]string{"project": sch.ProjectPath, "mode": sch.Mode, "schedule_id": id})
@@ -211,7 +211,7 @@ func (s *Server) ProcessDueSchedules(ctx context.Context, now time.Time) int {
 				sc.LastRunAt = &now
 				sc.LastRunID = lastRunID
 				sc.LastRunStatus = string(agent.StateIdle)
-				sc.NextRunAt = schedule.CalcNextRun(sc.Frequency, sc.CronExpr, now)
+				sc.NextRunAt = schedule.CalcNextRunInTZ(sc.Frequency, sc.CronExpr, sc.Timezone, now)
 			})
 			processed++
 			continue
@@ -233,7 +233,7 @@ func (s *Server) ProcessDueSchedules(ctx context.Context, now time.Time) int {
 			sc.LastRunAt = &now
 			sc.LastRunID = run.ID
 			sc.LastRunStatus = string(run.State)
-			sc.NextRunAt = schedule.CalcNextRun(sc.Frequency, sc.CronExpr, now)
+			sc.NextRunAt = schedule.CalcNextRunInTZ(sc.Frequency, sc.CronExpr, sc.Timezone, now)
 		})
 		// Trigger async execution — matches handleCreateRun and webhook paths
 		s.events.Emit(run.ID, "run_started", "idle", "Run created via due schedule", map[string]string{"project": sch.ProjectPath, "mode": sch.Mode, "schedule_id": sch.ID})

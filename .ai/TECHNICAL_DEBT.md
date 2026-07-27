@@ -81,9 +81,9 @@ None identified at this point. The established patterns (`Store` + `MemoryStore`
 
 | ID | Location | Issue | Severity |
 |---|---|---|---|
-| CL-1 | `internal/api/server.go` handlers | Handlers mix transport decode, validation, business logic, persistence calls, event emission, and response encoding in one function | HIGH |
-| CL-2 | `internal/api/server.go:2581-2617` | Dynamic `map[string]interface{}` PATCH with unchecked `v.(bool)`/`v.(string)` assertions | HIGH |
-| CL-3 | `internal/api/server.go:2778-2792` | Same unchecked type-assertion pattern for release PATCH | MEDIUM |
+| CL-1 | `internal/api/handlers_*.go` | Handlers mix transport decode, validation, business logic, persistence calls, event emission, and response encoding in one function (mitigated by 2026-07-27 domain split; per-handler structure unchanged) | MEDIUM |
+| CL-2 | `internal/api/handlers_schedules.go` (`handleUpdateSchedule`) | ✅ Resolved: PATCH now uses checked `safeBool`/`safeString` helpers (verified 2026-07-27) | ✅ Resolved |
+| CL-3 | `internal/api/handlers_releases.go` (`handleUpdateRelease`) | ✅ Resolved: same checked-helper pattern (verified 2026-07-27) | ✅ Resolved |
 | CL-4 | `internal/agent/playwright_runner.go:104-163` | Nested try/heal/retry loop with DOM snapshot, screenshot, and LLM healing — correct behavior depends on error handling at each nesting level | MEDIUM |
 | CL-5 | `internal/schedule/store.go:321-339` | `CalcNextRun` handles daily/weekly/monthly/custom cron but ignores the stored timezone | MEDIUM |
 

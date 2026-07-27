@@ -141,3 +141,39 @@ func TestClaimNextDue_SkipsDisabled(t *testing.T) {
 		t.Fatalf("expected nil claim for disabled schedule, got %s", claimed.Name)
 	}
 }
+
+func TestCalcNextRunInTZ_CronRespectsTimezone(t *testing.T) {
+	// 09:00 in Asia/Jakarta (UTC+7) == 02:00 UTC. Starting just after midnight
+	// UTC, the next "0 9 * * *" fire in Jakarta must be 02:00 UTC same day.
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		t.Skipf("tzdata unavailable: %v", err)
+	}
+	from := time.Date(2026, 6, 1, 0, 30, 0, 0, time.UTC) // 07:30 Jakarta
+	next := schedule.CalcNextRunInTZ(schedule.Cron, "0 9 * * *", "Asia/Jakarta", from)
+	// 09:00 Jakarta today = 02:00 UTC today
+	want := time.Date(2026, 6, 1, 9, 0, 0, 0, loc)
+	if !next.Equal(want) {
+		t.Fatalf("expected %v (== %v UTC), got %v", want, want.UTC(), next.UTC())
+	}
+	if next.UTC().Hour() != 2 {
+		t.Fatalf("expected 02:00 UTC, got %v", next.UTC())
+	}
+}
+
+func TestCalcNextRunInTZ_EmptyTZMatchesLocal(t *testing.T) {
+	from := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
+	withEmpty := schedule.CalcNextRunInTZ(schedule.Cron, "0 3 * * *", "", from)
+	plain := schedule.CalcNextRun(schedule.Cron, "0 3 * * *", from)
+	if !withEmpty.Equal(plain) {
+		t.Fatalf("empty tz should match CalcNextRun: %v vs %v", withEmpty, plain)
+	}
+}
+
+func TestCalcNextRunInTZ_InvalidTZFallsBack(t *testing.T) {
+	from := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
+	next := schedule.CalcNextRunInTZ(schedule.Daily, "", "Not/AZone", from)
+	if !next.Equal(from.Add(24 * time.Hour)) {
+		t.Fatalf("invalid tz should fall back to server-local daily, got %v", next)
+	}
+}
