@@ -2,7 +2,7 @@
 
 **Owner:** Engineering  
 **Purpose:** Append-only provenance for AI-generated repository and knowledge-base modifications  
-**Last updated:** 2026-07-27  
+**Last updated:** 2026-07-28  
 **Rule:** Do not rewrite or delete historical entries. Corrections are new entries that supersede earlier statements.
 
 ## Entry Template
@@ -26,6 +26,24 @@
 - **Open unknowns:**
 - **Related ADRs/TODOs:**
 ```
+
+## 2026-07-28 — Wire MAX_FIX_ATTEMPTS, DEFAULT_TIMEOUT_SECONDS, STEEL_MAX_SESSIONS env vars (UC-2, UC-3)
+
+- **Task:** Resolve technical-debt items UC-2/UC-3: `.env.example` documented env vars that `config.Load` hard-coded.
+- **Source revision before change:** b62e591
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/config/config.go`, `internal/config/config_test.go` (new), `.env.example`, `.ai/TECHNICAL_DEBT.md`
+- **Summary:** `MaxFixAttempts`, `TimeoutSeconds`, and `SteelMaxSessions` are now read via `getEnvInt` (`MAX_FIX_ATTEMPTS`, `DEFAULT_TIMEOUT_SECONDS`, `STEEL_MAX_SESSIONS`) with the same defaults (3/300/10). Invalid or non-positive values fall back to defaults. `.env.example` moved these vars from the UNUSED list to a documented "Execution limits" section. Added first test file for the config package (defaults, overrides, invalid fallback).
+- **Reason:** UC-2 (MEDIUM) and UC-3 (LOW) in TECHNICAL_DEBT.md — documented configuration silently ignored at runtime is an operator trap.
+- **Risk:** Low (defaults unchanged; env vars only take effect when explicitly set)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None (optional: set the new env vars)
+- **Documentation updated:** `.env.example`, `.ai/TECHNICAL_DEBT.md` (UC-2/UC-3 marked resolved), this entry
+- **Verification completed:** `go test ./internal/config/ -v` — 3/3 PASS; `go build ./...` clean; `go vet ./internal/config/` clean; `gofmt -l internal/config/` empty. Consumers confirmed: `cmd/mcp/main.go` (DockerRunner timeout, agent max fixes), `internal/api/handlers_planning.go:825` (DockerRunner timeout).
+- **Facts added/removed or confidence changed:** UC-2 and UC-3 resolved; config package now has test coverage.
+- **Open unknowns:** None for this change.
+- **Related ADRs/TODOs:** TECHNICAL_DEBT UC-2, UC-3.
 
 ## 2026-07-27 — Sidecar auth token read-at-request-time fix
 

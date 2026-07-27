@@ -68,8 +68,8 @@ These packages have implementation code but no connection from the running serve
 | ID | Issue | Severity | Evidence |
 |---|---|---|---|
 | UC-1 | `.env.example` declares `JWT_SECRET`, `BRAINTRUST_API_KEY`, `VISION_MODEL`, `GITHUB_WEBHOOK_SECRET`, `GOOGLE_API_KEY`, `DEEPSEEK_API_KEY` with no runtime consumer | MEDIUM | `internal/config/config.go:7-41` has no corresponding fields; `README.md:80-84` lists Google/DeepSeek with no code consumer |
-| UC-2 | `.env.example` declares `MAX_FIX_ATTEMPTS=3` and `DEFAULT_TIMEOUT_SECONDS=300` but runtime values are hard-coded | MEDIUM | `internal/config/config.go:37-38`; `.env.example:39-41` |
-| UC-3 | `STEEL_MAX_SESSIONS` in `.env.example` is unused; config hard-codes `10` | LOW | `internal/config/config.go:35`; `.env.example:21-24` |
+| UC-2 | ~~`.env.example` declares `MAX_FIX_ATTEMPTS=3` and `DEFAULT_TIMEOUT_SECONDS=300` but runtime values are hard-coded~~ ✅ Resolved (2026-07-28): `config.Load` now reads both via `getEnvInt` with unchanged defaults; covered by `internal/config/config_test.go` | ✅ Resolved | `internal/config/config.go`; consumers: `cmd/mcp/main.go`, `internal/api/handlers_planning.go` |
+| UC-3 | ~~`STEEL_MAX_SESSIONS` in `.env.example` is unused; config hard-codes `10`~~ ✅ Resolved (2026-07-28): read via `getEnvInt("STEEL_MAX_SESSIONS", 10)` | ✅ Resolved | `internal/config/config.go` |
 | UC-4 | Frontend `class-variance-authority` declared but no source import found | LOW | `frontend/package.json:12`; full `src/` text search |
 | UC-5 | Redis 7 is defined in Compose, Asynq code exists, but the server does not enqueue or consume jobs | MEDIUM | `docker-compose.yml:76-87`; `internal/queue/worker.go:27-92`; `cmd/server/main.go:15-49` |
 
