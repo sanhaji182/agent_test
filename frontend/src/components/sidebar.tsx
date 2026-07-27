@@ -1,11 +1,14 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { logout } from "@/lib/api";
 import {
   LayoutDashboard, PlayCircle, Settings, Zap,
-  Calendar, Bell, Tag, Shield, ClipboardCheck, Layers, Download, BookOpen, FileText
+  Calendar, Bell, Tag, Shield, ClipboardCheck, Layers, Download, BookOpen, FileText,
+  LogOut
 } from "lucide-react";
 
 const nav = [
@@ -25,6 +28,12 @@ const nav = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await logout();
+    router.push("/login");
+  };
 
   return (
     <aside className="w-[220px] min-h-screen border-r border-[var(--border)] bg-[var(--bg-card)] flex flex-col shadow-[var(--shadow-xs)]">
@@ -66,6 +75,10 @@ export function Sidebar() {
             </Link>
           );
         })}
+        <button onClick={handleLogout} className="w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-[var(--radius-sm)] text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-all duration-100 text-left">
+          <LogOut className="w-[15px] h-[15px]" />
+          Sign out
+        </button>
       </nav>
 
       <div className="px-2 py-2 border-t border-[var(--border)]">

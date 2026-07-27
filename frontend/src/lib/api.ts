@@ -222,15 +222,49 @@ export interface FailureAnalysis {
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: "include",  // Send httpOnly cookie (JWT) for dashboard auth
     headers: {
       "Content-Type": "application/json",
       ...options?.headers,
     },
   });
   if (!res.ok) {
+    // If unauthorized, redirect to login unless already there
+    if (res.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+      sessionStorage.setItem("redirect_after_login", window.location.pathname + window.location.search);
+      window.location.href = "/login";
+      throw new Error("unauthorized — redirecting to login");
+    }
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }
   return res.json();
+}
+
+// login exchanges an API key for a JWT httpOnly cookie session.
+// The cookie is automatically sent on subsequent requests via credentials: "include".
+export async function login(apiKey: string): Promise<{ status: string; redirect?: string }> {
+  const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ api_key: apiKey }),
+  });
+  if (!res.ok) {
+    return res.json().catch(() => ({ status: "error" }));
+  }
+  const redirect = typeof window !== "undefined" ? sessionStorage.getItem("redirect_after_login") : null;
+  if (redirect) {
+    sessionStorage.removeItem("redirect_after_login");
+  }
+  return { status: "ok", redirect: redirect || "/" };
+}
+
+// logout clears the httpOnly cookie session
+export async function logout(): Promise<void> {
+  await fetch(`${API_BASE}/api/v1/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+  });
 }
 
 export async function getRuns(): Promise<TestRun[]> {
@@ -383,9 +417,9 @@ export const PHASES = [
   "done",
 ] as const;
 
-// isActive: run masih berjalan (belum done/failed)
+// isActive: run masih berjalan (belum done/failed/simulated)
 export function isActive(state: string): boolean {
-  return !["done", "failed", "idle"].includes(state);
+  return !["done", "failed", "simulated"].includes(state);
 }
 
 export function subscribeToRun(

@@ -175,6 +175,7 @@ Every run goes through these states:
 - **fixing** → auto-fixing failures (up to 3x)
 - **done** → completed successfully
 - **failed** → completed with unresolved failures
+- **simulated** → step-walk only; no real browser execution ran
 
 ## Schedule
 A recurring configuration that automatically creates runs at set intervals (daily, weekly, monthly, or cron).
@@ -205,6 +206,7 @@ Setiap run melewati state berikut:
 - **fixing** → memperbaiki kegagalan otomatis (maks 3x)
 - **done** → selesai berhasil
 - **failed** → selesai dengan kegagalan yang belum terselesaikan
+- **simulated** → simulasi langkah saja; tidak ada eksekusi browser nyata yang berjalan
 
 ## Schedule
 Konfigurasi berulang yang otomatis membuat run pada interval tertentu (harian, mingguan, bulanan, atau cron).
@@ -487,8 +489,8 @@ Pilih cara memilih test untuk sebuah run:
 
 ## Input validation
 - All URL parameters are validated (alphanumeric + dash, max 64 chars).
-- Request bodies are validated before processing.
-- Error messages do not expose internal paths or stack traces.
+- Request bodies are limited to 1 MiB via MaxBytesReader.
+- Error messages: internal errors return plain text messages which may include \`err.Error()\` in some handlers. Future releases will standardize on \`{"error": "..."}\` JSON responses.
 
 ## Network security
 - Steel Browser should NOT be exposed to public internet.
@@ -513,8 +515,8 @@ Pilih cara memilih test untuk sebuah run:
 
 ## Validasi input
 - Semua parameter URL divalidasi (alfanumerik + dash, maks 64 karakter).
-- Body request divalidasi sebelum diproses.
-- Pesan error tidak mengekspos path internal atau stack trace.
+- Body request dibatasi 1 MiB via MaxBytesReader.
+- Pesan error: error internal mengembalikan pesan teks biasa yang mungkin menyertakan \`err.Error()\` di beberapa handler. Rilis mendatang akan standarisasi ke respons JSON \`{"error": "..."}\`.
 
 ## Keamanan jaringan
 - Steel Browser TIDAK boleh diekspos ke internet publik.
@@ -612,7 +614,7 @@ Semua service memiliki Docker health check. Gunakan \`make ps\` untuk memverifik
 The dashboard, monitoring, and review features work without it. But test generation and execution require the AI model.
 
 ## Does it support PHP/Laravel projects?
-Yes. The AI agent detects your framework and generates appropriate tests (Playwright for browser, PHPUnit for unit tests).
+PHP framework detection and PHPUnit generation are not yet implemented. The agent generates Playwright browser tests and API-level test scripts, which work against any web-facing project regardless of backend language. Native PHPUnit support is tracked as a future enhancement.
 
 ## How much does it cost?
 Self-hosted is free. You only pay for your Anthropic API usage.
@@ -635,7 +637,7 @@ make up
 Dashboard, monitoring, dan fitur review bisa berjalan tanpanya. Tapi pembuatan dan eksekusi test membutuhkan model AI.
 
 ## Apakah mendukung project PHP/Laravel?
-Ya. Agent AI mendeteksi framework Anda dan menghasilkan test yang sesuai (Playwright untuk browser, PHPUnit untuk unit test).
+Deteksi framework PHP dan pembuatan PHPUnit belum diimplementasikan. Agent menghasilkan test browser Playwright dan script test level API, yang dapat bekerja dengan project web apapun terlepas dari bahasa backend. Dukungan PHPUnit native direncanakan sebagai peningkatan di masa depan.
 
 ## Berapa biayanya?
 Self-hosted gratis. Anda hanya membayar penggunaan API Anthropic Anda.
