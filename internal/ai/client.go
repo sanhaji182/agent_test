@@ -200,6 +200,9 @@ func (c *OpenAICompatibleClient) generate(ctx context.Context, prompt, imageBase
 		"model":       c.cfg.Model,
 		"temperature": c.cfg.Temperature,
 		"max_tokens":  c.cfg.MaxTokens,
+		// Explicit: some OpenAI-compatible gateways default to SSE streaming,
+		// which breaks JSON decoding ("invalid character 'd'" from "data:" lines).
+		"stream": false,
 		"messages": []map[string]interface{}{
 			{"role": "user", "content": content},
 		},

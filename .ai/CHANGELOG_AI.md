@@ -27,6 +27,27 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — First real end-to-end run + stream:false fix (product E2E gate)
+
+- **Task:** Run one full product loop against a live LLM + real web page — the empirical "does the core loop work" gate.
+- **Source revision before change:** 4127022
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/ai/client.go`, `internal/ai/client_test.go`, `internal/api/e2e_smoke_test.go` (new, gated), `scripts/smoke-e2e.sh`
+- **Summary:** Ran the loop against an OpenAI-compatible provider (base URL + key supplied by owner, since revoked) and `https://example.com`. Findings:
+  1. **BUG FIXED — SSE default breaks planning:** the provider returned `text/event-stream` for `/chat/completions`, so `json.Unmarshal` failed with `invalid character 'd'` (from `data:` lines) and every run failed at `analysis_started`. Root cause: the request omitted `stream`, and this gateway defaults to streaming. Fix: send explicit `"stream": false` in `OpenAICompatibleClient`. Guarded by a new assertion in `client_test.go`. (A raw probe confirmed `stream:false` → clean `application/json`.)
+  2. **VERIFIED WORKING after the fix:** test-connection → 200; run pipeline advanced through `analysis_started` → `script_generated` (**the LLM generated 4–5 Playwright test files** from the requirements) → execution. 8 events emitted, plan + scripts real. This is the first evidence the generate half of the product loop works against a real model.
+  3. **ENV BLOCKER (not a product bug):** Playwright browser-driver download 404s — Microsoft retired `playwright.azureedge.net` and the PRSS mirror lacks the 1.57.0 driver path. Execution can't complete until the driver is pre-installed or `PLAYWRIGHT_DOWNLOAD_HOST` points at a working mirror. `playwright.Install()` already honors that env var, so no code change is warranted; documented in the E2E test.
+- **Reason:** Owner asked how close the project is to a commercial peer (TestSprite); this run is the empirical answer.
+- **Risk:** Low — `stream:false` is a strict correctness fix; E2E test is double-gated (`.e2e-enable` marker + `.env`) and skips in normal suites.
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** For real execution, pre-install the Playwright driver or set `PLAYWRIGHT_DOWNLOAD_HOST`.
+- **Documentation updated:** this entry; `scripts/smoke-e2e.sh` (shell E2E harness) and `internal/api/e2e_smoke_test.go` (Go E2E harness) both added.
+- **Verification completed:** `go build`, `go vet`, `gofmt` clean; `go test ./internal/... -race` 23/23 ok including the new `stream:false` assertion; E2E test skips cleanly without the marker. Manual: live run reached `script_generated` with real generated files (logged).
+- **Facts added/removed or confidence changed:** The generate half of the loop (analyze → plan → scripts) is now PROVEN against a real LLM. The execute half (Playwright) is blocked only by driver-CDN availability, not by product logic. Credentials used were removed post-run; owner to revoke.
+- **Open unknowns:** Full execute→heal→report half unproven end-to-end pending a working Playwright driver source; provider returned `model:"auto"` (gateway may ignore the requested model id).
+- **Related ADRs/TODOs:** ADR-006 (LLM layer — test-connection now exercised for real); UW-2 (Steel would sidestep local Playwright entirely).
+
 ## 2026-07-28 — HTML report tests incl. XSS-escaping guard
 
 - **Task:** Coverage for `internal/report` (previously zero test files).

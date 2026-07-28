@@ -9,6 +9,8 @@ bin/
 .env
 .env.local
 .env.*.local
+.e2e-enable
+.e2e-probe-out.txt
 
 # Frontend
 frontend/node_modules/

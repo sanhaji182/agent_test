@@ -12,6 +12,13 @@
 #   target-url default: https://example.com (halaman statis — cocok untuk smoke)
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Auto-load .env (gitignored) so credentials never live in the shell history
+# or chat transcripts — put ANTHROPIC_API_KEY / LLM_* there.
+if [ -f "$REPO_ROOT/.env" ]; then
+  set -a; . "$REPO_ROOT/.env"; set +a
+fi
+
 TARGET_URL="${1:-https://example.com}"
 PORT="${APP_PORT:-8080}"
 BASE="http://localhost:${PORT}/api/v1"

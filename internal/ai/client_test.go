@@ -67,6 +67,11 @@ func TestOpenAICompatible_GenerateText(t *testing.T) {
 	if captured["max_tokens"] == nil {
 		t.Fatal("max_tokens missing from payload")
 	}
+	// Explicit stream:false — some OpenAI-compatible gateways default to SSE
+	// streaming, which breaks JSON decoding (found in 2026-07-28 E2E smoke).
+	if v, ok := captured["stream"].(bool); !ok || v {
+		t.Fatalf("payload must carry stream:false, got %v", captured["stream"])
+	}
 }
 
 func TestOpenAICompatible_GenerateWithImage(t *testing.T) {
