@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — recordings store tests
+
+- **Task:** Coverage for `internal/recordings` (previously zero test files) — backs the run-console screenshot strip.
+- **Source revision before change:** 2255db3
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/recordings/store_test.go` (new)
+- **Summary:** 5 tests: sequential ID generation (`{runID}-rec-{n}`), explicit-ID preservation, `ByRun` filtering (nil for unknown), `All` copy semantics, and direct coverage of the hand-rolled `itoa` (0, single/multi-digit, large values) whose off-by-one would silently produce colliding recording IDs.
+- **Reason:** Continuation of the coverage initiative.
+- **Risk:** Low (test-only)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** this entry
+- **Verification completed:** 5/5 PASS with `-race`; full suite 18/18 packages ok; build/gofmt clean.
+- **Facts added/removed or confidence changed:** Tested-package count 12→18 today.
+- **Open unknowns:** None for this change.
+- **Related ADRs/TODOs:** TESTING.md; coverage entries above.
+
 ## 2026-07-28 — project + release store tests
 
 - **Task:** Continue closing untested-package gaps: `internal/project` and `internal/release` (both previously zero test files).
