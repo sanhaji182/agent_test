@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — notify.Store tests: webhook delivery + UW-6 dependency guard
+
+- **Task:** Add test coverage for `internal/notify` (previously zero test files) — the store behind the UW-6 failure notifier.
+- **Source revision before change:** 37b7f0a
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/notify/store_test.go` (new)
+- **Summary:** 9 tests: sequential ID/timestamp assignment, `List` copy semantics (mutation isolation), `ByRun` filtering, `DeliverWebhook` (empty-URL noop, JSON POST verified via httptest server, ≥400 error), and `TriggerFailure` (Delivered=true on 2xx, Delivered=false on webhook error, recorded-but-undelivered without webhook URL).
+- **Reason:** `TriggerFailure` became production code when UW-6 wired `StartFailureNotifier` (2026-07-27); its delivery-marking logic had no coverage.
+- **Risk:** Low (test-only)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** this entry
+- **Verification completed:** `go test ./internal/notify/ -race -v` — 9/9 PASS; full suite 14/14 packages ok with `-race`; build/gofmt clean.
+- **Facts added/removed or confidence changed:** `internal/notify` no longer untested; tested-package count 12→14 today (db, notify).
+- **Open unknowns:** None for this change.
+- **Related ADRs/TODOs:** UW-6 (resolved); `internal/api/failure_notifier.go` tests already existed (2/2).
+
 ## 2026-07-28 — MemoryStore tests: snapshot-isolation invariant guard
 
 - **Task:** Add test coverage for `internal/db` (previously zero test files) focusing on the race-fix invariant.
