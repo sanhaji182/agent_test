@@ -64,12 +64,13 @@ func isSafeBrowserURL(rawURL string) bool {
 }
 
 type PlaywrightRunner struct {
-	VideoDir    string
+	VideoDir      string
 	ScreenshotDir string
-	llm         LLM
-	BrowserType string // "chromium" (default), "firefox", "webkit"
-	Parallel    bool   // execute test files concurrently
-	Viewport    *ViewportPreset
+	llm           LLM
+	BrowserType   string // "chromium" (default), "firefox", "webkit"
+	Parallel      bool   // execute test files concurrently
+	Viewport      *ViewportPreset
+	TestData      map[string]string // parameterized test data (template key → value)
 }
 
 // ViewportPreset defines browser viewport dimensions for responsive testing.
@@ -123,10 +124,16 @@ type BrowserAction struct {
 	Selector string `json:"selector,omitempty"`
 	Value    string `json:"value,omitempty"`
 	Key      string `json:"key,omitempty"`
-	Assert   string `json:"assert,omitempty"` // "visible", "hidden", "text_contains"
+	Assert   string `json:"assert,omitempty"` // "visible", "hidden", "text_contains", "url_contains", "title_contains", "network"
 	Text     string `json:"text,omitempty"`   // expected text for assert
 	Y        int    `json:"y,omitempty"`
 	Ms       int    `json:"ms,omitempty"`
+	// Network interception fields
+	NetworkURL     string `json:"network_url,omitempty"`     // URL pattern to intercept/assert
+	NetworkMethod  string `json:"network_method,omitempty"`  // GET, POST, etc.
+	NetworkStatus  int    `json:"network_status,omitempty"`  // expected status code
+	// Test data parameterization
+	Template string `json:"template,omitempty"` // template key for data-driven tests
 }
 
 func (r *PlaywrightRunner) Run(ctx context.Context, testFiles []TestFile, projectURL string) (*RunResult, error) {
@@ -341,6 +348,9 @@ func (r *PlaywrightRunner) runParallel(ctx context.Context, browser playwright.B
 
 // executeAction runs a single browser action with self-healing on failure.
 func (r *PlaywrightRunner) executeAction(ctx context.Context, page playwright.Page, a *BrowserAction) error {
+	// Template expansion: replace {{key}} with test data values
+	r.expandTemplate(a)
+
 	var err error
 	switch a.Action {
 	case "goto":
@@ -372,6 +382,21 @@ func (r *PlaywrightRunner) executeAction(ctx context.Context, page playwright.Pa
 			ssPath := filepath.Join(r.ScreenshotDir, ssName)
 			_, err = page.Screenshot(playwright.PageScreenshotOptions{Path: playwright.String(ssPath)})
 		}
+	case "network_wait":
+		// Wait for a network request matching the URL pattern using ExpectResponse
+		timeout := float64(max(a.Ms, 10000))
+		resp, waitErr := page.ExpectResponse(func(resp playwright.Response) bool {
+			return strings.Contains(resp.URL(), a.NetworkURL)
+		}, func() error {
+			// No-op trigger: just wait for any pending response
+			time.Sleep(100 * time.Millisecond)
+			return nil
+		}, playwright.PageExpectResponseOptions{Timeout: playwright.Float(timeout)})
+		if waitErr != nil {
+			err = fmt.Errorf("network_wait: no response matching %q within timeout: %w", a.NetworkURL, waitErr)
+		} else if a.NetworkStatus > 0 && resp.Status() != a.NetworkStatus {
+			err = fmt.Errorf("network_wait: %q returned status %d, expected %d", a.NetworkURL, resp.Status(), a.NetworkStatus)
+		}
 	case "assert":
 		switch a.Assert {
 		case "visible":
@@ -399,6 +424,37 @@ func (r *PlaywrightRunner) executeAction(ctx context.Context, page playwright.Pa
 			title, _ := page.Title()
 			if !strings.Contains(title, a.Text) {
 				err = fmt.Errorf("assert failed: title %q does not contain %q", title, a.Text)
+			}
+		case "network":
+			// Assert a network request matching pattern occurs
+			resp, netErr := page.ExpectResponse(func(resp playwright.Response) bool {
+				match := strings.Contains(resp.URL(), a.NetworkURL)
+				if a.NetworkMethod != "" {
+					match = match && resp.Request().Method() == a.NetworkMethod
+				}
+				return match
+			}, func() error {
+				time.Sleep(100 * time.Millisecond)
+				return nil
+			}, playwright.PageExpectResponseOptions{Timeout: playwright.Float(10000)})
+			if netErr != nil {
+				err = fmt.Errorf("assert network: no request matching %q %q: %w", a.NetworkMethod, a.NetworkURL, netErr)
+			} else if a.NetworkStatus > 0 && resp.Status() != a.NetworkStatus {
+				err = fmt.Errorf("assert network: %q returned %d, expected %d", a.NetworkURL, resp.Status(), a.NetworkStatus)
+			}
+		case "count":
+			// Assert element count matches expected (Text field = expected count)
+			count, _ := page.Locator(a.Selector).Count()
+			expected := 0
+			fmt.Sscanf(a.Text, "%d", &expected)
+			if count != expected {
+				err = fmt.Errorf("assert count: %q found %d elements, expected %d", a.Selector, count, expected)
+			}
+		case "attribute":
+			// Assert element has attribute with expected value
+			attr, _ := page.Locator(a.Selector).First().GetAttribute(a.Key)
+			if attr != a.Text {
+				err = fmt.Errorf("assert attribute: %q[%s] = %q, expected %q", a.Selector, a.Key, attr, a.Text)
 			}
 		}
 	}
@@ -464,4 +520,25 @@ func (r *PlaywrightRunner) executeAction(ctx context.Context, page playwright.Pa
 	}
 
 	return err
+}
+
+// expandTemplate replaces {{key}} placeholders in action fields with TestData values.
+// Enables data-driven testing: same test script, different data sets.
+func (r *PlaywrightRunner) expandTemplate(a *BrowserAction) {
+	if len(r.TestData) == 0 {
+		return
+	}
+	a.URL = expandString(a.URL, r.TestData)
+	a.Selector = expandString(a.Selector, r.TestData)
+	a.Value = expandString(a.Value, r.TestData)
+	a.Text = expandString(a.Text, r.TestData)
+	a.NetworkURL = expandString(a.NetworkURL, r.TestData)
+}
+
+// expandString replaces all {{key}} occurrences with values from the data map.
+func expandString(s string, data map[string]string) string {
+	for k, v := range data {
+		s = strings.ReplaceAll(s, "{{"+k+"}}", v)
+	}
+	return s
 }
