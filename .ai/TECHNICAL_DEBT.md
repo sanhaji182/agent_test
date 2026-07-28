@@ -21,7 +21,7 @@
 |---|---|---|---|---|
 | DC-1 | `internal/api/server.go` | ~~`simulateMockRun`~~ ✅ Resolved: function removed from codebase (grep 2026-07-27 finds no definition or caller) | ✅ Resolved | — |
 | DC-2 | `internal/api/handlers_runs.go` | ~~`handleDeleteRun` returns 204 without deleting~~ ✅ Resolved: now calls `s.store.DeleteRun` (implemented in both MemoryStore and DBStore) | ✅ Resolved | `internal/db/memory.go:84`, `internal/db/store.go:47` |
-| DC-3 | `internal/api/handlers_runs.go:726-746` (`handleGetAPILogs`) | API logs endpoint returns an explicit empty placeholder | MEDIUM | `json.NewEncoder(w).Encode(map[string]interface{}{"logs": []interface{}{}})` |
+| DC-3 | ~~`handleGetAPILogs` returns an explicit empty placeholder~~ ✅ Resolved (2026-07-28): dead endpoint removed — handler and route `/runs/{id}/api-logs` deleted; grep confirmed zero frontend or backend consumers | ✅ Resolved | — |
 | DC-4 | `internal/auth/auth.go` | ~~JWT with zero production usage~~ ✅ Resolved: `api.NewServer` constructs `auth.New`; JWT cookie auth used by `handleLogin`/`apiKeyAuth` | ✅ Resolved | `internal/api/server.go` (jwtAuth field), `internal/api/handlers_auth.go` |
 | DC-5 | `frontend/src/lib/api.ts` | ~10 exported functions with no frontend call sites (updateProject, uploadApiDocs, updateTestCase, etc.) | LOW | See `DEPENDENCIES.md`; removal requires confirm no planned usage |
 
@@ -70,7 +70,7 @@ These packages have implementation code but no connection from the running serve
 | UC-1 | `.env.example` declares `BRAINTRUST_API_KEY`, `VISION_MODEL`, `GOOGLE_API_KEY`, `DEEPSEEK_API_KEY` with no runtime consumer (updated 2026-07-28: `JWT_SECRET` and `GITHUB_WEBHOOK_SECRET` removed from this item — both now consumed: `internal/api/server.go:69,288`) | LOW | grep 2026-07-28: zero Go references to the four remaining vars |
 | UC-2 | ~~`.env.example` declares `MAX_FIX_ATTEMPTS=3` and `DEFAULT_TIMEOUT_SECONDS=300` but runtime values are hard-coded~~ ✅ Resolved (2026-07-28): `config.Load` now reads both via `getEnvInt` with unchanged defaults; covered by `internal/config/config_test.go` | ✅ Resolved | `internal/config/config.go`; consumers: `cmd/mcp/main.go`, `internal/api/handlers_planning.go` |
 | UC-3 | ~~`STEEL_MAX_SESSIONS` in `.env.example` is unused; config hard-codes `10`~~ ✅ Resolved (2026-07-28): read via `getEnvInt("STEEL_MAX_SESSIONS", 10)` | ✅ Resolved | `internal/config/config.go` |
-| UC-4 | Frontend `class-variance-authority` declared but no source import found | LOW | `frontend/package.json:12`; full `src/` text search |
+| UC-4 | ~~Frontend `class-variance-authority` declared but no source import found~~ ✅ Resolved (verified 2026-07-28): dependency no longer present in `frontend/package.json`; all remaining runtime deps (`clsx`, `lucide-react`, `tailwind-merge`) have source imports | ✅ Resolved | grep 2026-07-28: zero references in `frontend/` |
 | UC-5 | ~~Redis defined in Compose, Asynq code exists, but the server does not enqueue or consume jobs~~ ✅ Resolved (2026-07-27, with UW-1): `QUEUE_ENABLED=true` wires `RunWorker` + enqueuer in `cmd/server`; Redis remains optional | ✅ Resolved | `cmd/server/main.go`; `internal/queue/run_worker.go` |
 
 ## Obsolete Abstractions

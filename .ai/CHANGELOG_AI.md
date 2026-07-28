@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — Remove dead api-logs placeholder endpoint (DC-3) + registry reconciliation (UC-4)
+
+- **Task:** Resolve DC-3 (placeholder endpoint) and reconcile stale UC-4 registry entry.
+- **Source revision before change:** d9adac3
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/api/handlers_runs.go`, `internal/api/server.go`, `.ai/TECHNICAL_DEBT.md`
+- **Summary:** DC-3: `handleGetAPILogs` always returned `{"logs": []}` — a placeholder with no artifact-reading implementation. Grep across backend and `frontend/src` found zero consumers of `/runs/{id}/api-logs` (only the handler and its route registration). Removed both. If real API-log capture ships later, the endpoint can return with an actual implementation. UC-4: `class-variance-authority` is no longer in `frontend/package.json` (already removed in an earlier dependency pass); remaining runtime deps (`clsx`, `lucide-react`, `tailwind-merge`) all verified to have source imports — registry entry marked resolved.
+- **Reason:** DC-3 (MEDIUM): dead placeholder gives callers false confidence the feature exists; UC-4 registry was stale.
+- **Risk:** Low (endpoint had no consumers; response was always empty)
+- **Breaking changes:** Endpoint `/api/runs/{id}/api-logs` removed (no known consumers; returned static empty payload)
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** `.ai/TECHNICAL_DEBT.md` (DC-3, UC-4 resolved), this entry
+- **Verification completed:** grep: zero `api-logs`/`APILogs` references remain outside this changelog; `go build ./...` clean; `go vet ./internal/api/` clean; `gofmt -l internal/api/` empty; `go test ./internal/api/ -race -count=1` ok.
+- **Facts added/removed or confidence changed:** DC-3 and UC-4 resolved. Dead Code section now has only DC-5 (unused frontend API exports, LOW) open.
+- **Open unknowns:** None for this change.
+- **Related ADRs/TODOs:** TECHNICAL_DEBT DC-3, UC-4.
+
 ## 2026-07-28 — Deduplicate draft-plan and schedule-run creation (DL-3, DL-4)
 
 - **Task:** Resolve duplicate-logic debt items DL-3 and DL-4.

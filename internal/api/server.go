@@ -218,7 +218,6 @@ func (s *Server) routes() {
 		r.Post("/runs/{id}/rerun", s.handleRerun)
 		r.Get("/runs/{id}/stream", s.handleSSEStream)
 		r.Get("/runs/{id}/events", s.handleGetEvents)
-		r.Get("/runs/{id}/api-logs", s.handleGetAPILogs)
 		r.Get("/runs/{id}/report", s.handleReport)
 		r.Post("/runs/{id}/analyze-failure", s.handleAnalyzeFailure)
 		r.Get("/runs/{id}/compare/{otherId}", s.handleCompare)

@@ -729,29 +729,6 @@ func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(evts)
 }
 
-// handleGetAPILogs returns redacted API logs for a run
-func (s *Server) handleGetAPILogs(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if !isValidID(id) {
-		writeJSONError(w, http.StatusBadRequest, "invalid id")
-		return
-	}
-	run, err := s.store.GetRun(r.Context(), id)
-	if err != nil {
-		writeJSONError(w, http.StatusNotFound, "run not found")
-		return
-	}
-
-	// Try reading api_logs from artifacts directory if the agent created them
-	// Otherwise return empty to avoid breaking the frontend
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"run_id": run.ID,
-		"logs":   []interface{}{}, // Placeholder for actual api log structure
-	})
-}
-
 // handleCompare compares two runs and returns structured diff
 func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request) {
 	idA := chi.URLParam(r, "id")
