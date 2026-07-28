@@ -159,25 +159,12 @@ func (s *Server) handleRunNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Create a run from the schedule config
-	run := &agent.TestRun{
-		ID: uuid.New().String(), ProjectPath: sch.ProjectPath,
-		Requirements: sch.Requirements, Mode: sch.Mode, State: agent.StateIdle,
-		CreatedAt: time.Now(), UpdatedAt: time.Now(),
-	}
-	if err := s.store.CreateRun(r.Context(), run); err != nil {
+	now := time.Now()
+	run, err := s.startScheduleRun(r.Context(), sch, id, now, "running", "Run created via schedule run-now")
+	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	// Update schedule last run
-	now := time.Now()
-	s.schedules.Update(id, func(sc *schedule.Schedule) {
-		sc.LastRunAt = &now
-		sc.LastRunID = run.ID
-		sc.LastRunStatus = "running"
-		sc.NextRunAt = schedule.CalcNextRunInTZ(sc.Frequency, sc.CronExpr, sc.Timezone, now)
-	})
-	// Trigger async execution — matches handleCreateRun and webhook paths
-	s.events.Emit(run.ID, "run_started", "idle", "Run created via schedule run-now", map[string]string{"project": sch.ProjectPath, "mode": sch.Mode, "schedule_id": id})
 	// Snapshot response fields BEFORE launching (run is mutated async after launch).
 	resp := map[string]string{"run_id": run.ID, "state": string(run.State)}
 	s.launchRun(run)
@@ -185,6 +172,34 @@ func (s *Server) handleRunNow(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(resp)
+}
+
+// startScheduleRun membuat TestRun dari konfigurasi schedule non-list, memperbarui
+// metadata last-run schedule, dan meng-emit event run_started. Caller bertanggung
+// jawab memanggil s.launchRun (agar handleRunNow bisa snapshot respons dulu).
+// Dipakai bersama oleh handleRunNow dan ProcessDueSchedules (DL-4).
+func (s *Server) startScheduleRun(ctx context.Context, sch *schedule.Schedule, scheduleID string, now time.Time, lastRunStatus, eventMsg string) (*agent.TestRun, error) {
+	run := &agent.TestRun{
+		ID:           uuid.New().String(),
+		ProjectPath:  sch.ProjectPath,
+		Requirements: sch.Requirements,
+		Mode:         sch.Mode,
+		State:        agent.StateIdle,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := s.store.CreateRun(ctx, run); err != nil {
+		return nil, err
+	}
+	s.schedules.Update(scheduleID, func(sc *schedule.Schedule) {
+		sc.LastRunAt = &now
+		sc.LastRunID = run.ID
+		sc.LastRunStatus = lastRunStatus
+		sc.NextRunAt = schedule.CalcNextRunInTZ(sc.Frequency, sc.CronExpr, sc.Timezone, now)
+	})
+	// Trigger async execution — matches handleCreateRun and webhook paths
+	s.events.Emit(run.ID, "run_started", "idle", eventMsg, map[string]string{"project": sch.ProjectPath, "mode": sch.Mode, "schedule_id": scheduleID})
+	return run, nil
 }
 
 func (s *Server) ProcessDueSchedules(ctx context.Context, now time.Time) int {
@@ -217,26 +232,10 @@ func (s *Server) ProcessDueSchedules(ctx context.Context, now time.Time) int {
 			continue
 		}
 
-		run := &agent.TestRun{
-			ID:           uuid.New().String(),
-			ProjectPath:  sch.ProjectPath,
-			Requirements: sch.Requirements,
-			Mode:         sch.Mode,
-			State:        agent.StateIdle,
-			CreatedAt:    now,
-			UpdatedAt:    now,
-		}
-		if err := s.store.CreateRun(ctx, run); err != nil {
+		run, err := s.startScheduleRun(ctx, sch, sch.ID, now, string(agent.StateIdle), "Run created via due schedule")
+		if err != nil {
 			continue
 		}
-		s.schedules.Update(sch.ID, func(sc *schedule.Schedule) {
-			sc.LastRunAt = &now
-			sc.LastRunID = run.ID
-			sc.LastRunStatus = string(run.State)
-			sc.NextRunAt = schedule.CalcNextRunInTZ(sc.Frequency, sc.CronExpr, sc.Timezone, now)
-		})
-		// Trigger async execution — matches handleCreateRun and webhook paths
-		s.events.Emit(run.ID, "run_started", "idle", "Run created via due schedule", map[string]string{"project": sch.ProjectPath, "mode": sch.Mode, "schedule_id": sch.ID})
 		s.launchRun(run)
 		processed++
 	}

@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — Deduplicate draft-plan and schedule-run creation (DL-3, DL-4)
+
+- **Task:** Resolve duplicate-logic debt items DL-3 and DL-4.
+- **Source revision before change:** c78f79b
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/api/handlers_planning.go`, `internal/api/handlers_projects.go`, `internal/api/handlers_schedules.go`, `.ai/TECHNICAL_DEBT.md`
+- **Summary:** DL-3: extracted `createDraftPlanResponse(w, r, projectID, cases)` in `handlers_planning.go`; `handleGenerateProjectTestPlan` and `handleParseAPIDocs` now delegate (removed unused `planning` import from `handlers_projects.go`). DL-4: extracted `startScheduleRun(ctx, sch, scheduleID, now, lastRunStatus, eventMsg)` in `handlers_schedules.go`; the non-list branches of `handleRunNow` and `ProcessDueSchedules` delegate. Behavioral differences preserved via parameters: run-now records `LastRunStatus="running"` with message "Run created via schedule run-now"; due-schedule records `string(agent.StateIdle)` with "Run created via due schedule". The helper does NOT call `launchRun` — callers launch, so run-now keeps its snapshot-before-launch ordering (race-safety invariant from the 2026-07-27 race fixes).
+- **Reason:** DL-3 (LOW) and DL-4 (MEDIUM) in TECHNICAL_DEBT.md; duplicated orchestration blocks drift independently.
+- **Risk:** Low (pure extraction; zero behavior change)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** `.ai/TECHNICAL_DEBT.md` (DL-3/DL-4 marked resolved), this entry
+- **Verification completed:** `go build ./...` clean; `go vet ./internal/api/` clean; `gofmt -l internal/api/` empty; `go test ./internal/... -race -count=1` — 11/11 packages ok, 0 FAIL.
+- **Facts added/removed or confidence changed:** DL-3 and DL-4 resolved; only DL-2 (dual LLM client layers, HIGH) remains in Duplicate Logic.
+- **Open unknowns:** None for this change.
+- **Related ADRs/TODOs:** TECHNICAL_DEBT DL-3, DL-4; snapshot-before-launch invariant (2026-07-27 race-fix entry).
+
 ## 2026-07-28 — Wire MAX_FIX_ATTEMPTS, DEFAULT_TIMEOUT_SECONDS, STEEL_MAX_SESSIONS env vars (UC-2, UC-3)
 
 - **Task:** Resolve technical-debt items UC-2/UC-3: `.env.example` documented env vars that `config.Load` hard-coded.

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-go-golems/gotest-agent/internal/planning"
 	"github.com/go-go-golems/gotest-agent/internal/project"
 )
 
@@ -130,18 +129,7 @@ func (s *Server) handleParseAPIDocs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plan := &planning.DraftPlan{
-		ProjectID: p.ID,
-		Status:    "draft",
-		Cases:     s.parseAPIDocsWithAI(r.Context(), p),
-	}
-	if err := s.planning.CreateDraft(r.Context(), plan); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(plan)
+	s.createDraftPlanResponse(w, r, p.ID, s.parseAPIDocsWithAI(r.Context(), p))
 }
 
 func (s *Server) handleExtractProjectFeatures(w http.ResponseWriter, r *http.Request) {

@@ -35,10 +35,17 @@ func (s *Server) handleGenerateProjectTestPlan(w http.ResponseWriter, r *http.Re
 		p.FeatureMap = s.deriveFeatureMap(r.Context(), p.Spec, p.FocusHints)
 		_ = s.projects.Update(r.Context(), p)
 	}
+	s.createDraftPlanResponse(w, r, p.ID, s.generateDraftCases(r.Context(), p))
+}
+
+// createDraftPlanResponse membuat draft plan dari kumpulan kasus, menyimpannya,
+// dan menulis respons 201. Dipakai bersama oleh handleGenerateProjectTestPlan
+// dan handleParseAPIDocs (DL-3).
+func (s *Server) createDraftPlanResponse(w http.ResponseWriter, r *http.Request, projectID string, cases []planning.DraftCase) {
 	plan := &planning.DraftPlan{
-		ProjectID: p.ID,
+		ProjectID: projectID,
 		Status:    "draft",
-		Cases:     s.generateDraftCases(r.Context(), p),
+		Cases:     cases,
 	}
 	if err := s.planning.CreateDraft(r.Context(), plan); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")

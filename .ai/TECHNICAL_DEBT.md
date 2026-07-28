@@ -52,8 +52,8 @@ These packages have implementation code but no connection from the running serve
 |---|---|---|---|
 | DL-1 | `internal/api/server.go` vs `internal/agent/agent.go` | `launchRun` now delegates to Agent; `executeRealRun` removed | ✅ Resolved (TODO-007 Phase 2) |
 | DL-2 | `internal/agent/llm_*.go` vs `internal/ai/client.go` | Two independent LLM client layers with inconsistent provider routing (test connection vs real execution) | HIGH |
-| DL-3 | `internal/api/server.go:389-400,474-485` | Two near-identical draft-plan creation blocks (`parseAPIDocsWithAI` path and `generateDraftCases` path) | LOW |
-| DL-4 | `internal/api/server.go:2637-2691,2721-2739` | Non-list `run-now` and non-list due-schedule branches create idle runs without execution in different handlers with similar shape | MEDIUM |
+| DL-3 | ~~Two near-identical draft-plan creation blocks~~ ✅ Resolved (2026-07-28): shared `createDraftPlanResponse` helper in `handlers_planning.go`; both `handleGenerateProjectTestPlan` and `handleParseAPIDocs` delegate | ✅ Resolved | — |
+| DL-4 | ~~Non-list `run-now` and due-schedule branches duplicate run creation~~ ✅ Resolved (2026-07-28): shared `startScheduleRun` helper in `handlers_schedules.go`; behavioral differences (last-run status, event message) parameterized; caller launches so run-now can snapshot response first | ✅ Resolved | — |
 
 ## Poor Naming and Consistency
 
