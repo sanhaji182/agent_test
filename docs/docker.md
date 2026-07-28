@@ -4,7 +4,7 @@
 
 - Docker 24+ with Compose V2
 - 4GB+ RAM (8GB recommended for Steel Browser)
-- Ports available: 8080, 3001, 5432, 6379, 3000, 8000
+- Ports available: 8080, 3001, 5432, 6379, 3010, 8000
 
 ## Quick Start
 
@@ -60,12 +60,21 @@ All services communicate via the default Docker Compose network using service na
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Yes (for LLM) | Anthropic API key |
+| `ANTHROPIC_API_KEY` | Yes (default provider) | Anthropic API key — used when `LLM_PROVIDER` is unset or `anthropic` |
+| `LLM_PROVIDER` | No | `anthropic` (default), `openai`, `google`, `deepseek`, `mistral`, `groq`, `openrouter`, `custom`, `local`, `ollama` |
+| `LLM_API_KEY` | No | API key for non-Anthropic providers (falls back to `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` per provider) |
+| `LLM_BASE_URL` | No | Override endpoint; hosted providers get correct per-provider defaults automatically |
 | `LLM_MODEL` | No | Model name (default: claude-sonnet-4-5) |
+| `QUEUE_ENABLED` | No | `true` routes run execution through the Redis/Asynq durable queue (default: in-process goroutines) |
+| `CORS_ALLOWED_ORIGINS` | No | Comma-separated origin allowlist for production (default: wildcard, development only) |
 | `STEEL_API_KEY` | No | Steel Browser auth key |
 | `API_KEY` | No | API authentication key (required in production when APP_ENV ≠ development) |
 | `APP_ENV` | No | Environment: "development" (default) or "production". Production requires API_KEY. |
-| `GITHUB_WEBHOOK_SECRET` | No | Shared secret for GitHub webhook verification (falls back to API_KEY) |
+| `JWT_SECRET` | No | Dashboard cookie-auth secret; random per-process secret generated if unset |
+| `GITHUB_WEBHOOK_SECRET` | No | Shared secret for GitHub webhook HMAC verification (falls back to `API_KEY` if unset) |
+| `GOTEST_AI_PLANNING` | No | `1` enables AI feature extraction and draft-plan generation |
+| `GOTEST_APPROVED_CASE_RUNNER` | No | `docker` enables real Docker Playwright execution for approved cases |
+| `MAX_FIX_ATTEMPTS` / `DEFAULT_TIMEOUT_SECONDS` / `MAX_CONCURRENT_RUNS` | No | Execution limits (defaults: 3 / 300 / 10) |
 
 ## Health Checks
 

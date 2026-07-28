@@ -17,12 +17,12 @@ These are cases where tracked documentation makes claims that conflict with trac
 | DG-3 | `frontend/src/lib/docs.ts:396,417` | ~~Webhook has no production caller~~ ✅ Resolved: `StartFailureNotifier` calls `TriggerFailure` on `run_failed` (UW-6, 2026-07-27) | — | `internal/api/failure_notifier.go:52` |
 | DG-4 | `frontend/src/lib/docs.ts:615,638` | ~~"PHPUnit for unit tests"~~ ✅ Resolved: docs.ts:617,640 now explicitly state PHPUnit is NOT implemented and the agent generates Playwright | — | `frontend/src/lib/docs.ts:617,640` |
 | DG-5 | `docs/docker.md:26-33` | ~~Steel port wrong~~ ✅ Resolved: docker.md services table lists steel-browser at 3010 (container port 3000) | — | `docs/docker.md` services table |
-| DG-6 | `docs/docker.md:59-66` | Anthropic described as required; model examples reference older defaults | Multi-provider routing now consistent (DL-2 resolved 2026-07-28) but docker.md wording predates it | Open — docs.md refresh |
+| DG-6 | `docs/docker.md:59-66` | ~~Anthropic described as required; stale env table~~ ✅ Resolved (2026-07-28): env table rewritten — multi-provider vars (`LLM_PROVIDER`/`LLM_API_KEY`/`LLM_BASE_URL`), `QUEUE_ENABLED`, `CORS_ALLOWED_ORIGINS`, `JWT_SECRET`, AI-planning flags, execution limits all documented; prerequisites port list fixed (3010) | — | `docs/docker.md` |
 | DG-7 | `.env.example:4-5,32-33` | ~~`JWT_SECRET`/`GITHUB_WEBHOOK_SECRET` unused~~ ✅ Resolved: both consumed (`internal/api/server.go:69,288`) | — | grep 2026-07-28 |
 | DG-8 | `.env.example` | `VISION_MODEL`, `BRAINTRUST_API_KEY`, `ENABLE_VISUAL_REGRESSION`, `ENABLE_ADVANCED_AGENT` documented | Now correctly listed under UNUSED marker in `.env.example`; runtime consumers still absent (UW-4/UW-5 product decision) | `.env.example` UNUSED section |
 | DG-9 | `.env.example:39-41` | ~~`MAX_FIX_ATTEMPTS`/`DEFAULT_TIMEOUT_SECONDS` ignored~~ ✅ Resolved: read via `getEnvInt` (UC-2/UC-3, commit 5e7175d) | — | `internal/config/config.go` |
 | DG-10 | `README.md:80-84` | Google and DeepSeek listed as supported providers | ✅ Substantially resolved: both layers now route google/deepseek to OpenAI-compatible transport with correct default endpoints (DL-2 Phase 1, commit 3b56bc9); `GOOGLE_API_KEY`/`DEEPSEEK_API_KEY` env names remain README-only (use `LLM_API_KEY`) | `internal/ai/client.go`; UC-1 |
-| DG-11 | `frontend/README.md:1-36` | Generic create-next-app template | Unchanged — cosmetic (ST-1) | Open |
+| DG-11 | `frontend/README.md:1-36` | ~~Generic create-next-app template~~ ✅ Resolved (was already project-specific; 2026-07-28 refresh: version bump 16.2.12, `npm test` documented, stale "no test suite" claim corrected — 20 Vitest tests exist in `src/test/`) | — | `frontend/README.md` |
 | DG-12 | `README.md:201-204` | ~~`CORS_ALLOWED_ORIGINS` recommended but hard-coded wildcard~~ ✅ Resolved (2026-07-28): `CORS_ALLOWED_ORIGINS` implemented — comma-separated allowlist, origin echo + `Vary: Origin`, wildcard only when unset/`*`; 5 middleware tests | — | `internal/api/server.go` (`newCORSMiddleware`); `internal/api/cors_test.go` |
 
 ## Missing Documentation
@@ -48,9 +48,9 @@ Areas where no tracked documentation exists but implementation requires it:
 
 | ID | Document | Issue | Recommendation |
 |---|---|---|---|
-| ST-1 | `frontend/README.md` | Entirely generic create-next-app template | Replace with project-specific frontend guidance |
-| ST-2 | `docs/docker.md` | Predates several configuration additions; Steel port is wrong | Update with current Compose topology |
-| ST-3 | `README.md` Stack section | Lists `claude-sonnet-4-5` as default; `.env.example` and Compose still reference this | Update to reflect current multi-provider setup |
+| ST-1 | `frontend/README.md` | ~~Generic template~~ ✅ Resolved: project-specific (route map, structure, dev notes); refreshed 2026-07-28 | — |
+| ST-2 | `docs/docker.md` | ~~Stale env table; Steel port wrong~~ ✅ Resolved 2026-07-28 | — |
+| ST-3 | `README.md` Stack section | Lists `claude-sonnet-4-5` as default — still the actual code default (`config.go`); not stale | No action |
 
 ## Environment Variable Documentation Drift
 

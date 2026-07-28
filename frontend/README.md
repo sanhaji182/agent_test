@@ -1,6 +1,6 @@
 # GoTest Agent — Frontend Dashboard
 
-Next.js 16.2.7 application built with the App Router, TypeScript, Tailwind CSS 4, and `lucide-react` icons.
+Next.js 16.2.12 application built with the App Router, TypeScript, Tailwind CSS 4, and `lucide-react` icons.
 
 ## Quick Start
 
@@ -9,6 +9,7 @@ npm install
 npm run dev      # Dev server on :3000
 npm run build    # Production build
 npm run lint     # ESLint
+npm test         # Vitest suite (Testing Library + jsdom)
 ```
 
 The dashboard expects `NEXT_PUBLIC_API_URL` pointing to the Go backend (default: `http://localhost:8080`). This is baked at build time — set it before `npm run build` for production images.
@@ -50,7 +51,7 @@ The dashboard expects `NEXT_PUBLIC_API_URL` pointing to the Go backend (default:
 
 - **No authentication is turned on by default.** The backend `API_KEY` is empty, and the dashboard does not send it. If you enable API-key protection on the backend, you must also add authentication to the frontend.
 - **SSE connections have different error handling.** The global control-room stream reconnects and has a polling fallback. The per-run stream does not — a transient disconnect on `/runs/[id]` leaves the console stale.
-- **No frontend test suite exists yet.** Add coverage before refactoring pages or the API client. The testing strategy is documented at `.ai/TESTING.md`.
+- **Test suite lives in `src/test/`** (Vitest + Testing Library, 20 tests covering the API client, utils, and UI primitives). Run with `npm test`. Page-level and E2E coverage are still open items — see `.ai/TESTING.md`.
 - **This Next.js version has breaking changes** from the training data of most AI models. Follow the guidance in `frontend/AGENTS.md` and consult `node_modules/next/dist/docs/` for installed APIs and conventions.
 - **`frontend/src/components/sidebar.tsx`** is the canonical navigation inventory — not every route is listed there (e.g., `/projects` is reached from `/tests`).
 

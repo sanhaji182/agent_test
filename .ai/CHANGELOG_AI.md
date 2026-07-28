@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — Docs refresh: docker.md env table + frontend README (DG-6, DG-11, ST-1..3)
+
+- **Task:** Close the two remaining cosmetic documentation gaps.
+- **Source revision before change:** 4e2133e
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `docs/docker.md`, `frontend/README.md`, `.ai/DOCUMENTATION_GAP.md`
+- **Summary:** DG-6/ST-2: docker.md env-var table rewritten to match current runtime — multi-provider LLM vars, `QUEUE_ENABLED`, `CORS_ALLOWED_ORIGINS`, `JWT_SECRET`, AI-planning feature flags, execution limits; prerequisites port list fixed (3010 host port for Steel); GITHUB_WEBHOOK_SECRET fallback-to-API_KEY wording verified against `server.go:313-316`. DG-11/ST-1: frontend README refreshed — Next 16.2.12, `npm test` documented, stale "no frontend test suite exists" claim corrected (20 Vitest tests in `src/test/`, verified by running the suite). ST-3 audited: `claude-sonnet-4-5` remains the actual code default — not stale, closed without change.
+- **Reason:** Operator-facing docs promised/omitted env vars inconsistently with the runtime; README claim about missing tests could mislead contributors into duplicating coverage.
+- **Risk:** Documentation-only
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** all three files above
+- **Verification completed:** `npm test` — 20/20 PASS (confirms README claim); webhook fallback verified at `internal/api/server.go:313-316`; Compose port cross-checked against docker.md services table. No code changed.
+- **Facts added/removed or confidence changed:** DOCUMENTATION_GAP: all 12 DG items and all 3 ST items now resolved or closed except DG-2 (Steel — blocked on UW-2 product decision), DG-8/DG-10 residuals (dormant-feature env names, UC-1).
+- **Open unknowns:** None new.
+- **Related ADRs/TODOs:** DOCUMENTATION_GAP DG-6, DG-11, ST-1..3; ADR-002 (Steel decision) still pending for DG-2.
+
 ## 2026-07-28 — Configurable CORS allowlist (DG-12) + documentation-gap reconciliation
 
 - **Task:** Implement `CORS_ALLOWED_ORIGINS` (README promised it; code hard-coded wildcard) and reconcile stale DOCUMENTATION_GAP.md entries.
