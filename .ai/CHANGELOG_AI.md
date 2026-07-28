@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — MemoryStore tests: snapshot-isolation invariant guard
+
+- **Task:** Add test coverage for `internal/db` (previously zero test files) focusing on the race-fix invariant.
+- **Source revision before change:** 806f482
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/db/memory_test.go` (new)
+- **Summary:** 7 tests: CRUD lifecycle, `ErrNotFound` paths (Get/Delete), `ListRuns` newest-first ordering + pagination window + past-end offset, and — the core motivation — three isolation guards proving `cloneRun` snapshot semantics: (1) mutating a run returned by `GetRun` (slices, RunResult, Failures, FinishedAt) does not affect the store; (2) mutating the caller's object after `CreateRun` (simulating the `Agent.Launch` goroutine writing to its run pointer) does not affect the stored copy; (3) `ListRuns` results are equally isolated. Plus `cloneRun` nil-safety.
+- **Reason:** The 2026-07-27 race fixes (commit 8cf727c) rest entirely on `cloneRun` deep-copy semantics, which had no direct tests — a future "optimization" removing a copy would silently reintroduce handler/goroutine data races that `-race` only catches probabilistically under load.
+- **Risk:** Low (test-only)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** this entry
+- **Verification completed:** `go test ./internal/db/ -race -v` — 7/7 PASS; full suite `go test ./internal/... -race -count=1` — 13/13 packages ok (db now counted); build/vet/gofmt clean.
+- **Facts added/removed or confidence changed:** `internal/db` no longer untested; snapshot invariant is regression-guarded deterministically (not just probabilistically via -race).
+- **Open unknowns:** DBStore (PostgreSQL) paths still untested — requires a database; candidate for integration-test environment.
+- **Related ADRs/TODOs:** 2026-07-27 race-fix changelog entry; TESTING.md.
+
 ## 2026-07-28 — Docs refresh: docker.md env table + frontend README (DG-6, DG-11, ST-1..3)
 
 - **Task:** Close the two remaining cosmetic documentation gaps.
