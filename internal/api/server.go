@@ -303,6 +303,8 @@ func (s *Server) routes() {
 		r.Post("/ai/test-provider", s.handleTestAIProvider)
 		// Demo
 		r.Post("/demo/seed", s.handleDemoSeed)
+		// Advanced testing (Phase 2+3)
+		s.registerAdvancedTestingRoutes(r)
 		// Export
 		r.Get("/runs/{id}/export", s.handleExportRun)
 		r.Get("/runs/{id}/compare/{otherId}/export", s.handleExportCompare)

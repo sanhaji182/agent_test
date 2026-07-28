@@ -27,6 +27,31 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-29 — Phase 2+3: Network assertions, Steel cloud, perf metrics, a11y, exploratory testing
+
+- **Task:** Exceed TestSprite capabilities with advanced testing features
+- **Source revision before change:** 4212294
+- **Source revision after change:** 027534a
+- **Files modified:** internal/agent/playwright_runner.go, internal/agent/steel_runner.go (new)
+- **Summary:**
+  - Network interception: network_wait action + assert network (verify API calls, status codes)
+  - Test data parameterization: {{key}} template expansion for data-driven tests
+  - Additional assertions: count, attribute
+  - Steel cloud browser: SteelRunner connects Playwright via CDP to remote sessions
+  - Performance metrics: FCP, LCP, CLS, TTFB, DOM, Load via PerformanceObserver
+  - Accessibility testing: axe-core injection with WCAG 2.0 A/AA rules
+  - AI-driven exploratory testing: autonomous element discovery and interaction
+- **Reason:** Phase 2+3 of TestSprite-parity-and-beyond initiative
+- **Risk:** Medium — new features additive, existing pipeline unaffected (E2E 11/11 passed)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** Steel requires STEEL_API_URL/STEEL_API_KEY env vars
+- **Documentation updated:** This changelog
+- **Verification completed:** go build ✓, go vet ✓, go test -race 23/23 ✓, E2E ✓ (passed=11)
+- **Facts added/removed or confidence changed:** Product now exceeds TestSprite in: network assertions, perf metrics, a11y testing, exploratory testing, MCP integration
+- **Open unknowns:** Steel wiring untested without live Steel instance; axe-core requires CDN access
+- **Related ADRs/TODOs:** ADR-002 (Steel), ADR-006 (LLM transport)
+
 ## 2026-07-29 — Phase 1: Multi-browser, parallel execution, assertions, viewport presets
 
 - **Task:** Elevate execution engine beyond TestSprite parity
