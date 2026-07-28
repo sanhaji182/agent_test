@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — HTML report tests incl. XSS-escaping guard
+
+- **Task:** Coverage for `internal/report` (previously zero test files).
+- **Source revision before change:** 5ffa897
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/report/html_test.go` (new)
+- **Summary:** 3 tests: full-run rendering (stats, failure table, test-plan section), empty-run rendering ("No results available." without failures/plan sections), and an XSS guard proving failure Test/Message content — which originates from test output and LLM responses — is HTML-escaped by `html/template` (script tag and onerror payload must appear escaped, never raw).
+- **Reason:** Coverage initiative; the report endpoint serves this HTML to browsers, so a future switch to `text/template` or `template.HTML` would be an XSS regression this test now catches.
+- **Risk:** Low (test-only)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** this entry
+- **Verification completed:** 3/3 PASS with `-race`; full suite 23/23 packages ok; build/gofmt clean.
+- **Facts added/removed or confidence changed:** Tested-package count 12→23 today. Remaining untested and why: `queue` (Redis integration), `runner` (Docker), `mcp` (stdio server loop); dormant pending product decisions: `steel`, `vision`, `evals`.
+- **Open unknowns:** None for this change.
+- **Related ADRs/TODOs:** SECURITY.md; TESTING.md.
+
 ## 2026-07-28 — execution context + Playwright reporter tests
 
 - **Task:** Coverage for `internal/execution` and `internal/reporter` (both previously zero test files) — the runtime-artifact plumbing between runners and the run console.
