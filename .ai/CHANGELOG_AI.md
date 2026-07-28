@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — ADR-006: design proposal for LLM layer unification (DL-2 Phase 2)
+
+- **Task:** Produce the design pass required before merging the two LLM transport layers (deferred remainder of DL-2).
+- **Source revision before change:** 3b56bc9
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `.ai/ADR-006.md` (new), `.ai/TECHNICAL_DEBT.md` (DL-2 entry links ADR-006)
+- **Summary:** ADR-006 (Status: Proposed) documents the current two-layer state with a comparison table (interfaces, vision support, temperature/max-tokens handling, error text), decides `internal/ai` becomes the single transport layer with `agent.LLM` rebuilt as prompt-domain wrappers over `ai.Client`, and lays out a 4-step migration (A: vision in `ai`; B: extract prompts with byte-identical parity test; C: `promptLLM` adapter replaces both structs; D: cleanup). Each step independently shippable and gated by build + `-race` suite. `agent.LLM` interface and all its consumers unchanged throughout. Evidence claims verified against source (`chatWithVision` at llm_anthropic.go:203, image_url block at llm_openai.go:51, hard-coded MaxTokens 4096).
+- **Reason:** Repo protocol: architectural changes require investigation + design before implementation; DL-2's remaining transport merge touches the core execution path.
+- **Risk:** Documentation-only
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** `.ai/ADR-006.md`, `.ai/TECHNICAL_DEBT.md`, this entry
+- **Verification completed:** Source cross-checks for all file:line evidence cited in the ADR; no code changed (build/test state unchanged from 3b56bc9: 11/11 -race green).
+- **Facts added/removed or confidence changed:** DL-2 Phase 2 now has an approved-pending design; implementation can start on acceptance.
+- **Open unknowns:** ADR-006 acceptance decision (owner); whether planning layer should adopt vision immediately or only expose it.
+- **Related ADRs/TODOs:** ADR-006, TECHNICAL_DEBT DL-2, ADR-005 Phase 2.
+
 ## 2026-07-28 — Align LLM provider routing between execution and planning layers (DL-2 Phase 1)
 
 - **Task:** Fix the routing inconsistency half of DL-2 (HIGH): `agent.NewLLM` (execution + test-connection) and `ai.New` (planning) accepted different provider sets with different normalization and base-URL defaults.
