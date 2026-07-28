@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — execution context + Playwright reporter tests
+
+- **Task:** Coverage for `internal/execution` and `internal/reporter` (both previously zero test files) — the runtime-artifact plumbing between runners and the run console.
+- **Source revision before change:** 5e7f988
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/execution/context_test.go` (new), `internal/reporter/playwright_test.go` (new)
+- **Summary:** execution (4 tests): nil-receiver/nil-store no-panic guarantees (runners call unconditionally), event forwarding, `RecordScreenshot` producing all three artifacts (recording `captured`, visual artifact, `screenshot_captured` event), and visual-baseline chaining (second capture of same step gets first's URL as baseline; different step starts empty). reporter (3 tests): `ParseAndEmit` against a realistic two-spec Playwright JSON report — event-type counts (2 test_started, 3 step_started/completed, 1 assertion each way), failed-step message propagation ("FAILED: timeout"), cumulative `timestamp_ms` arithmetic (200ms after 120+80); graceful nil-error on missing file/invalid JSON/nil ctx; `itoa` direct coverage.
+- **Reason:** Coverage initiative; baseline chaining and timestamp accumulation are the visual-regression and timeline features' correctness core.
+- **Risk:** Low (test-only)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** this entry
+- **Verification completed:** 7/7 PASS with `-race`; full suite 22/22 packages ok; build/gofmt clean.
+- **Facts added/removed or confidence changed:** Tested-package count 12→22 today. Remaining untested: `queue` (Redis), `runner` (Docker), `mcp` (stdio server), `report` (HTML template); dormant: `steel`, `vision`, `evals`.
+- **Open unknowns:** None for this change.
+- **Related ADRs/TODOs:** TESTING.md; coverage entries above.
+
 ## 2026-07-28 — workflow store tests (review gate + suites)
 
 - **Task:** Coverage for `internal/workflow` (previously zero test files) — human-in-the-loop review/approval and suite management.
