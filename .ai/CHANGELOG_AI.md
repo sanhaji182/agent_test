@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — webhook HMAC verification tests (security-critical)
+
+- **Task:** Coverage for `internal/webhook` (previously zero test files) — GitHub HMAC verification is the only barrier between the public webhook endpoint and auto-triggered test runs.
+- **Source revision before change:** 5e80027
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/webhook/github_test.go` (new)
+- **Summary:** 6 tests: non-POST 405; valid sha256 signature triggers the async `onPush` callback with correctly-parsed payload; 5 invalid-signature variants all 401 without firing the callback (wrong secret, missing `sha256=` prefix, empty header, garbage hex, tampered body); empty-secret development mode accepts unsigned requests; invalid JSON 400; ping/unknown events 200 without side effects.
+- **Reason:** Security-critical production path with zero coverage; a regression in `verifySignature` (e.g. prefix handling or non-constant-time compare removal) would silently open run-triggering to forged requests.
+- **Risk:** Low (test-only)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** this entry
+- **Verification completed:** 6/6 PASS with `-race`; full suite 19/19 packages ok; build/gofmt clean.
+- **Facts added/removed or confidence changed:** Tested-package count 12→19 today. Remaining untested: `queue` (needs Redis/mocks), `execution`, `runner`, `mcp`, `report`, `reporter`, `workflow` (active); `steel`, `vision`, `evals` (dormant, UW items).
+- **Open unknowns:** None for this change.
+- **Related ADRs/TODOs:** ADR-005 (auth model); SECURITY.md.
+
 ## 2026-07-28 — recordings store tests
 
 - **Task:** Coverage for `internal/recordings` (previously zero test files) — backs the run-console screenshot strip.
