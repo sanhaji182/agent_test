@@ -27,6 +27,32 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-29 — Phase 1: Multi-browser, parallel execution, assertions, viewport presets
+
+- **Task:** Elevate execution engine beyond TestSprite parity
+- **Source revision before change:** 8bffa7c
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** internal/agent/playwright_runner.go, internal/agent/llm_prompts.go, internal/agent/llm_prompts_test.go, scripts/install-playwright-driver.sh
+- **Summary:**
+  - Refactored PlaywrightRunner into modular architecture: executeAction() extracted with self-healing
+  - Multi-browser support: chromium (default), firefox, webkit via WithBrowser()
+  - Parallel test file execution: each file gets own browser context via WithParallel()
+  - 8 mobile/desktop viewport presets (iphone-14, pixel-7, galaxy-s23, ipad, etc.)
+  - New action types: hover, press, screenshot, assert (visible/hidden/text_contains/url_contains/title_contains)
+  - Screenshot-on-failure diagnostics with path in Failure struct
+  - Enhanced LLM prompts: robust selector guidance, strategic waits, assertion requirements
+  - Playwright driver manual install script (CDN workaround)
+- **Reason:** TestSprite gap analysis identified missing multi-browser, parallel execution, and assertion capabilities. This closes the gap and adds features TestSprite lacks (MCP, intelligence engine, review workflow).
+- **Risk:** Medium — runner refactored but E2E proven (passed=8 failed=0 total=8)
+- **Breaking changes:** None — Run() signature unchanged, new features opt-in via builder methods
+- **Database migrations:** None
+- **Deployment steps:** None (driver pre-install needed if CDN unavailable: scripts/install-playwright-driver.sh)
+- **Documentation updated:** This changelog
+- **Verification completed:** go build ✓, go vet ✓, go test ./internal/agent -race ✓, E2E TestE2E_ProductSmoke ✓ (state=done, 8/8 passed)
+- **Facts added/removed or confidence changed:** Full pipeline proven working: generate→execute→assert→report
+- **Open unknowns:** Firefox/WebKit browsers need separate driver install; parallel mode untested in E2E (requires multiple test files)
+- **Related ADRs/TODOs:** ADR-006 (LLM transport), Phase 2 plan (network assertions, Steel wiring, test data)
+
 ## 2026-07-28 — First real end-to-end run + stream:false fix (product E2E gate)
 
 - **Task:** Run one full product loop against a live LLM + real web page — the empirical "does the core loop work" gate.

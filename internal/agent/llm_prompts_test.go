@@ -31,7 +31,7 @@ func TestPromptBuilders_ContainContract(t *testing.T) {
 		{
 			name:   "generate test scripts includes format example",
 			prompt: promptGenerateTestScripts(plan, "CTX"),
-			musts:  []string{"CTX", "Format Example", `"action": "goto"`, "Return ONLY valid JSON"},
+			musts:  []string{"CTX", "OUTPUT FORMAT", `"action": "goto"`, "Return ONLY valid JSON", "robust selectors"},
 		},
 		{
 			name:    "heal action is non-vision",

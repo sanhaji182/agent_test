@@ -33,29 +33,67 @@ Return ONLY valid JSON, no markdown.`, analysis, requirements)
 
 func promptGenerateTestScripts(plan *TestPlan, analysis string) string {
 	planJSON, _ := json.Marshal(plan)
-	return fmt.Sprintf(`Generate Playwright automation actions for this test plan:
+	return fmt.Sprintf(`You are an expert test automation engineer generating Playwright tests.
+
+TEST PLAN:
 %s
 
-Codebase context: %s
+CODEBASE CONTEXT:
+%s
 
-You must return a JSON array of files. Each file represents a test scenario.
-For the 'content' field, provide a JSON array of actions as a string.
-Supported actions:
-- {"action": "goto", "url": "..."}
+INSTRUCTIONS:
+Generate comprehensive Playwright test scripts as JSON array. Each test must:
+
+1. **Use robust selectors** (prefer data-testid, aria-label, role > class > id):
+   - ✅ "button[data-testid='submit']" or "[role='button'][aria-label='Submit']"
+   - ✅ "input[type='email']" or "input[name='email']"
+   - ❌ ".btn.btn-primary.submit" (fragile)
+
+2. **Add strategic waits** after navigation/actions:
+   - {"action": "wait", "ms": 1000} after page loads
+   - {"action": "wait", "ms": 500} after form submissions
+
+3. **Verify outcomes** with scroll/checkpoint actions:
+   - Scroll to verify success messages appear
+   - Wait to ensure async operations complete
+
+4. **Handle common patterns**:
+   - Login flows: fill email → fill password → click submit → wait → verify redirect
+   - Form submissions: fill fields → submit → wait → verify success message
+   - Navigation: goto → wait → verify page loaded
+
+SUPPORTED ACTIONS:
+- {"action": "goto", "url": "https://..."}
 - {"action": "fill", "selector": "...", "value": "..."}
 - {"action": "click", "selector": "..."}
 - {"action": "scroll", "y": 500}
 - {"action": "wait", "ms": 2000}
+- {"action": "hover", "selector": "..."}
+- {"action": "press", "selector": "...", "key": "Enter"}
+- {"action": "assert", "selector": "...", "assert": "visible"} // element must be visible
+- {"action": "assert", "selector": "...", "assert": "hidden"} // element must not be visible
+- {"action": "assert", "selector": "...", "assert": "text_contains", "text": "expected text"}
+- {"action": "assert", "selector": "...", "assert": "url_contains", "text": "/dashboard"} // URL must contain text
+- {"action": "assert", "selector": "...", "assert": "title_contains", "text": "Home"} // page title must contain text
+- {"action": "screenshot"} // capture screenshot as evidence
 
-Format Example:
+OUTPUT FORMAT (JSON array):
 [
   {
-    "name": "scenario1.json",
-    "content": "[\n  {\"action\": \"goto\", \"url\": \"https://example.com\"},\n  {\"action\": \"fill\", \"selector\": \"input[name='q']\", \"value\": \"test\"},\n  {\"action\": \"click\", \"selector\": \"button[type='submit']\"}\n]"
+    "name": "test_scenario_1.json",
+    "content": "[\n  {\"action\": \"goto\", \"url\": \"https://app.example.com/login\"},\n  {\"action\": \"wait\", \"ms\": 1000},\n  {\"action\": \"fill\", \"selector\": \"input[type='email']\", \"value\": \"test@example.com\"},\n  {\"action\": \"fill\", \"selector\": \"input[type='password']\", \"value\": \"password123\"},\n  {\"action\": \"click\", \"selector\": \"button[type='submit']\"},\n  {\"action\": \"wait\", \"ms\": 2000},\n  {\"action\": \"scroll\", \"y\": 0}\n]"
   }
 ]
 
-Return ONLY valid JSON, no markdown.`, string(planJSON), analysis)
+Generate tests that are:
+- ✅ Resilient to UI changes (use semantic selectors)
+- ✅ Fast (minimal unnecessary waits)
+- ✅ Verifiable (use assert actions to check outcomes, not just perform actions)
+- ✅ Self-documenting (clear action sequences)
+
+IMPORTANT: Every test should end with at least one assert action to verify the expected outcome.
+
+Return ONLY valid JSON array, no markdown, no explanation.`, string(planJSON), analysis)
 }
 
 func promptSuggestFixes(failures []Failure, files []TestFile) string {
