@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — LLM layer unification implemented (ADR-006 Steps A–D, DL-2 resolved)
+
+- **Task:** Execute accepted ADR-006: merge the two LLM transport layers.
+- **Source revision before change:** 630fd51
+- **Source revision after change:** UNKNOWN until committed (steps landed as b1a80d2, aab3963, f8464aa + this docs commit)
+- **Files modified:** `internal/ai/client.go` (+`client_test.go` new), `internal/agent/llm_prompts.go` (new), `llm_prompts_test.go` (new), `llm_adapter.go` (new), `llm_factory.go` (rewritten), `llm_anthropic.go` (deleted), `llm_openai.go` (deleted), `.ai/ADR-006.md`, `.ai/TECHNICAL_DEBT.md`, `.ai/DEPENDENCIES.md`
+- **Summary:** Step A (b1a80d2): `ai.Client` gains `GenerateWithImage`; both transports implement vision; OpenAI errors include response body; stub-server transport tests. Step B (aab3963): 6 prompt builders + parsers extracted to `llm_prompts.go`; fixed latent bug where `OpenAILLM.HealAction` sent the vision prompt ("screenshot attached") with no image. Step C (f8464aa): `promptLLM` adapter (prompts × `ai.Client`) replaces both structs; duplicated transports deleted (net −184 lines); `ai` gains ungated direct constructors preserving the execution layer's construct-always/fail-at-request contract; factory parity tests passed with zero edits. Step D: docs updated, DL-2 marked resolved.
+- **Reason:** DL-2 — final remaining HIGH-origin debt; single transport means timeouts/retries/redaction patch in one place.
+- **Risk:** Medium (execution-path refactor) mitigated: `agent.LLM` interface unchanged, all consumers untouched, parity tests unchanged and green.
+- **Breaking changes:** None (API and behavior contracts preserved; error strings on the execution OpenAI path now include response body — strictly more informative)
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** ADR-006 (implemented), TECHNICAL_DEBT (DL-2 resolved), DEPENDENCIES (SDK evidence path), this entry
+- **Verification completed:** Per step: `go build ./...`, `go vet ./internal/...`, `gofmt` zero diff, `go test ./internal/... -race -count=1` — 12/12 packages ok after every step. Step C proof: `llm_factory_test.go` (routing + parity) passed without modification.
+- **Facts added/removed or confidence changed:** DL-2 resolved; Duplicate Logic section fully cleared; `internal/ai` is the sole LLM transport.
+- **Open unknowns:** `handleTestAIProvider` real-key smoke test not run (no credentials in this environment) — recommend one manual test-connection from the dashboard after next deploy.
+- **Related ADRs/TODOs:** ADR-006, ADR-005 Phase 2, TECHNICAL_DEBT DL-2.
+
 ## 2026-07-28 — ADR-006: design proposal for LLM layer unification (DL-2 Phase 2)
 
 - **Task:** Produce the design pass required before merging the two LLM transport layers (deferred remainder of DL-2).

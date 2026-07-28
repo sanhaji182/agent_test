@@ -13,7 +13,7 @@ Declared at `go.mod:5-14`. “Wired” means constructed by an executable entry 
 
 | Module | Version | Purpose | Import evidence | Runtime status |
 |---|---|---|---|---|
-| `github.com/anthropics/anthropic-sdk-go` | v0.2.0-beta.3 | Anthropic LLM client | `internal/agent/llm_anthropic.go:9-10`; `internal/ai/client.go:13-14` | Wired (web + MCP + planning) |
+| `github.com/anthropics/anthropic-sdk-go` | v0.2.0-beta.3 | Anthropic LLM client | `internal/ai/client.go` (single transport since ADR-006) | Wired (web + MCP + planning) |
 | `github.com/go-chi/chi/v5` | v5.2.1 | HTTP router/middleware | `internal/api/server.go:13-14,55-60` | Wired |
 | `github.com/golang-jwt/jwt/v5` | v5.3.1 | JWT signing/validation | `internal/auth/auth.go:15-16,38-67` | Dormant (no production route) |
 | `github.com/google/uuid` | v1.6.0 | UUID generation | `internal/api/server.go:35`; `internal/mcp/server.go:12` | Wired |
