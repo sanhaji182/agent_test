@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — Align LLM provider routing between execution and planning layers (DL-2 Phase 1)
+
+- **Task:** Fix the routing inconsistency half of DL-2 (HIGH): `agent.NewLLM` (execution + test-connection) and `ai.New` (planning) accepted different provider sets with different normalization and base-URL defaults.
+- **Source revision before change:** a62a3e2
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/agent/llm_factory.go`, `internal/ai/client.go`, `internal/agent/llm_factory_test.go`, `.ai/TECHNICAL_DEBT.md`
+- **Summary:** Three concrete inconsistencies fixed. (1) Normalization: `ai.New` lowercased/trimmed provider names, `agent.NewLLM` matched case-sensitively — a DB-stored `"Anthropic"` worked for planning but returned nil (unsupported provider) for run execution. `NewLLM` now normalizes identically. (2) Provider set: `ai.New` rejected `google`/`deepseek`/`mistral`/`groq`/`openrouter`/`huggingface`, which `agent.NewLLM` accepted — with those providers configured, runs executed but AI planning silently returned nil. `ai.New` now accepts the same set. (3) Default base URL: both layers fell back to `https://api.openai.com/v1` for ALL OpenAI-compatible providers, so `google` etc. without explicit `LLM_BASE_URL` hit the wrong endpoint with the wrong key. New shared `ai.DefaultOpenAICompatibleBaseURL(provider)` maps each hosted provider to its documented OpenAI-compatible endpoint (aligned with `isApprovedLLMOrigin`); both factories use it.
+- **Reason:** DL-2 (HIGH): a settings change validated by "test connection" could behave differently in planning; provider misconfiguration failed silently.
+- **Risk:** Low-Medium (routing only; behavior changes are strictly fixes: previously-nil clients now constructed, previously-wrong endpoints now correct. No change for anthropic/openai/custom with explicit base URL — the common configurations)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** `.ai/TECHNICAL_DEBT.md` (DL-2 downgraded HIGH→MEDIUM; remaining = transport-layer merge), this entry
+- **Verification completed:** New tests: `TestProviderRoutingParity` (14 providers, both factories agree), `TestDefaultBaseURLParity` (7 endpoint mappings), 2 normalization cases — all PASS with `-race`. Full gates: `go build ./...` clean, `go vet ./internal/...` clean, `gofmt` zero diff, `go test ./internal/... -race -count=1` 11/11 ok.
+- **Facts added/removed or confidence changed:** DL-2 severity HIGH→MEDIUM; parity now regression-guarded.
+- **Open unknowns:** Full layer merge (shared transport) deferred — needs its own design pass; `agent` now imports `ai` (one-way, no cycle).
+- **Related ADRs/TODOs:** TECHNICAL_DEBT DL-2; ADR-005 Phase 2 (approved origins).
+
 ## 2026-07-28 — Remove dead api-logs placeholder endpoint (DC-3) + registry reconciliation (UC-4)
 
 - **Task:** Resolve DC-3 (placeholder endpoint) and reconcile stale UC-4 registry entry.

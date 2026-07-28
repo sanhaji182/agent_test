@@ -42,9 +42,12 @@ func New(cfg Config) Client {
 			return nil
 		}
 		return &AnthropicClient{client: anthropic.NewClient(option.WithAPIKey(cfg.APIKey)), model: cfg.Model, maxTokens: cfg.MaxTokens}
-	case "openai", "openai-compatible", "ollama", "local", "custom":
+	case "openai", "openai-compatible", "ollama", "local", "custom",
+		"google", "deepseek", "mistral", "groq", "openrouter", "huggingface":
+		// Same OpenAI-compatible provider set as agent.NewLLM (DL-2 routing
+		// alignment): hosted providers expose /chat/completions endpoints.
 		if cfg.BaseURL == "" {
-			cfg.BaseURL = "https://api.openai.com/v1"
+			cfg.BaseURL = DefaultOpenAICompatibleBaseURL(provider)
 		}
 		if cfg.APIKey == "" && provider != "ollama" && provider != "local" {
 			return nil
@@ -53,6 +56,27 @@ func New(cfg Config) Client {
 		return &OpenAICompatibleClient{cfg: cfg, http: &http.Client{Timeout: 2 * time.Minute}}
 	default:
 		return nil
+	}
+}
+
+// DefaultOpenAICompatibleBaseURL maps a provider name to its OpenAI-compatible
+// endpoint when no explicit base URL is configured. Shared by both LLM layers
+// (ai.New and agent.NewLLM) so provider routing cannot drift (DL-2). Mirrors
+// the approved-origin list in api.isApprovedLLMOrigin (ADR-005 Phase 2).
+func DefaultOpenAICompatibleBaseURL(provider string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "google":
+		return "https://generativelanguage.googleapis.com/v1beta/openai"
+	case "deepseek":
+		return "https://api.deepseek.com/v1"
+	case "mistral":
+		return "https://api.mistral.ai/v1"
+	case "groq":
+		return "https://api.groq.com/openai/v1"
+	case "openrouter":
+		return "https://openrouter.ai/api/v1"
+	default:
+		return "https://api.openai.com/v1"
 	}
 }
 
