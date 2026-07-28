@@ -70,7 +70,7 @@ logs/
 *.cache
 
 # Documents
-planning/
+/planning/
 
 # Claude Code / OMC
 .claude/

@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — planning.MemoryStore tests: lifecycle + clone isolation
+
+- **Task:** Add test coverage for `internal/planning` (previously zero test files) — the store behind the project→plan→approve workflow.
+- **Source revision before change:** 9d78071
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/planning/memory_test.go` (new)
+- **Summary:** 6 tests covering all four entity types: draft lifecycle (create defaults `draft`/UUIDs/timestamps, update assigns IDs to new cases, `pgx.ErrNoRows` on missing), test-case CRUD with prepare-contract checks (`ui`/`medium`/version 1), project filtering + newest-first ordering, test lists (non-nil slice defaults), change proposals (status `pending`, ReviewedAt persistence, per-case filtering), and a clone-isolation guard mirroring `internal/db`: mutating returned copies or caller-held inputs (Steps/Tags/TestCaseIDs slices, nested Original/Proposed snapshots, ReviewedAt pointer) never touches stored state.
+- **Reason:** Same rationale as the db/notify entries: MemoryStore's deep-copy helpers are relied on by concurrent HTTP handlers but had no direct coverage.
+- **Risk:** Low (test-only)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** this entry
+- **Verification completed:** `go test ./internal/planning/ -race -v` — 6/6 PASS; full suite 15/15 packages ok with `-race`; build/vet/gofmt clean.
+- **Facts added/removed or confidence changed:** `internal/planning` no longer untested; tested-package count 12→15 today (db, notify, planning).
+- **Open unknowns:** `planning/db.go` (PostgreSQL paths) still requires a database — same integration-test gap as db.Store.
+- **Related ADRs/TODOs:** TESTING.md; db/notify test entries above.
+
 ## 2026-07-28 — notify.Store tests: webhook delivery + UW-6 dependency guard
 
 - **Task:** Add test coverage for `internal/notify` (previously zero test files) — the store behind the UW-6 failure notifier.
