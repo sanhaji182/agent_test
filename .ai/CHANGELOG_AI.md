@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — project + release store tests
+
+- **Task:** Continue closing untested-package gaps: `internal/project` and `internal/release` (both previously zero test files).
+- **Source revision before change:** 4060be4
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/project/store_test.go` (new), `internal/release/store_test.go` (new)
+- **Summary:** project (4 tests): `prepareProject` defaults (`ui`/`default`/UUID/timestamps) with explicit-value preservation, Get/Update round-trip, `pgx.ErrNoRows` paths, List newest-first + pagination window + empty-non-nil-slice-past-end (handlers rely on this for JSON `[]`). release (5 tests): Create defaults (`active` status, explicit preserved), Get/List newest-first, Update callback + UpdatedAt advance + false-on-missing, `Summarize` aggregation (passed/failed run counting, RunResult totals across mixed states incl. in-flight run without RunResult, pass-rate, newest-first LatestStatus), empty-runs zero summary.
+- **Reason:** Same coverage initiative that exposed the critical gitignore defect; these two stores back the projects intake and release-tracking endpoints.
+- **Risk:** Low (test-only)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** this entry
+- **Verification completed:** `go test ./internal/project/ ./internal/release/ -race -v` — 9/9 PASS; full suite 17/17 packages ok with `-race`; build/vet/gofmt clean.
+- **Facts added/removed or confidence changed:** Tested-package count 12→17 today (db, notify, planning, project, release). Note: project.MemoryStore stores raw pointers (no cloneRun equivalent) — acceptable because handlers do not mutate returned projects concurrently with writers; recorded here should that assumption change.
+- **Open unknowns:** Remaining untested packages (`queue`, `recordings`, `execution`, `runner`, `steel`, `vision`, `evals`, `mcp`, `report`, `reporter`, `webhook`, `workflow`) — queue needs Redis or interface mocks; several are dormant (UW items).
+- **Related ADRs/TODOs:** TESTING.md; coverage entries above.
+
 ## 2026-07-28 — CRITICAL: internal/planning was never tracked by git (gitignore fix)
 
 - **Task:** Correction/supersession of the previous entry ("planning.MemoryStore tests"): committing those tests exposed a repository-integrity defect.
