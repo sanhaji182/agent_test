@@ -8,6 +8,7 @@ type Config struct {
 	AppPort             string // Port HTTP server (default: 8080)
 	AppEnv              string // Environment: development, production (default: development)
 	APIKey              string // API key untuk autentikasi (kosong = tanpa auth)
+	CORSAllowedOrigins  string // Daftar origin CORS dipisah koma (kosong/"*" = wildcard, development)
 	GitHubWebhookSecret string // Secret verifikasi HMAC webhook GitHub
 	JWTSecret           string // Secret untuk JWT cookie auth dashboard
 	DatabaseURL         string // URL koneksi PostgreSQL
@@ -34,6 +35,7 @@ func Load() *Config {
 		AppPort:             getEnv("APP_PORT", "8080"),
 		AppEnv:              getEnv("APP_ENV", "development"),
 		APIKey:              getEnv("API_KEY", ""),
+		CORSAllowedOrigins:  getEnv("CORS_ALLOWED_ORIGINS", ""),
 		GitHubWebhookSecret: getEnv("GITHUB_WEBHOOK_SECRET", ""),
 		JWTSecret:           getEnv("JWT_SECRET", ""),
 		DatabaseURL:         getEnv("DATABASE_URL", "postgres://postgres:password@localhost:5432/gotest_agent?sslmode=disable"),

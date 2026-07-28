@@ -1,8 +1,8 @@
 # Documentation Gap Analysis
 
 **Owner:** Engineering  
-**Last verified revision:** `7b54053642e614cccf5e1128defabd25ac88b437`  
-**Last updated:** 2026-07-27  
+**Last verified revision:** `7b54053642e614cccf5e1128defabd25ac88b437` (original audit); reconciled 2026-07-28 against working tree  
+**Last updated:** 2026-07-28  
 **Verification performed:** Static inspection of all tracked documentation against tracked source  
 **Confidence:** High for identified conflicts; UNKNOWN for external documentation not in this repository
 
@@ -12,18 +12,18 @@ These are cases where tracked documentation makes claims that conflict with trac
 
 | ID | Document | Claim | Reality | Evidence |
 |---|---|---|---|---|
-| DG-1 | `README.md:32` | Architecture blueprints, PRDs, and master prompts are in `planning/` | `planning/` is gitignored (`.gitignore:72-73`) and absent | No tracked `planning/` exists in any commit |
-| DG-2 | `frontend/src/lib/docs.ts:31,55` | Tests execute in "Steel Browser" | Primary web run uses local Playwright (`internal/api/server.go:1922-1929`) | Steel client and runner exist but are not wired |
-| DG-3 | `frontend/src/lib/docs.ts:396,417` | "Webhook — get notified on failure via Slack/Telegram" | `TriggerFailure` has no production caller | `internal/notify/store.go:58-99` |
-| DG-4 | `frontend/src/lib/docs.ts:615,638` | "PHPUnit for unit tests" | Both generators (Anthropic and OpenAI) request Playwright | `internal/agent/llm_anthropic.go:60-97`; `internal/agent/llm_openai.go:152-181` |
-| DG-5 | `docs/docker.md:26-33` | Steel listed as port 3000 with step-by-step walkthrough | Compose publishes `3010:3000` (host:container) | `docker-compose.yml:92-93` |
-| DG-6 | `docs/docker.md:59-66` | Anthropic described as required; model examples reference older defaults | Multi-provider architecture exists but routing is inconsistent | `internal/api/server.go:1889-1894`; `README.md:76-88` |
-| DG-7 | `.env.example:4-5,32-33` | `JWT_SECRET` and `GITHUB_WEBHOOK_SECRET` documented | `JWT_SECRET` has no code consumer; `GITHUB_WEBHOOK_SECRET` is ignored — runtime reuses `API_KEY` | `internal/config/config.go:7-41`; `internal/api/server.go:237` |
-| DG-8 | `.env.example:29-33,39-43` | `VISION_MODEL`, `BRAINTRUST_API_KEY`, `ENABLE_VISUAL_REGRESSION`, `ENABLE_ADVANCED_AGENT` documented | No runtime consumer found for any of these | Codebase-wide text search |
-| DG-9 | `.env.example:39-41` | `MAX_FIX_ATTEMPTS=3`, `DEFAULT_TIMEOUT_SECONDS=300` | Runtime hard-codes 3 and 300, ignoring environment | `internal/config/config.go:37-38` |
-| DG-10 | `README.md:80-84` | Google and DeepSeek listed as supported providers | No runtime consumer for `GOOGLE_API_KEY`/`DEEPSEEK_API_KEY`; provider testing routes them to OpenAI-compatible client but real execution falls through to Anthropic | `internal/api/server.go:1889-1894,3530-3535` |
-| DG-11 | `frontend/README.md:1-36` | Generic create-next-app template with Vercel deployment guidance | Self-hosted Compose is the only tracked deployment method | `docker-compose.yml:1-136`; `README.md:182-206` |
-| DG-12 | `README.md:201-204` | Mentions `CORS_ALLOWED_ORIGINS` as a recommended enhancement | CORS is hard-coded wildcard with no config field | `internal/api/server.go:98-108`; `internal/config/config.go:7-41` |
+| DG-1 | `README.md:32` | ~~`planning/` reference~~ ✅ Resolved: README no longer references `planning/` (grep 2026-07-28: zero matches) | — | — |
+| DG-2 | `frontend/src/lib/docs.ts:31,55` | Tests execute in "Steel Browser" | Primary web run uses local Playwright; Steel unwired (UW-2, ADR-002 pending) | Open — depends on UW-2 product decision |
+| DG-3 | `frontend/src/lib/docs.ts:396,417` | ~~Webhook has no production caller~~ ✅ Resolved: `StartFailureNotifier` calls `TriggerFailure` on `run_failed` (UW-6, 2026-07-27) | — | `internal/api/failure_notifier.go:52` |
+| DG-4 | `frontend/src/lib/docs.ts:615,638` | ~~"PHPUnit for unit tests"~~ ✅ Resolved: docs.ts:617,640 now explicitly state PHPUnit is NOT implemented and the agent generates Playwright | — | `frontend/src/lib/docs.ts:617,640` |
+| DG-5 | `docs/docker.md:26-33` | ~~Steel port wrong~~ ✅ Resolved: docker.md services table lists steel-browser at 3010 (container port 3000) | — | `docs/docker.md` services table |
+| DG-6 | `docs/docker.md:59-66` | Anthropic described as required; model examples reference older defaults | Multi-provider routing now consistent (DL-2 resolved 2026-07-28) but docker.md wording predates it | Open — docs.md refresh |
+| DG-7 | `.env.example:4-5,32-33` | ~~`JWT_SECRET`/`GITHUB_WEBHOOK_SECRET` unused~~ ✅ Resolved: both consumed (`internal/api/server.go:69,288`) | — | grep 2026-07-28 |
+| DG-8 | `.env.example` | `VISION_MODEL`, `BRAINTRUST_API_KEY`, `ENABLE_VISUAL_REGRESSION`, `ENABLE_ADVANCED_AGENT` documented | Now correctly listed under UNUSED marker in `.env.example`; runtime consumers still absent (UW-4/UW-5 product decision) | `.env.example` UNUSED section |
+| DG-9 | `.env.example:39-41` | ~~`MAX_FIX_ATTEMPTS`/`DEFAULT_TIMEOUT_SECONDS` ignored~~ ✅ Resolved: read via `getEnvInt` (UC-2/UC-3, commit 5e7175d) | — | `internal/config/config.go` |
+| DG-10 | `README.md:80-84` | Google and DeepSeek listed as supported providers | ✅ Substantially resolved: both layers now route google/deepseek to OpenAI-compatible transport with correct default endpoints (DL-2 Phase 1, commit 3b56bc9); `GOOGLE_API_KEY`/`DEEPSEEK_API_KEY` env names remain README-only (use `LLM_API_KEY`) | `internal/ai/client.go`; UC-1 |
+| DG-11 | `frontend/README.md:1-36` | Generic create-next-app template | Unchanged — cosmetic (ST-1) | Open |
+| DG-12 | `README.md:201-204` | ~~`CORS_ALLOWED_ORIGINS` recommended but hard-coded wildcard~~ ✅ Resolved (2026-07-28): `CORS_ALLOWED_ORIGINS` implemented — comma-separated allowlist, origin echo + `Vary: Origin`, wildcard only when unset/`*`; 5 middleware tests | — | `internal/api/server.go` (`newCORSMiddleware`); `internal/api/cors_test.go` |
 
 ## Missing Documentation
 
@@ -54,24 +54,15 @@ Areas where no tracked documentation exists but implementation requires it:
 
 ## Environment Variable Documentation Drift
 
-| Variable | .env.example | Compose | README | Code consumer | Status |
-|---|---|---|---|---|---|
-| `API_KEY` | Present | Present | Present | `internal/config/config.go:28` | OK |
-| `ANTHROPIC_API_KEY` | Present | Present (as `GOTEST_API_KEY` for sidecar) | Present | `internal/config/config.go:31` | Web run ignores env value, reads DB settings only |
-| `LLM_PROVIDER` | Absent | Absent | Absent | `internal/ai/client.go:57-73` | MISSING from ops docs |
-| `LLM_API_KEY` | Absent | Absent | Absent | `internal/ai/client.go:57-73` | MISSING from ops docs |
-| `LLM_BASE_URL` | Absent | Absent | Absent | `internal/ai/client.go:57-73` | MISSING from ops docs |
-| `GOTEST_AI_PLANNING` | Absent | Absent | Absent | `internal/api/server.go:1837` | MISSING from ops docs |
-| `GITHUB_WEBHOOK_SECRET` | Present | Absent | Mentioned | No consumer | Unused; webhook uses `API_KEY` |
-| `JWT_SECRET` | Present | Absent | Absent | No consumer | Unused |
-| `BRAINTRUST_API_KEY` | Present | Absent | Absent | No consumer | Unused |
-| `VISION_MODEL` | Present | Absent | Absent | No consumer | Unused |
-| `GOOGLE_API_KEY` | Absent | Absent | Present | No consumer | README-only |
-| `DEEPSEEK_API_KEY` | Absent | Absent | Present | No consumer | README-only |
-| `MAX_FIX_ATTEMPTS` | Present | Absent | Absent | Ignored; hard-coded | Stale |
-| `DEFAULT_TIMEOUT_SECONDS` | Present | Absent | Absent | Ignored; hard-coded | Stale |
-| `STEEL_MAX_SESSIONS` | Present | Absent | Absent | Ignored; hard-coded | Stale |
-| `GOTEST_APPROVED_CASE_RUNNER` | Absent | Absent | Absent | `internal/api/server.go:1214` | MISSING from ops docs |
+Reconciled 2026-07-28. Remaining drift only:
+
+| Variable | Status |
+|---|---|
+| `GOOGLE_API_KEY` / `DEEPSEEK_API_KEY` | README-only names; actual config uses `LLM_API_KEY` (UC-1) |
+| `BRAINTRUST_API_KEY`, `VISION_MODEL`, `ENABLE_VISUAL_REGRESSION`, `ENABLE_ADVANCED_AGENT` | Correctly marked UNUSED in `.env.example`; consumers pending UW-4/UW-5 decisions |
+| `ANTHROPIC_API_KEY` | Web run prefers DB settings over env value — documented behavior, worth a note in OPERATIONS.md |
+
+Previously-flagged drift now resolved: `LLM_PROVIDER`/`LLM_API_KEY`/`LLM_BASE_URL`, `GOTEST_AI_PLANNING`, `GOTEST_APPROVED_CASE_RUNNER` documented in `.env.example`; `JWT_SECRET` and `GITHUB_WEBHOOK_SECRET` consumed; `MAX_FIX_ATTEMPTS`/`DEFAULT_TIMEOUT_SECONDS`/`STEEL_MAX_SESSIONS` read from env (UC-2/UC-3); `CORS_ALLOWED_ORIGINS` implemented and documented (DG-12).
 
 ## Priority Order for Documentation Fixes
 

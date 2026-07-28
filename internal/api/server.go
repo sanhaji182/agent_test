@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -50,7 +51,7 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(corsMiddleware)
+	r.Use(newCORSMiddleware(cfg.CORSAllowedOrigins))
 
 	evtStore := events.NewStore()
 
@@ -101,17 +102,42 @@ func (s *Server) Schedules() schedule.Repository { return s.schedules }
 func (s *Server) Releases() *release.Store       { return s.releases }
 func (s *Server) Notifications() *notify.Store   { return s.notifs }
 
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Api-Key")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusNoContent)
-			return
+// newCORSMiddleware builds the CORS middleware from a comma-separated origin
+// allowlist (CORS_ALLOWED_ORIGINS). Empty or "*" keeps the historical wildcard
+// (development). With an allowlist, only matching Origin headers are echoed
+// back (with Vary: Origin) — README security guidance DG-12.
+func newCORSMiddleware(allowedOrigins string) func(http.Handler) http.Handler {
+	allowedOrigins = strings.TrimSpace(allowedOrigins)
+	wildcard := allowedOrigins == "" || allowedOrigins == "*"
+	allowed := make(map[string]bool)
+	if !wildcard {
+		for _, o := range strings.Split(allowedOrigins, ",") {
+			if o = strings.TrimSpace(strings.TrimSuffix(o, "/")); o != "" {
+				allowed[strings.ToLower(o)] = true
+			}
 		}
-		next.ServeHTTP(w, r)
-	})
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if wildcard {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			} else {
+				origin := strings.TrimSuffix(r.Header.Get("Origin"), "/")
+				if allowed[strings.ToLower(origin)] {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					w.Header().Set("Access-Control-Allow-Credentials", "true")
+				}
+				w.Header().Add("Vary", "Origin")
+			}
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Api-Key")
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // isValidID validates that an ID param is safe (no path traversal, reasonable length)

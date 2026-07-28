@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — Configurable CORS allowlist (DG-12) + documentation-gap reconciliation
+
+- **Task:** Implement `CORS_ALLOWED_ORIGINS` (README promised it; code hard-coded wildcard) and reconcile stale DOCUMENTATION_GAP.md entries.
+- **Source revision before change:** 37b5307
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/config/config.go`, `internal/api/server.go`, `internal/api/cors_test.go` (new), `.env.example`, `.ai/DOCUMENTATION_GAP.md`
+- **Summary:** DG-12: `newCORSMiddleware(allowedOrigins)` replaces the hard-coded wildcard middleware. Empty or `*` keeps historical wildcard behavior (development default — zero behavior change for existing deployments). With a comma-separated allowlist: matching `Origin` is echoed back with `Access-Control-Allow-Credentials: true` and `Vary: Origin`; non-matching origins get no ACAO header. Matching is case- and trailing-slash-insensitive. Gap registry reconciled: DG-1/3/4/5/7/9/12 resolved, DG-10 substantially resolved (DL-2 Phase 1), DG-8 correctly marked; env-drift table replaced with the 3 remaining items.
+- **Reason:** README:203 instructs operators to set `CORS_ALLOWED_ORIGINS` for production, but no code consumed it — a silent security gap for anyone following the hardening guide.
+- **Risk:** Low (default unchanged; new behavior opt-in via env)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** Optional: set `CORS_ALLOWED_ORIGINS=https://your-dashboard.example.com` in production
+- **Documentation updated:** `.env.example` (new var documented), `.ai/DOCUMENTATION_GAP.md` (reconciled), this entry
+- **Verification completed:** 5 new middleware tests (wildcard default, allowlist echo + credentials + Vary, unlisted origin rejected, case/slash normalization, OPTIONS preflight 204) all PASS with `-race`; `go build ./...` clean; `go vet` clean; `gofmt` zero diff.
+- **Facts added/removed or confidence changed:** DG-12 resolved; documentation-gap registry now reflects working-tree reality (7 of 12 DG items resolved).
+- **Open unknowns:** DG-2/DG-6/DG-11 remain (Steel wiring decision, docker.md refresh, frontend README — product/cosmetic).
+- **Related ADRs/TODOs:** DOCUMENTATION_GAP DG-12; README security hardening section.
+
 ## 2026-07-28 — LLM layer unification implemented (ADR-006 Steps A–D, DL-2 resolved)
 
 - **Task:** Execute accepted ADR-006: merge the two LLM transport layers.
