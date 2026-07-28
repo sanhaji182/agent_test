@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -26,6 +27,10 @@ type Config struct {
 
 type Client interface {
 	GenerateText(ctx context.Context, prompt string) (string, error)
+	// GenerateWithImage sends a prompt plus a base64-encoded JPEG for
+	// vision-capable models (ADR-006 Step A). Implementations without an
+	// image simply route through the text path when imageBase64 is empty.
+	GenerateWithImage(ctx context.Context, prompt, imageBase64 string) (string, error)
 }
 
 func New(cfg Config) Client {
@@ -106,12 +111,30 @@ type AnthropicClient struct {
 }
 
 func (c *AnthropicClient) GenerateText(ctx context.Context, prompt string) (string, error) {
+	return c.generate(ctx, []anthropic.MessageParam{
+		anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+	})
+}
+
+// GenerateWithImage sends prompt + base64 JPEG using Anthropic image blocks
+// (lifted from agent.AnthropicLLM.chatWithVision — ADR-006 Step A).
+func (c *AnthropicClient) GenerateWithImage(ctx context.Context, prompt, imageBase64 string) (string, error) {
+	if imageBase64 == "" {
+		return c.GenerateText(ctx, prompt)
+	}
+	return c.generate(ctx, []anthropic.MessageParam{
+		anthropic.NewUserMessage(
+			anthropic.NewImageBlockBase64("image/jpeg", imageBase64),
+			anthropic.NewTextBlock(prompt),
+		),
+	})
+}
+
+func (c *AnthropicClient) generate(ctx context.Context, messages []anthropic.MessageParam) (string, error) {
 	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.Model(c.model),
 		MaxTokens: c.maxTokens,
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-		},
+		Messages:  messages,
 	})
 	if err != nil {
 		return "", fmt.Errorf("anthropic: %w", err)
@@ -130,13 +153,32 @@ type OpenAICompatibleClient struct {
 }
 
 func (c *OpenAICompatibleClient) GenerateText(ctx context.Context, prompt string) (string, error) {
+	return c.generate(ctx, prompt, "")
+}
+
+// GenerateWithImage sends prompt + base64 JPEG using OpenAI image_url content
+// blocks (lifted from agent.OpenAILLM.chat — ADR-006 Step A).
+func (c *OpenAICompatibleClient) GenerateWithImage(ctx context.Context, prompt, imageBase64 string) (string, error) {
+	return c.generate(ctx, prompt, imageBase64)
+}
+
+func (c *OpenAICompatibleClient) generate(ctx context.Context, prompt, imageBase64 string) (string, error) {
 	url := strings.TrimRight(c.cfg.BaseURL, "/") + "/chat/completions"
+	var content interface{} = prompt
+	if imageBase64 != "" {
+		content = []map[string]interface{}{
+			{"type": "text", "text": prompt},
+			{"type": "image_url", "image_url": map[string]interface{}{
+				"url": fmt.Sprintf("data:image/jpeg;base64,%s", imageBase64),
+			}},
+		}
+	}
 	payload := map[string]interface{}{
 		"model":       c.cfg.Model,
 		"temperature": c.cfg.Temperature,
 		"max_tokens":  c.cfg.MaxTokens,
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
+		"messages": []map[string]interface{}{
+			{"role": "user", "content": content},
 		},
 	}
 	body, _ := json.Marshal(payload)
@@ -153,8 +195,9 @@ func (c *OpenAICompatibleClient) GenerateText(ctx context.Context, prompt string
 		return "", fmt.Errorf("openai-compatible: %w", err)
 	}
 	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("openai-compatible: status %d", resp.StatusCode)
+		return "", fmt.Errorf("openai-compatible: status %d: %s", resp.StatusCode, string(respBody))
 	}
 	var parsed struct {
 		Choices []struct {
@@ -163,7 +206,7 @@ func (c *OpenAICompatibleClient) GenerateText(ctx context.Context, prompt string
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
 		return "", err
 	}
 	if len(parsed.Choices) == 0 {
