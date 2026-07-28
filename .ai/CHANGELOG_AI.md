@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — workflow store tests (review gate + suites)
+
+- **Task:** Coverage for `internal/workflow` (previously zero test files) — human-in-the-loop review/approval and suite management.
+- **Source revision before change:** 01cc959
+- **Source revision after change:** UNKNOWN until committed
+- **Files modified:** `internal/workflow/store_test.go` (new)
+- **Summary:** 6 tests. ReviewStore: `Create` forces status to `pending` even when the caller supplies `approved` (approval MUST go through `Approve` — the review-gate invariant), Get/ByRun indexing, Approve/Reject reviewer+comment+UpdatedAt semantics with false-on-missing. SuiteStore: create defaults, newest-first List, ByTag matching, Delete pruning both the map and the order slice.
+- **Reason:** Coverage initiative; the forced-pending behavior is the workflow package's core security property and had no guard.
+- **Risk:** Low (test-only)
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** this entry
+- **Verification completed:** 6/6 PASS with `-race`; full suite 20/20 packages ok; build/gofmt clean.
+- **Facts added/removed or confidence changed:** Tested-package count 12→20 today.
+- **Open unknowns:** None for this change.
+- **Related ADRs/TODOs:** TESTING.md; coverage entries above.
+
 ## 2026-07-28 — webhook HMAC verification tests (security-critical)
 
 - **Task:** Coverage for `internal/webhook` (previously zero test files) — GitHub HMAC verification is the only barrier between the public webhook endpoint and auto-triggered test runs.
