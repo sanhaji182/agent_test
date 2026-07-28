@@ -46,7 +46,7 @@ func New(cfg Config) Client {
 		if cfg.APIKey == "" {
 			return nil
 		}
-		return &AnthropicClient{client: anthropic.NewClient(option.WithAPIKey(cfg.APIKey)), model: cfg.Model, maxTokens: cfg.MaxTokens}
+		return NewAnthropicClient(cfg.APIKey, cfg.Model, cfg.MaxTokens)
 	case "openai", "openai-compatible", "ollama", "local", "custom",
 		"google", "deepseek", "mistral", "groq", "openrouter", "huggingface":
 		// Same OpenAI-compatible provider set as agent.NewLLM (DL-2 routing
@@ -57,11 +57,34 @@ func New(cfg Config) Client {
 		if cfg.APIKey == "" && provider != "ollama" && provider != "local" {
 			return nil
 		}
-		// Bounded client: a hung LLM endpoint must not pin callers forever.
-		return &OpenAICompatibleClient{cfg: cfg, http: &http.Client{Timeout: 2 * time.Minute}}
+		return NewOpenAICompatibleClient(cfg)
 	default:
 		return nil
 	}
+}
+
+// NewAnthropicClient constructs the Anthropic transport directly, without
+// New's empty-key gating. The execution layer (agent.NewLLM) uses this to
+// preserve its historical contract: constructors always succeed and missing
+// credentials surface at request time (ADR-006 Step C).
+func NewAnthropicClient(apiKey, model string, maxTokens int64) *AnthropicClient {
+	if maxTokens == 0 {
+		maxTokens = 4096
+	}
+	return &AnthropicClient{client: anthropic.NewClient(option.WithAPIKey(apiKey)), model: model, maxTokens: maxTokens}
+}
+
+// NewOpenAICompatibleClient constructs the OpenAI-compatible transport
+// directly, without New's empty-key gating (see NewAnthropicClient).
+func NewOpenAICompatibleClient(cfg Config) *OpenAICompatibleClient {
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = DefaultOpenAICompatibleBaseURL(cfg.Provider)
+	}
+	if cfg.MaxTokens == 0 {
+		cfg.MaxTokens = 4096
+	}
+	// Bounded client: a hung LLM endpoint must not pin callers forever.
+	return &OpenAICompatibleClient{cfg: cfg, http: &http.Client{Timeout: 2 * time.Minute}}
 }
 
 // DefaultOpenAICompatibleBaseURL maps a provider name to its OpenAI-compatible

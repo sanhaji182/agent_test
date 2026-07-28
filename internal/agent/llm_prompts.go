@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // llm_prompts.go — shared prompt builders and response parsers for all LLM
@@ -111,6 +112,16 @@ Return ONLY valid JSON for the single corrected action, no markdown, no explanat
 }
 
 // --- Response parsers ---
+
+// stripJSONMarkers membersihkan markdown code fence dari response LLM
+// Contoh: ```json\n{...}\n``` → {...}
+func stripJSONMarkers(s string) string {
+	s = strings.TrimPrefix(s, "```json\n")
+	s = strings.TrimPrefix(s, "```\n")
+	s = strings.TrimSuffix(s, "\n```")
+	s = strings.TrimSuffix(s, "```")
+	return strings.TrimSpace(s)
+}
 
 func parseTestPlan(raw string) (*TestPlan, error) {
 	raw = stripJSONMarkers(raw)
