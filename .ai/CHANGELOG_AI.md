@@ -27,6 +27,24 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-28 — CRITICAL: internal/planning was never tracked by git (gitignore fix)
+
+- **Task:** Correction/supersession of the previous entry ("planning.MemoryStore tests"): committing those tests exposed a repository-integrity defect.
+- **Source revision before change:** 9d78071
+- **Source revision after change:** 9355dce
+- **Files modified:** `.gitignore`, `internal/planning/{types,memory,db}.go` (tracked for the first time), `internal/planning/memory_test.go` (new)
+- **Summary:** `.gitignore:73` contained the unanchored pattern `planning/` (intended for the root scratch folder referenced by DG-1), which also matched `internal/planning/`. The entire planning package — production code imported by `internal/api` handlers — existed only on this machine and was never in any commit. **Every fresh clone of this repository failed to build.** Fixed by root-anchoring the pattern (`/planning/`) and committing the package plus its new tests. Post-fix audit: `git check-ignore` over every source directory (internal/*, cmd, sidecar, frontend/src, docs) confirms no other source path is ignored.
+- **Reason:** Discovered when `git add internal/planning/memory_test.go` was rejected as ignored.
+- **Risk:** Critical defect fixed; the fix itself is low-risk (gitignore anchor + adding files)
+- **Breaking changes:** None (fresh clones now build — strictly better)
+- **Database migrations:** None
+- **Deployment steps:** None (deployments built from this working tree were unaffected; CI/clone-based builds were broken until now)
+- **Documentation updated:** this entry; DG-1 context (root `planning/` remains intentionally ignored)
+- **Verification completed:** `git ls-tree origin/master internal/` now lists `internal/planning`; `git check-ignore` audit of all source dirs → none ignored; full suite 15/15 packages `-race` green from the tracked tree.
+- **Facts added/removed or confidence changed:** Repository is now self-contained/buildable from clone — previously UNKNOWN-false. Lesson recorded: unanchored directory patterns in .gitignore match at any depth.
+- **Open unknowns:** Whether CI (if any external) had been failing on this — no CI config is tracked in-repo.
+- **Related ADRs/TODOs:** DG-1 (root planning/ folder); previous entry (planning tests).
+
 ## 2026-07-28 — planning.MemoryStore tests: lifecycle + clone isolation
 
 - **Task:** Add test coverage for `internal/planning` (previously zero test files) — the store behind the project→plan→approve workflow.
