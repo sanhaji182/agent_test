@@ -473,8 +473,52 @@ func (s *Server) launchRun(run *agent.TestRun) {
 	s.acquireSlot()
 	go func() {
 		defer s.releaseSlot()
-		a.Launch(run)
+		// Cancellable context lets the cancel endpoint stop this run
+		// mid-flight. Cleanup runs only when RunBlocking returns (terminal
+		// state), so the cancel func stays registered for the run's lifetime.
+		ctx, cancel := context.WithCancel(context.Background())
+		s.cancelsMu.Lock()
+		s.runCancels[run.ID] = cancel
+		s.cancelsMu.Unlock()
+		defer func() {
+			s.cancelsMu.Lock()
+			delete(s.runCancels, run.ID)
+			s.cancelsMu.Unlock()
+		}()
+		a.RunBlocking(ctx, run)
 	}()
+}
+
+// handleCancelRun cancels an in-flight run by triggering its context cancellation.
+// POST /api/v1/runs/{id}/cancel
+func (s *Server) handleCancelRun(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "id")
+	if !isValidID(runID) {
+		writeJSONError(w, http.StatusBadRequest, "invalid run id")
+		return
+	}
+
+	s.cancelsMu.RLock()
+	cancel, ok := s.runCancels[runID]
+	s.cancelsMu.RUnlock()
+
+	if !ok {
+		// Not an active in-process run: either already finished, queued via
+		// durable queue, or never started.
+		run, err := s.store.GetRun(r.Context(), runID)
+		if err != nil || run == nil {
+			writeJSONError(w, http.StatusNotFound, "run not found")
+			return
+		}
+		writeJSONError(w, http.StatusConflict, "run is not actively executing")
+		return
+	}
+
+	cancel()
+	writeJSON(w, http.StatusOK, map[string]string{
+		"run_id": runID,
+		"status": "cancelling",
+	})
 }
 
 // SetRunEnqueuer installs a durable-queue enqueue function. When set,

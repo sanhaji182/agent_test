@@ -31,6 +31,7 @@ const (
 	StateFixing        State = "fixing"         // Sedang memperbaiki test yang gagal
 	StateDone          State = "done"           // Selesai
 	StateFailed        State = "failed"         // Gagal
+	StateCancelled     State = "cancelled"      // Dibatalkan oleh user
 	StateSimulated     State = "simulated"      // No real execution — synthetic result
 )
 
@@ -204,31 +205,45 @@ func (a *Agent) Execute(ctx context.Context, run *TestRun) error {
 // paths (web API, webhook, MCP, schedule run-now, schedule due) can call Launch
 // directly on a configured Agent (ADR-001).
 func (a *Agent) Launch(run *TestRun) {
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				slog.Error("run execution panicked", "run_id", run.ID, "panic", r)
-				run.State = StateFailed
-				run.Error = fmt.Sprintf("execution panic: %v", r)
-				run.FinishedAt = func() *time.Time { t := time.Now(); return &t }()
-				run.UpdatedAt = time.Now()
-				if a.store != nil {
-					_ = a.store.UpdateRun(context.Background(), run)
-				}
-				if a.exec != nil && a.exec.Events != nil {
-					a.exec.Events.Emit(run.ID, "run_failed", "failed", fmt.Sprintf("Run panicked: %v", r), nil)
-				}
+	a.LaunchWithContext(context.Background(), run)
+}
+
+// LaunchWithContext runs Execute in a background goroutine with panic recovery
+// and automatic persistence, honoring the provided context for cancellation.
+// Callers that need to cancel an in-flight run (e.g. the server's cancel
+// endpoint) pass a cancellable context here.
+func (a *Agent) LaunchWithContext(ctx context.Context, run *TestRun) {
+	go a.RunBlocking(ctx, run)
+}
+
+// RunBlocking executes a run synchronously in the caller's goroutine with panic
+// recovery and automatic persistence. It returns only when the run reaches a
+// terminal state, so callers that own the goroutine (e.g. the API server) can
+// tie per-run resource cleanup to its completion via defer.
+func (a *Agent) RunBlocking(ctx context.Context, run *TestRun) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("run execution panicked", "run_id", run.ID, "panic", r)
+			run.State = StateFailed
+			run.Error = fmt.Sprintf("execution panic: %v", r)
+			run.FinishedAt = func() *time.Time { t := time.Now(); return &t }()
+			run.UpdatedAt = time.Now()
+			if a.store != nil {
+				_ = a.store.UpdateRun(context.Background(), run)
 			}
-		}()
-		// Save final state on exit regardless of error
-		err := a.Execute(context.Background(), run)
-		if a.store != nil {
-			_ = a.store.UpdateRun(context.Background(), run)
-		}
-		if err != nil {
-			slog.Error("run execution failed", "run_id", run.ID, "error", err)
+			if a.exec != nil && a.exec.Events != nil {
+				a.exec.Events.Emit(run.ID, "run_failed", "failed", fmt.Sprintf("Run panicked: %v", r), nil)
+			}
 		}
 	}()
+	// Save final state on exit regardless of error
+	err := a.Execute(ctx, run)
+	if a.store != nil {
+		_ = a.store.UpdateRun(context.Background(), run)
+	}
+	if err != nil {
+		slog.Error("run execution failed", "run_id", run.ID, "error", err)
+	}
 }
 
 // executeAdvanced mendelegasikan eksekusi ke Python LangGraph sidecar
@@ -327,6 +342,13 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 	}
 
 	for {
+		// Check for cancellation before each execution cycle
+		select {
+		case <-ctx.Done():
+			return a.cancel(run)
+		default:
+		}
+
 		run.State = StateRunning
 		a.save(run)
 		a.emit(run.ID, "test_started", "running", "Executing tests", nil)
@@ -341,6 +363,10 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 		}
 
 		if err != nil {
+			// Context cancelled mid-execution → user-initiated cancel, not a failure
+			if ctx.Err() != nil {
+				return a.cancel(run)
+			}
 			a.emit(run.ID, "run_failed", "running", err.Error(), nil)
 			return a.fail(run, fmt.Errorf("run: %w", err))
 		}
@@ -451,4 +477,17 @@ func (a *Agent) fail(run *TestRun, err error) error {
 	run.UpdatedAt = time.Now()
 	a.save(run)
 	return err
+}
+
+// cancel marks a run as cancelled by the user and emits a terminal event.
+// Called from executeSimple/executeAdvanced when the run context is cancelled.
+func (a *Agent) cancel(run *TestRun) error {
+	run.State = StateCancelled
+	run.Error = "cancelled by user"
+	now := time.Now()
+	run.FinishedAt = &now
+	run.UpdatedAt = now
+	a.save(run)
+	a.emit(run.ID, "run_cancelled", string(StateCancelled), "Run cancelled by user", nil)
+	return context.Canceled
 }

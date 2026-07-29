@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -44,6 +45,8 @@ type Server struct {
 	jwtAuth    *auth.Auth
 	runSem     chan struct{}            // concurrency cap for run goroutines (AUDIT S-01)
 	enqueueRun func(runID string) error // optional durable-queue enqueuer (Redis/Asynq); nil = in-process execution
+	runCancels map[string]context.CancelFunc // active run cancellation functions
+	cancelsMu  sync.RWMutex
 }
 
 func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.SettingsStore) *Server {
@@ -91,6 +94,7 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 		suites:     workflow.NewSuiteStore(),
 		jwtAuth:    jwtAuth,
 		runSem:     make(chan struct{}, cfg.MaxConcurrentRuns),
+		runCancels: make(map[string]context.CancelFunc),
 	}
 	s.routes()
 	return s
@@ -243,6 +247,7 @@ func (s *Server) routes() {
 		r.Get("/runs", s.handleListRuns)
 		r.Get("/runs/{id}", s.handleGetRun)
 		r.Post("/runs/{id}/rerun", s.handleRerun)
+		r.Post("/runs/{id}/cancel", s.handleCancelRun)
 		r.Get("/runs/{id}/stream", s.handleSSEStream)
 		r.Get("/runs/{id}/events", s.handleGetEvents)
 		r.Get("/runs/{id}/report", s.handleReport)

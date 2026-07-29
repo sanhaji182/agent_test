@@ -3,6 +3,7 @@ package agent_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/go-go-golems/gotest-agent/internal/agent"
 )
@@ -27,6 +28,43 @@ func (m *mockLLM) GenerateTestScripts(_ context.Context, _ *agent.TestPlan, _ st
 
 func (m *mockLLM) SuggestFixes(_ context.Context, _ []agent.Failure, files []agent.TestFile) ([]agent.TestFile, error) {
 	return files, nil
+}
+
+// blockingRunner blocks in Run until the context is cancelled, simulating a
+// long-running Playwright execution so cancellation can be exercised mid-flight.
+type blockingRunner struct{}
+
+func (b *blockingRunner) Run(ctx context.Context, _ []agent.TestFile, _ string) (*agent.RunResult, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestAgentExecute_CancellationStopsRun(t *testing.T) {
+	a := agent.New(&mockLLM{}, &blockingRunner{}, 3)
+	run := &agent.TestRun{ID: "test-cancel", ProjectPath: "/tmp/p", State: agent.StateIdle}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan error, 1)
+	go func() {
+		done <- a.Execute(ctx, run)
+	}()
+
+	// Let the run reach the blocking runner, then cancel mid-flight.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected cancellation error, got nil")
+		}
+		if run.State != agent.StateCancelled {
+			t.Fatalf("expected state cancelled, got %s", run.State)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Execute did not return after context cancellation — run not actually stopped")
+	}
 }
 
 // mockRunner implements agent.Runner for testing
