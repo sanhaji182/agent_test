@@ -62,6 +62,15 @@ code { background: var(--bg); padding: 0.125rem 0.375rem; border-radius: 0.25rem
   {{if .RunResult.Total}}
   <div class="stat-card"><span class="stat">{{printf "%.0f" .PassRate}}%</span>Pass Rate</div>
   {{end}}
+  {{if .RunResult.DurationMs}}
+  <div class="stat-card"><span class="stat">{{printf "%.1f" .DurationSec}}s</span>Duration</div>
+  {{end}}
+  {{if .RunResult.Healed}}
+  <div class="stat-card"><span class="stat pass">{{.RunResult.Healed}}</span>Self-Healed</div>
+  {{end}}
+  {{if .RunResult.Retried}}
+  <div class="stat-card"><span class="stat">{{.RunResult.Retried}}</span>Auto-Retried</div>
+  {{end}}
 </div>
 {{if .RunResult.Total}}
 <div class="progress-bar"><div class="progress-fill" style="width: {{printf "%.0f" .PassRate}}%"></div></div>
@@ -135,6 +144,7 @@ type ReportData struct {
 	TestFiles   []agent.TestFile
 	GeneratedAt string
 	PassRate    float64
+	DurationSec float64
 }
 
 // GenerateHTML menulis laporan HTML ke writer dari data test run
@@ -151,6 +161,9 @@ func GenerateHTML(w io.Writer, run *agent.TestRun) error {
 		TestFiles:   run.TestFiles,
 		GeneratedAt: time.Now().Format(time.RFC3339),
 		PassRate:    passRate,
+	}
+	if run.RunResult != nil {
+		data.DurationSec = float64(run.RunResult.DurationMs) / 1000.0
 	}
 	return htmlTmpl.Execute(w, data)
 }
