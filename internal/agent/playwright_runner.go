@@ -215,9 +215,12 @@ func (r *PlaywrightRunner) Run(ctx context.Context, testFiles []TestFile, projec
 
 // runSequential executes test files one by one on a single page.
 func (r *PlaywrightRunner) runSequential(ctx context.Context, page playwright.Page, bCtx playwright.BrowserContext, testFiles []TestFile) (*RunResult, error) {
+	startTime := time.Now()
 	totalActions := 0
 	successfulActions := 0
 	failedActions := 0
+	healedCount := 0
+	retriedCount := 0
 	var failures []Failure
 
 	for _, tf := range testFiles {
@@ -229,7 +232,17 @@ func (r *PlaywrightRunner) runSequential(ctx context.Context, page playwright.Pa
 		for i := 0; i < len(actions); i++ {
 			a := actions[i]
 			totalActions++
+			actionStart := time.Now()
 			err := r.executeAction(ctx, page, &a)
+
+			// Simple retry once before declaring failure (reduces flaky results)
+			if err != nil {
+				time.Sleep(500 * time.Millisecond)
+				err = r.executeAction(ctx, page, &a)
+				if err == nil {
+					retriedCount++
+				}
+			}
 
 			// Screenshot on failure for diagnostics
 			if err != nil && r.ScreenshotDir != "" {
@@ -240,6 +253,7 @@ func (r *PlaywrightRunner) runSequential(ctx context.Context, page playwright.Pa
 						Test:       fmt.Sprintf("%s:action_%d", tf.Name, i),
 						Message:    err.Error(),
 						Screenshot: "/screenshots/" + ssName,
+						DurationMs: time.Since(actionStart).Milliseconds(),
 					})
 				}
 			}
@@ -268,11 +282,14 @@ func (r *PlaywrightRunner) runSequential(ctx context.Context, page playwright.Pa
 	}
 
 	return &RunResult{
-		Passed:    successfulActions,
-		Failed:    failedActions,
-		Total:     totalActions,
-		Failures:  failures,
-		VideoPath: videoPath,
+		Passed:     successfulActions,
+		Failed:     failedActions,
+		Total:      totalActions,
+		Failures:   failures,
+		VideoPath:  videoPath,
+		DurationMs: time.Since(startTime).Milliseconds(),
+		Healed:     healedCount,
+		Retried:    retriedCount,
 	}, nil
 }
 

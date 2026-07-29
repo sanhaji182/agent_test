@@ -66,11 +66,14 @@ type TestFile struct {
 
 // RunResult adalah hasil eksekusi test
 type RunResult struct {
-	Passed    int       `json:"passed"`
-	Failed    int       `json:"failed"`
-	Total     int       `json:"total"`
-	Failures  []Failure `json:"failures"`
-	VideoPath string    `json:"video_path,omitempty"` // Path ke file video recording
+	Passed     int       `json:"passed"`
+	Failed     int       `json:"failed"`
+	Total      int       `json:"total"`
+	Failures   []Failure `json:"failures"`
+	VideoPath  string    `json:"video_path,omitempty"`  // Path ke file video recording
+	DurationMs int64     `json:"duration_ms,omitempty"` // Total execution time
+	Healed     int       `json:"healed,omitempty"`      // Actions recovered by self-healing
+	Retried    int       `json:"retried,omitempty"`     // Actions recovered by simple retry
 }
 
 // Failure menyimpan detail test yang gagal
@@ -78,6 +81,7 @@ type Failure struct {
 	Test       string `json:"test"`
 	Message    string `json:"message"`
 	Screenshot string `json:"screenshot_url,omitempty"`
+	DurationMs int64  `json:"duration_ms,omitempty"` // Time spent on this action before failure
 }
 
 // TestRun adalah objek utama yang merepresentasikan satu sesi pengujian
