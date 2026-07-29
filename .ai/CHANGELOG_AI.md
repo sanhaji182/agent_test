@@ -27,6 +27,29 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-29 — Run cancellation, rate limiting, Docker hardening, tags, Slack/Teams
+
+- **Task:** Production readiness — cancellation, resilience, security, notifications
+- **Source revision before change:** 9999be5
+- **Source revision after change:** 258da14
+- **Files modified:** internal/agent/agent.go, internal/agent/agent_test.go, internal/api/handlers_runs.go, internal/api/server.go, internal/api/ratelimit.go (new), internal/api/ratelimit_test.go (new), internal/notify/store.go, internal/agent/agent.go (Tags field), Dockerfile, .dockerignore
+- **Summary:**
+  - **Run cancellation**: POST /runs/{id}/cancel — full chain: StateCancelled state, Agent.RunBlocking (synchronous), LaunchWithContext, ctx.Done() checks in executeSimple loop + runner error routing, per-run CancelFunc map with lifecycle tied to goroutine completion
+  - **Rate limiting**: token-bucket middleware (100 req/min per IP), X-Forwarded-For support, 429 + Retry-After, auto-cleanup goroutine
+  - **Docker hardening**: debian:bookworm-slim runtime (was golang:bookworm 2GB+), non-root user, fixed broken Playwright install (was silent fail with || true), stripped binaries, explicit Chromium deps
+  - **Run tags**: Tags field on TestRun, ?tag= and ?state= query filters on GET /runs
+  - **Slack/Teams notifications**: DeliverSlack (rich attachment), DeliverTeams (MessageCard)
+- **Reason:** Production readiness and operational maturity
+- **Risk:** Medium — cancellation changes execution flow; rate limiter is new middleware
+- **Breaking changes:** None (all additive)
+- **Database migrations:** None
+- **Deployment steps:** Docker image rebuild required for hardened Dockerfile
+- **Documentation updated:** This changelog
+- **Verification completed:** go build ✓, go vet ✓, go test -race -short 23/23 ✓, TestAgentExecute_CancellationStopsRun ✓ (proves mid-flight stop with -race)
+- **Facts added/removed or confidence changed:** Cancellation is real (not fake endpoint) — proven by blocking runner test
+- **Open unknowns:** Rate limiter is per-process (not distributed); cancel doesn't work for durable-queue runs
+- **Related ADRs/TODOs:** ADR-001 (executor pattern)
+
 ## 2026-07-29 — Session polish: visual regression, audit, export, timing, retry
 
 - **Task:** Complete feature wiring, developer experience, and quality polish
