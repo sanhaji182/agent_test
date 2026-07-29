@@ -1,7 +1,9 @@
 package api
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -181,9 +183,155 @@ func (s *Server) handleAccessibilityAudit(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// handleVisualRegression captures screenshots across browsers/viewports and compares them.
+// POST /api/v1/testing/visual-regression
+func (s *Server) handleVisualRegression(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		URL       string   `json:"url"`
+		Browsers  []string `json:"browsers"`  // ["chromium", "firefox", "webkit"]
+		Viewports []string `json:"viewports"` // ["desktop", "iphone-14"]
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.URL == "" {
+		writeJSONError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+	if len(req.Browsers) == 0 {
+		req.Browsers = []string{"chromium"}
+	}
+	if len(req.Viewports) == 0 {
+		req.Viewports = []string{"desktop"}
+	}
+
+	pw, err := playwright.Run()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "could not start playwright")
+		return
+	}
+	defer pw.Stop()
+
+	type capture struct {
+		Browser  string `json:"browser"`
+		Viewport string `json:"viewport"`
+		Width    int    `json:"width"`
+		Height   int    `json:"height"`
+		Hash     string `json:"screenshot_hash"`
+		Size     int    `json:"screenshot_bytes"`
+	}
+	var captures []capture
+
+	for _, browserName := range req.Browsers {
+		var bt playwright.BrowserType
+		switch browserName {
+		case "firefox":
+			bt = pw.Firefox
+		case "webkit":
+			bt = pw.WebKit
+		default:
+			bt = pw.Chromium
+			browserName = "chromium"
+		}
+
+		browser, err := bt.Launch(playwright.BrowserTypeLaunchOptions{Headless: playwright.Bool(true)})
+		if err != nil {
+			captures = append(captures, capture{Browser: browserName, Viewport: "error"})
+			continue
+		}
+
+		for _, vpName := range req.Viewports {
+			vp, ok := agent.ViewportPresets[vpName]
+			if !ok {
+				vp = agent.ViewportPresets["desktop"]
+				vpName = "desktop"
+			}
+
+			bCtx, err := browser.NewContext(playwright.BrowserNewContextOptions{
+				Viewport: &playwright.Size{Width: vp.Width, Height: vp.Height},
+				IsMobile: playwright.Bool(vp.IsMobile),
+			})
+			if err != nil {
+				continue
+			}
+
+			page, err := bCtx.NewPage()
+			if err != nil {
+				bCtx.Close()
+				continue
+			}
+
+			_, navErr := page.Goto(req.URL)
+			if navErr == nil {
+				page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+					State: playwright.LoadStateNetworkidle,
+				})
+			}
+
+			ss, ssErr := page.Screenshot(playwright.PageScreenshotOptions{
+				FullPage: playwright.Bool(true),
+			})
+
+			c := capture{
+				Browser:  browserName,
+				Viewport: vpName,
+				Width:    vp.Width,
+				Height:   vp.Height,
+			}
+			if ssErr == nil && len(ss) > 0 {
+				c.Size = len(ss)
+				c.Hash = fmt.Sprintf("%x", sha256.Sum256(ss))
+			}
+			captures = append(captures, c)
+
+			page.Close()
+			bCtx.Close()
+		}
+		browser.Close()
+	}
+
+	// Compare: group by viewport, check if hashes differ across browsers
+	type comparison struct {
+		Viewport    string   `json:"viewport"`
+		Identical   bool     `json:"identical"`
+		Browsers    []string `json:"browsers"`
+		UniqueHashes int     `json:"unique_hashes"`
+	}
+	byViewport := map[string][]capture{}
+	for _, c := range captures {
+		byViewport[c.Viewport] = append(byViewport[c.Viewport], c)
+	}
+	var comparisons []comparison
+	for vp, caps := range byViewport {
+		hashes := map[string]bool{}
+		var browsers []string
+		for _, c := range caps {
+			if c.Hash != "" {
+				hashes[c.Hash] = true
+			}
+			browsers = append(browsers, c.Browser)
+		}
+		comparisons = append(comparisons, comparison{
+			Viewport:     vp,
+			Identical:    len(hashes) <= 1,
+			Browsers:     browsers,
+			UniqueHashes: len(hashes),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"url":         req.URL,
+		"captures":    captures,
+		"comparisons": comparisons,
+		"total":       len(captures),
+	})
+}
+
 // registerAdvancedTestingRoutes adds Phase 2+3 testing endpoints.
 func (s *Server) registerAdvancedTestingRoutes(r chi.Router) {
 	r.Post("/testing/explore", s.handleExploratoryTest)
 	r.Post("/testing/performance", s.handlePerformanceAudit)
 	r.Post("/testing/accessibility", s.handleAccessibilityAudit)
+	r.Post("/testing/visual-regression", s.handleVisualRegression)
 }
