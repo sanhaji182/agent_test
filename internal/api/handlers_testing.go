@@ -328,10 +328,113 @@ func (s *Server) handleVisualRegression(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// handleFullAudit runs performance, accessibility, and visual checks in one call.
+// POST /api/v1/testing/audit
+func (s *Server) handleFullAudit(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		URL      string `json:"url"`
+		Viewport string `json:"viewport"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.URL == "" {
+		writeJSONError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+
+	pw, err := playwright.Run()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "could not start playwright")
+		return
+	}
+	defer pw.Stop()
+
+	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{Headless: playwright.Bool(true)})
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "could not launch browser")
+		return
+	}
+	defer browser.Close()
+
+	// Resolve viewport
+	vp := agent.ViewportPresets["desktop"]
+	if req.Viewport != "" {
+		if p, ok := agent.ViewportPresets[req.Viewport]; ok {
+			vp = p
+		}
+	}
+
+	bCtx, err := browser.NewContext(playwright.BrowserNewContextOptions{
+		Viewport: &playwright.Size{Width: vp.Width, Height: vp.Height},
+		IsMobile: playwright.Bool(vp.IsMobile),
+	})
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "could not create context")
+		return
+	}
+	defer bCtx.Close()
+
+	page, err := bCtx.NewPage()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "could not create page")
+		return
+	}
+	defer page.Close()
+
+	_, err = page.Goto(req.URL)
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, "could not navigate: "+err.Error())
+		return
+	}
+	page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+		State: playwright.LoadStateNetworkidle,
+	})
+
+	result := map[string]interface{}{
+		"url":      req.URL,
+		"viewport": vp.Name,
+	}
+
+	// 1. Performance metrics
+	if metrics, err := agent.CollectPerformanceMetrics(page); err == nil {
+		result["performance"] = metrics
+	} else {
+		result["performance_error"] = err.Error()
+	}
+
+	// 2. Accessibility audit
+	if violations, err := agent.RunAccessibilityAudit(page); err == nil {
+		result["accessibility"] = map[string]interface{}{
+			"violations": violations,
+			"count":      len(violations),
+			"passed":     len(violations) == 0,
+		}
+	} else {
+		result["accessibility_error"] = err.Error()
+	}
+
+	// 3. Screenshot evidence
+	if ss, err := page.Screenshot(playwright.PageScreenshotOptions{FullPage: playwright.Bool(true)}); err == nil {
+		result["screenshot_hash"] = fmt.Sprintf("%x", sha256.Sum256(ss))
+		result["screenshot_bytes"] = len(ss)
+	}
+
+	// 4. Page metadata
+	if title, err := page.Title(); err == nil {
+		result["title"] = title
+	}
+	result["final_url"] = page.URL()
+
+	writeJSON(w, http.StatusOK, result)
+}
+
 // registerAdvancedTestingRoutes adds Phase 2+3 testing endpoints.
 func (s *Server) registerAdvancedTestingRoutes(r chi.Router) {
 	r.Post("/testing/explore", s.handleExploratoryTest)
 	r.Post("/testing/performance", s.handlePerformanceAudit)
 	r.Post("/testing/accessibility", s.handleAccessibilityAudit)
 	r.Post("/testing/visual-regression", s.handleVisualRegression)
+	r.Post("/testing/audit", s.handleFullAudit)
 }
