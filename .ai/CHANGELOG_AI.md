@@ -27,6 +27,29 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-29 — Prometheus metrics endpoint with run lifecycle counters
+
+- **Task:** Production observability — Prometheus scrape endpoint
+- **Source revision before change:** 3843dc4
+- **Source revision after change:** 5b7b801
+- **Files modified:** internal/appmetrics/metrics.go (new), internal/appmetrics/metrics_test.go (new), internal/api/instrument.go (new), internal/api/server.go, internal/api/handlers_runs.go
+- **Summary:**
+  - internal/appmetrics: stdlib-only metrics package (atomic counters, mutex gauges, bucketed histograms) — zero external deps
+  - GET /metrics: Prometheus text exposition format, outside auth group so scrapers reach it without an API key
+  - instrumentMiddleware: counts API requests + error responses (>=400) via statusRecorder wrapper
+  - Run lifecycle counters wired in launchRun goroutine: RunsCreated/Completed/Failed/Cancelled, ActiveRuns gauge derived from len(runCancels) under existing lock, RecordRunFinish timestamp
+  - 4 unit tests for appmetrics (counters, gauges, histogram, format)
+- **Reason:** Production observability — Prometheus/Grafana scraping without heavyweight client_golang dependency
+- **Risk:** Low — additive, no behavior change to existing endpoints
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None — /metrics available immediately
+- **Documentation updated:** This changelog
+- **Verification completed:** go build ✓, go vet ✓, go test -race -short 24/24 ✓
+- **Facts added/removed or confidence changed:** Metrics package count 23→24 (new appmetrics package)
+- **Open unknowns:** Action duration histogram (ObserveActionDuration) not yet wired into PlaywrightRunner
+- **Related ADRs/TODOs:** None
+
 ## 2026-07-29 — Run cancellation, rate limiting, Docker hardening, tags, Slack/Teams
 
 - **Task:** Production readiness — cancellation, resilience, security, notifications
