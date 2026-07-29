@@ -105,6 +105,7 @@ type TestRun struct {
 	Viewport     string            `json:"viewport,omitempty"`  // viewport preset name (e.g. "iphone-14", "desktop-hd")
 	Parallel     bool              `json:"parallel,omitempty"`  // execute test files concurrently
 	TestData     map[string]string `json:"test_data,omitempty"` // parameterized test data ({{key}} expansion)
+	Tags         []string          `json:"tags,omitempty"`      // labels for filtering/grouping (e.g. "regression", "smoke", "release-1.2")
 	State        State      `json:"state"`
 	CodeAnalysis string     `json:"code_analysis,omitempty"`
 	TestPlan     *TestPlan  `json:"test_plan,omitempty"`

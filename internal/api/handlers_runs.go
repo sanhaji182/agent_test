@@ -40,6 +40,7 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 		Viewport     string            `json:"viewport"`
 		Parallel     bool              `json:"parallel"`
 		TestData     map[string]string `json:"test_data"`
+		Tags         []string          `json:"tags"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid body")
@@ -60,6 +61,7 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 		Credentials: req.Credentials, FocusHints: req.FocusHints,
 		SkipHints: req.SkipHints, FeatureMap: s.deriveFeatureMap(r.Context(), req.PRD, req.Requirements),
 		Browser: req.Browser, Viewport: req.Viewport, Parallel: req.Parallel, TestData: req.TestData,
+		Tags:      req.Tags,
 		State:     agent.StateIdle,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
@@ -529,6 +531,32 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	if runs == nil {
 		runs = []*agent.TestRun{}
 	}
+
+	// Filter by tag if ?tag= query param is provided
+	if tagFilter := r.URL.Query().Get("tag"); tagFilter != "" {
+		var filtered []*agent.TestRun
+		for _, run := range runs {
+			for _, tag := range run.Tags {
+				if tag == tagFilter {
+					filtered = append(filtered, run)
+					break
+				}
+			}
+		}
+		runs = filtered
+	}
+
+	// Filter by state if ?state= query param is provided
+	if stateFilter := r.URL.Query().Get("state"); stateFilter != "" {
+		var filtered []*agent.TestRun
+		for _, run := range runs {
+			if string(run.State) == stateFilter {
+				filtered = append(filtered, run)
+			}
+		}
+		runs = filtered
+	}
+
 	redacted := make([]*agent.TestRun, len(runs))
 	for i, run := range runs {
 		redacted[i] = redactCredentials(run)
