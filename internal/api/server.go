@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-go-golems/gotest-agent/internal/agent"
+	"github.com/go-go-golems/gotest-agent/internal/appmetrics"
 	"github.com/go-go-golems/gotest-agent/internal/auth"
 	"github.com/go-go-golems/gotest-agent/internal/config"
 	"github.com/go-go-golems/gotest-agent/internal/db"
@@ -47,15 +48,19 @@ type Server struct {
 	enqueueRun func(runID string) error // optional durable-queue enqueuer (Redis/Asynq); nil = in-process execution
 	runCancels map[string]context.CancelFunc // active run cancellation functions
 	cancelsMu  sync.RWMutex
+	metrics    *appmetrics.Metrics // Prometheus-format application metrics
 }
 
 func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.SettingsStore) *Server {
+	appm := appmetrics.New()
+
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(rateLimitMiddleware(100, time.Minute)) // 100 req/min per client IP
 	r.Use(newCORSMiddleware(cfg.CORSAllowedOrigins))
+	r.Use(instrumentMiddleware(appm)) // count API requests/errors for /metrics
 
 	evtStore := events.NewStore()
 
@@ -95,6 +100,7 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 		jwtAuth:    jwtAuth,
 		runSem:     make(chan struct{}, cfg.MaxConcurrentRuns),
 		runCancels: make(map[string]context.CancelFunc),
+		metrics:    appm,
 	}
 	s.routes()
 	return s
@@ -206,6 +212,7 @@ func safeBool(patch map[string]interface{}, key string) (bool, bool) {
 
 func (s *Server) routes() {
 	s.router.Get("/health", s.handleHealth)
+	s.router.Get("/metrics", s.handlePrometheus) // Prometheus scrape endpoint (no auth)
 
 	// Auth: login endpoint outside API key auth — login is how you get the JWT
 	s.router.Post("/api/v1/auth/login", s.handleLogin)

@@ -479,13 +479,28 @@ func (s *Server) launchRun(run *agent.TestRun) {
 		ctx, cancel := context.WithCancel(context.Background())
 		s.cancelsMu.Lock()
 		s.runCancels[run.ID] = cancel
+		s.metrics.SetActiveRuns(int64(len(s.runCancels)))
 		s.cancelsMu.Unlock()
 		defer func() {
 			s.cancelsMu.Lock()
 			delete(s.runCancels, run.ID)
+			s.metrics.SetActiveRuns(int64(len(s.runCancels)))
 			s.cancelsMu.Unlock()
+			s.metrics.RecordRunFinish()
 		}()
+
+		s.metrics.RunsCreated.Add(1)
 		a.RunBlocking(ctx, run)
+
+		// Record terminal state for Prometheus counters
+		switch run.State {
+		case agent.StateDone:
+			s.metrics.RunsCompleted.Add(1)
+		case agent.StateFailed:
+			s.metrics.RunsFailed.Add(1)
+		case agent.StateCancelled:
+			s.metrics.RunsCancelled.Add(1)
+		}
 	}()
 }
 
