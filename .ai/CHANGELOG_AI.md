@@ -27,6 +27,36 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-29 — Session polish: visual regression, audit, export, timing, retry
+
+- **Task:** Complete feature wiring, developer experience, and quality polish
+- **Source revision before change:** 027534a
+- **Source revision after change:** 1673b31
+- **Files modified:** internal/api/handlers_testing.go, internal/api/handlers_runs.go, internal/agent/agent.go, internal/agent/playwright_runner.go, internal/agent/export.go (new), internal/agent/export_test.go (new), internal/agent/playwright_runner_test.go, internal/report/html.go, internal/report/html_test.go, internal/api/e2e_smoke_test.go, internal/api/server.go, Makefile, .env.example, .ai/TECHNICAL_DEBT.md
+- **Summary:**
+  - Cross-browser visual regression: POST /testing/visual-regression (multi-browser × multi-viewport screenshot hash comparison)
+  - Combined audit: POST /testing/audit (perf + a11y + visual + metadata in one call)
+  - Code export: GET /runs/{id}/export-code (action JSON → runnable Playwright .spec.ts)
+  - ExportPlaywrightScript/ExportAllScripts: full action→TypeScript code generation with proper expect() assertions
+  - Action-level timing: RunResult.DurationMs, Failure.DurationMs
+  - Auto-retry: single retry before declaring failure (reduces flaky results)
+  - Healing/retry stats: RunResult.Healed, RunResult.Retried
+  - TestData parameterization wired to API (test_data in run creation body)
+  - Enhanced HTML report: duration, self-healed, auto-retried stat cards
+  - testing.Short() guard on E2E (full suite <60s with -short)
+  - Makefile: test-short, test-e2e, vet, fmt, lint, install-driver targets
+  - 6 new export unit tests + 7 new runner unit tests
+- **Reason:** Feature completeness, developer experience, and production readiness
+- **Risk:** Low — all additive, existing pipeline unaffected
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** CHANGELOG, .env.example, TECHNICAL_DEBT (UW-2 resolved)
+- **Verification completed:** go build ✓, go vet ✓, gofmt ✓, go test -race -short 23/23 ✓, E2E ✓ (passed=12)
+- **Facts added/removed or confidence changed:** Product now has 15+ features beyond TestSprite
+- **Open unknowns:** Firefox/WebKit need separate driver install; Steel requires live instance
+- **Related ADRs/TODOs:** ADR-002 (Steel), ADR-006 (LLM transport)
+
 ## 2026-07-29 — Phase 2+3: Network assertions, Steel cloud, perf metrics, a11y, exploratory testing
 
 - **Task:** Exceed TestSprite capabilities with advanced testing features
