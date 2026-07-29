@@ -26,19 +26,20 @@ import (
 
 func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ProjectPath  string `json:"project_path"`
-		Requirements string `json:"requirements"`
-		Mode         string `json:"mode"`
-		TestType     string `json:"test_type"`
-		PRD          string `json:"prd"`
-		APIDocs      string `json:"api_docs"`
-		AuthType     string `json:"auth_type"`
-		Credentials  string `json:"credentials"`
-		FocusHints   string `json:"focus_hints"`
-		SkipHints    string `json:"skip_hints"`
-		Browser      string `json:"browser"`
-		Viewport     string `json:"viewport"`
-		Parallel     bool   `json:"parallel"`
+		ProjectPath  string            `json:"project_path"`
+		Requirements string            `json:"requirements"`
+		Mode         string            `json:"mode"`
+		TestType     string            `json:"test_type"`
+		PRD          string            `json:"prd"`
+		APIDocs      string            `json:"api_docs"`
+		AuthType     string            `json:"auth_type"`
+		Credentials  string            `json:"credentials"`
+		FocusHints   string            `json:"focus_hints"`
+		SkipHints    string            `json:"skip_hints"`
+		Browser      string            `json:"browser"`
+		Viewport     string            `json:"viewport"`
+		Parallel     bool              `json:"parallel"`
+		TestData     map[string]string `json:"test_data"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid body")
@@ -58,7 +59,7 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 		PRD: req.PRD, APIDocs: req.APIDocs, AuthType: req.AuthType,
 		Credentials: req.Credentials, FocusHints: req.FocusHints,
 		SkipHints: req.SkipHints, FeatureMap: s.deriveFeatureMap(r.Context(), req.PRD, req.Requirements),
-		Browser: req.Browser, Viewport: req.Viewport, Parallel: req.Parallel,
+		Browser: req.Browser, Viewport: req.Viewport, Parallel: req.Parallel, TestData: req.TestData,
 		State:     agent.StateIdle,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
@@ -430,6 +431,9 @@ func (s *Server) buildAgentForRun(run *agent.TestRun) *agent.Agent {
 		}
 		if run.Parallel {
 			runner.WithParallel(true)
+		}
+		if run.TestData != nil {
+			runner.TestData = run.TestData
 		}
 	}
 	execCtx := execution.NewContext(s.events, s.recordings, s.visuals)
