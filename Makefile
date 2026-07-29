@@ -1,4 +1,4 @@
-.PHONY: build dev mcp tidy clean up down logs rebuild smoke-test ps
+.PHONY: build dev mcp tidy clean up down logs rebuild smoke-test ps test test-short test-e2e vet fmt lint install-driver
 
 # --- Local Development ---
 build:
@@ -16,6 +16,30 @@ tidy:
 
 clean:
 	rm -rf bin/
+
+# --- Quality ---
+test:
+	go test ./... -race -count=1
+
+test-short:
+	go test ./... -race -short -count=1
+
+test-e2e:
+	@echo "Requires .e2e-enable + .env at repo root"
+	go test ./internal/api/ -run TestE2E_ProductSmoke -v -timeout 10m -count=1
+
+vet:
+	go vet ./...
+
+fmt:
+	gofmt -w ./internal/ ./cmd/
+
+lint: vet fmt
+	@echo "Lint complete"
+
+# --- Playwright Driver ---
+install-driver:
+	bash scripts/install-playwright-driver.sh
 
 # --- Docker Compose ---
 up:
