@@ -26,10 +26,11 @@ func TestGenerateHTMLString_FullRun(t *testing.T) {
 		t.Fatalf("GenerateHTMLString: %v", err)
 	}
 	for _, want := range []string{
-		"run-42", "done",
+		"run-42", "DONE",
 		">3</span>", ">1</span>", ">4</span>", // pass/fail/total stats
 		"login test", "expected 200, got 500", // failure table
-		"Cover the login flow", "happy path", "(high)", // test plan
+		"Cover the login flow", "happy path", "high", // test plan
+		"75%", // pass rate
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("report missing %q", want)
