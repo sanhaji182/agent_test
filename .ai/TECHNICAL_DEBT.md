@@ -3,7 +3,7 @@
 **Owner:** Engineering  
 **Authoritative sources:** Static source inspection against verified audit/discovery evidence  
 **Last verified revision:** `7b54053642e614cccf5e1128defabd25ac88b437`  
-**Last updated:** 2026-07-28  
+**Last updated:** 2026-07-29  
 **Confidence:** High for source-verified items; runtime impact partly UNKNOWN
 
 ## Debt Severity
@@ -32,7 +32,7 @@ These packages have implementation code but no connection from the running serve
 | ID | Package | Wiring gap | Severity | Evidence |
 |---|---|---|---|---|
 | UW-1 | `internal/queue` | ✅ Resolved (2026-07-27): `RunWorker`/`runs:execute` wired opt-in via `QUEUE_ENABLED=true` in `cmd/server`; legacy `TypeTestRun` job remains unwired | ✅ Resolved | `internal/queue/run_worker.go`; `cmd/server/main.go` |
-| UW-2 | `internal/runner/steel.go`, `internal/steel/` | Steel client and runner exist; no server construction | MEDIUM | `cmd/server/main.go` does not construct `SteelRunner` or `Client` |
+| UW-2 | `internal/runner/steel.go`, `internal/steel/` | ✅ Resolved (2026-07-29): `SteelRunner` in `internal/agent/steel_runner.go` connects Playwright via CDP to Steel sessions; API endpoints wired | ✅ Resolved | `internal/agent/steel_runner.go` |
 | UW-3 | `internal/agent/sidecar.go` | `SidecarClient` exists; no server construction | MEDIUM | `cmd/server/main.go` does not construct `SidecarClient` |
 | UW-4 | `internal/vision/client.go` | Vision analysis client exists; no wiring | LOW | No construction in either executable |
 | UW-5 | `internal/evals/braintrust.go` | Evaluation logger exists; no instantiation | LOW | `internal/evals/braintrust.go:35-43,86-115` |
