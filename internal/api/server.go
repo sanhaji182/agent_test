@@ -51,6 +51,7 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(rateLimitMiddleware(100, time.Minute)) // 100 req/min per client IP
 	r.Use(newCORSMiddleware(cfg.CORSAllowedOrigins))
 
 	evtStore := events.NewStore()
