@@ -14,10 +14,10 @@ import (
 // SteelRunner executes tests using Steel Browser cloud sessions (ADR-002).
 // It connects Playwright to a remote browser via CDP URL provided by Steel.
 type SteelRunner struct {
-	client      *steel.Client
-	llm         LLM
+	client        *steel.Client
+	llm           LLM
 	ScreenshotDir string
-	TestData    map[string]string
+	TestData      map[string]string
 }
 
 // NewSteelRunner creates a runner that uses Steel Browser cloud for execution.
@@ -175,10 +175,10 @@ func CollectPerformanceMetrics(page playwright.Page) (*PerformanceMetrics, error
 
 // AccessibilityViolation represents a single a11y issue found on the page.
 type AccessibilityViolation struct {
-	Rule    string `json:"rule"`
-	Impact  string `json:"impact"` // minor, moderate, serious, critical
-	Help    string `json:"help"`
-	Target  string `json:"target"` // CSS selector of violating element
+	Rule   string `json:"rule"`
+	Impact string `json:"impact"` // minor, moderate, serious, critical
+	Help   string `json:"help"`
+	Target string `json:"target"` // CSS selector of violating element
 }
 
 // RunAccessibilityAudit performs a basic accessibility check using ARIA queries.
@@ -242,12 +242,12 @@ func toFloat(v interface{}) float64 {
 
 // ExploratoryResult captures findings from autonomous page exploration.
 type ExploratoryResult struct {
-	PagesVisited   int                    `json:"pages_visited"`
-	ActionsTried   int                    `json:"actions_tried"`
-	ErrorsFound    []string               `json:"errors_found"`
-	ConsoleErrors  []string               `json:"console_errors"`
-	BrokenLinks    []string               `json:"broken_links"`
-	Screenshots    []string               `json:"screenshots"`
+	PagesVisited  int      `json:"pages_visited"`
+	ActionsTried  int      `json:"actions_tried"`
+	ErrorsFound   []string `json:"errors_found"`
+	ConsoleErrors []string `json:"console_errors"`
+	BrokenLinks   []string `json:"broken_links"`
+	Screenshots   []string `json:"screenshots"`
 }
 
 // RunExploratoryTest performs AI-driven autonomous exploration of a page.

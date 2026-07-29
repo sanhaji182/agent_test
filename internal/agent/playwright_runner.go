@@ -129,9 +129,9 @@ type BrowserAction struct {
 	Y        int    `json:"y,omitempty"`
 	Ms       int    `json:"ms,omitempty"`
 	// Network interception fields
-	NetworkURL     string `json:"network_url,omitempty"`     // URL pattern to intercept/assert
-	NetworkMethod  string `json:"network_method,omitempty"`  // GET, POST, etc.
-	NetworkStatus  int    `json:"network_status,omitempty"`  // expected status code
+	NetworkURL    string `json:"network_url,omitempty"`    // URL pattern to intercept/assert
+	NetworkMethod string `json:"network_method,omitempty"` // GET, POST, etc.
+	NetworkStatus int    `json:"network_status,omitempty"` // expected status code
 	// Test data parameterization
 	Template string `json:"template,omitempty"` // template key for data-driven tests
 }
@@ -185,8 +185,8 @@ func (r *PlaywrightRunner) Run(ctx context.Context, testFiles []TestFile, projec
 			Dir:  r.VideoDir,
 			Size: &playwright.Size{Width: vpWidth, Height: vpHeight},
 		},
-		Viewport:  &playwright.Size{Width: vpWidth, Height: vpHeight},
-		IsMobile:  playwright.Bool(isMobile),
+		Viewport: &playwright.Size{Width: vpWidth, Height: vpHeight},
+		IsMobile: playwright.Bool(isMobile),
 	}
 	if r.Viewport != nil && r.Viewport.UserAgent != "" {
 		ctxOpts.UserAgent = playwright.String(r.Viewport.UserAgent)

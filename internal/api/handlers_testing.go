@@ -174,10 +174,10 @@ func (s *Server) handleAccessibilityAudit(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"url":            req.URL,
-		"violations":     violations,
+		"url":              req.URL,
+		"violations":       violations,
 		"total_violations": len(violations),
-		"passed":         len(violations) == 0,
+		"passed":           len(violations) == 0,
 	})
 }
 

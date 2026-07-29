@@ -97,17 +97,17 @@ type TestRun struct {
 	SkipHints    string      `json:"skip_hints,omitempty"`
 	FeatureMap   *FeatureMap `json:"feature_map,omitempty"`
 	// Execution options (Phase 1+)
-	Browser  string `json:"browser,omitempty"`  // "chromium" (default), "firefox", "webkit"
-	Viewport string `json:"viewport,omitempty"` // viewport preset name (e.g. "iphone-14", "desktop-hd")
-	Parallel bool   `json:"parallel,omitempty"` // execute test files concurrently
-	State        State       `json:"state"`
-	CodeAnalysis string      `json:"code_analysis,omitempty"`
-	TestPlan     *TestPlan   `json:"test_plan,omitempty"`
-	TestFiles    []TestFile  `json:"test_files,omitempty"`
-	RunResult    *RunResult  `json:"run_result,omitempty"`
-	Screenshots  []string    `json:"screenshots,omitempty"`
-	FixAttempts  int         `json:"fix_attempts"`
-	Error        string      `json:"error,omitempty"`
+	Browser      string     `json:"browser,omitempty"`  // "chromium" (default), "firefox", "webkit"
+	Viewport     string     `json:"viewport,omitempty"` // viewport preset name (e.g. "iphone-14", "desktop-hd")
+	Parallel     bool       `json:"parallel,omitempty"` // execute test files concurrently
+	State        State      `json:"state"`
+	CodeAnalysis string     `json:"code_analysis,omitempty"`
+	TestPlan     *TestPlan  `json:"test_plan,omitempty"`
+	TestFiles    []TestFile `json:"test_files,omitempty"`
+	RunResult    *RunResult `json:"run_result,omitempty"`
+	Screenshots  []string   `json:"screenshots,omitempty"`
+	FixAttempts  int        `json:"fix_attempts"`
+	Error        string     `json:"error,omitempty"`
 	// Video recording fields
 	VideoURL             string  `json:"video_url,omitempty"`
 	VideoStatus          string  `json:"video_status,omitempty"` // "recording", "ready", "failed", "none"
