@@ -36,6 +36,9 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 		Credentials  string `json:"credentials"`
 		FocusHints   string `json:"focus_hints"`
 		SkipHints    string `json:"skip_hints"`
+		Browser      string `json:"browser"`
+		Viewport     string `json:"viewport"`
+		Parallel     bool   `json:"parallel"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid body")
@@ -55,6 +58,7 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 		PRD: req.PRD, APIDocs: req.APIDocs, AuthType: req.AuthType,
 		Credentials: req.Credentials, FocusHints: req.FocusHints,
 		SkipHints: req.SkipHints, FeatureMap: s.deriveFeatureMap(r.Context(), req.PRD, req.Requirements),
+		Browser: req.Browser, Viewport: req.Viewport, Parallel: req.Parallel,
 		State:     agent.StateIdle,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
@@ -381,6 +385,11 @@ func isApprovedLLMOrigin(baseURL string) bool {
 // resolution chain (DB overrides → env config → defaults). Returns nil if the
 // resolved provider is unsupported.
 func (s *Server) buildAgent() *agent.Agent {
+	return s.buildAgentForRun(nil)
+}
+
+// buildAgentForRun constructs an Agent with runner options from the run config.
+func (s *Server) buildAgentForRun(run *agent.TestRun) *agent.Agent {
 	// Read LLM settings: DB overrides, env fallback
 	llmProvider := s.cfg.LLMProvider
 	llmModel := s.cfg.LLMModel
@@ -410,6 +419,19 @@ func (s *Server) buildAgent() *agent.Agent {
 	}
 
 	runner := agent.NewPlaywrightRunner("/tmp/agent_test/videos", llm)
+	runner.ScreenshotDir = "/tmp/agent_test/screenshots"
+	// Apply run-specific execution options
+	if run != nil {
+		if run.Browser != "" {
+			runner.WithBrowser(run.Browser)
+		}
+		if run.Viewport != "" {
+			runner.WithViewport(run.Viewport)
+		}
+		if run.Parallel {
+			runner.WithParallel(true)
+		}
+	}
 	execCtx := execution.NewContext(s.events, s.recordings, s.visuals)
 
 	return agent.NewWithConfig(llm, runner, 3, agent.AgentConfig{
@@ -435,7 +457,7 @@ func (s *Server) launchRun(run *agent.TestRun) {
 		}
 	}
 
-	a := s.buildAgent()
+	a := s.buildAgentForRun(run)
 	if a == nil {
 		return
 	}

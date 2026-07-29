@@ -123,7 +123,7 @@ func TestE2E_ProductSmoke(t *testing.T) {
 	t.Logf("run created: %s (target %s)", runID, target)
 
 	// --- Step 3: poll to terminal state (Playwright download can be slow) ---
-	deadline := time.Now().Add(12 * time.Minute)
+	deadline := time.Now().Add(8 * time.Minute)
 	state := ""
 	var run map[string]any
 	for time.Now().Before(deadline) {

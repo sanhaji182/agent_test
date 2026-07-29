@@ -96,6 +96,10 @@ type TestRun struct {
 	FocusHints   string      `json:"focus_hints,omitempty"`
 	SkipHints    string      `json:"skip_hints,omitempty"`
 	FeatureMap   *FeatureMap `json:"feature_map,omitempty"`
+	// Execution options (Phase 1+)
+	Browser  string `json:"browser,omitempty"`  // "chromium" (default), "firefox", "webkit"
+	Viewport string `json:"viewport,omitempty"` // viewport preset name (e.g. "iphone-14", "desktop-hd")
+	Parallel bool   `json:"parallel,omitempty"` // execute test files concurrently
 	State        State       `json:"state"`
 	CodeAnalysis string      `json:"code_analysis,omitempty"`
 	TestPlan     *TestPlan   `json:"test_plan,omitempty"`
