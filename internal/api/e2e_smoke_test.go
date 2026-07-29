@@ -50,6 +50,9 @@ func loadDotEnv(t *testing.T) map[string]string {
 }
 
 func TestE2E_ProductSmoke(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping E2E in -short mode")
+	}
 	if _, err := os.Stat(filepath.Join("..", "..", ".e2e-enable")); err != nil {
 		t.Skip("E2E disabled: create .e2e-enable at repo root to run")
 	}
