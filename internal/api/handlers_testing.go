@@ -430,6 +430,35 @@ func (s *Server) handleFullAudit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// handleExportCode converts a run's generated action JSON into runnable
+// Playwright TypeScript test files.
+// GET /api/v1/runs/{id}/export-code
+func (s *Server) handleExportCode(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "id")
+	if !isValidID(runID) {
+		writeJSONError(w, http.StatusBadRequest, "invalid run id")
+		return
+	}
+	run, err := s.store.GetRun(r.Context(), runID)
+	if err != nil || run == nil {
+		writeJSONError(w, http.StatusNotFound, "run not found")
+		return
+	}
+	if len(run.TestFiles) == 0 {
+		writeJSONError(w, http.StatusConflict, "run has no generated test files yet")
+		return
+	}
+
+	opts := agent.ExportOptions{AddWaits: true, Timeout: 5000}
+	scripts := agent.ExportAllScripts(run.TestFiles, opts)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"run_id":  runID,
+		"count":   len(scripts),
+		"scripts": scripts,
+	})
+}
+
 // registerAdvancedTestingRoutes adds Phase 2+3 testing endpoints.
 func (s *Server) registerAdvancedTestingRoutes(r chi.Router) {
 	r.Post("/testing/explore", s.handleExploratoryTest)
@@ -437,4 +466,5 @@ func (s *Server) registerAdvancedTestingRoutes(r chi.Router) {
 	r.Post("/testing/accessibility", s.handleAccessibilityAudit)
 	r.Post("/testing/visual-regression", s.handleVisualRegression)
 	r.Post("/testing/audit", s.handleFullAudit)
+	r.Get("/runs/{id}/export-code", s.handleExportCode)
 }
