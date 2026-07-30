@@ -10,6 +10,7 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/agent"
 	"github.com/go-go-golems/gotest-agent/internal/compare"
 	"github.com/go-go-golems/gotest-agent/internal/intelligence"
+	"github.com/go-go-golems/gotest-agent/internal/junit"
 	"github.com/go-go-golems/gotest-agent/internal/release"
 	"github.com/go-go-golems/gotest-agent/internal/schedule"
 	"github.com/google/uuid"
@@ -340,4 +341,29 @@ func (s *Server) handleTestAIProvider(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 	})
+}
+
+// handleExportJUnit exports a run's results as JUnit XML for CI/CD integration.
+// GET /api/v1/runs/{id}/export-junit
+func (s *Server) handleExportJUnit(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "id")
+	if !isValidID(runID) {
+		writeJSONError(w, http.StatusBadRequest, "invalid run id")
+		return
+	}
+	run, err := s.store.GetRun(r.Context(), runID)
+	if err != nil || run == nil {
+		writeJSONError(w, http.StatusNotFound, "run not found")
+		return
+	}
+
+	data, err := junit.GenerateXML(run)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to generate JUnit XML: "+err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=junit-%s.xml", runID))
+	w.Write(data)
 }

@@ -320,6 +320,7 @@ func (s *Server) routes() {
 		s.registerAdvancedTestingRoutes(r)
 		// Export
 		r.Get("/runs/{id}/export", s.handleExportRun)
+		r.Get("/runs/{id}/export-junit", s.handleExportJUnit)
 		r.Get("/runs/{id}/compare/{otherId}/export", s.handleExportCompare)
 		r.Get("/metrics/risk/export", s.handleExportRisk)
 		r.Get("/releases/{id}/confidence/export", s.handleExportConfidence)
