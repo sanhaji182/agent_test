@@ -201,6 +201,53 @@ export interface RunResult {
   failed: number;
   total: number;
   failures: Failure[];
+  duration_ms?: number;
+  healed_count?: number;
+  retried_count?: number;
+}
+
+export interface AuditResult {
+  id: string;
+  performance: PerformanceMetrics | null;
+  accessibility: AccessibilityResult | null;
+  visual_regression: VisualRegressionResult | null;
+  created_at: string;
+}
+
+export interface PerformanceMetrics {
+  lcp_ms: number;
+  fid_ms: number;
+  cls: number;
+  fcp_ms: number;
+  ttfb_ms: number;
+}
+
+export interface AccessibilityResult {
+  violations_count: number;
+  passes_count: number;
+  violations: AccessibilityViolation[];
+}
+
+export interface AccessibilityViolation {
+  id: string;
+  impact: string;
+  description: string;
+  help_url: string;
+  nodes: number;
+}
+
+export interface VisualRegressionResult {
+  diff_percentage: number;
+  diff_count: number;
+  total_pixels: number;
+  diff_pixels: number;
+  baseline_exists: boolean;
+}
+
+export interface ExportCodeResult {
+  language: string;
+  code: string;
+  framework: string;
 }
 
 export interface Failure {
@@ -405,6 +452,35 @@ export async function analyzeFailure(id: string): Promise<FailureAnalysis> {
 
 export function reportUrl(id: string): string {
   return `${API_BASE}/api/v1/runs/${id}/report`;
+}
+
+// Advanced testing features
+export async function runAudit(id: string): Promise<AuditResult> {
+  return apiFetch<AuditResult>(`/api/v1/runs/${id}/audit`, { method: "POST" });
+}
+
+export async function runExploratory(id: string): Promise<{ pages_visited: number; actions_attempted: number; new_tests_generated: number }> {
+  return apiFetch(`/api/v1/runs/${id}/explore`, { method: "POST" });
+}
+
+export async function getPerformanceMetrics(id: string): Promise<PerformanceMetrics> {
+  return apiFetch<PerformanceMetrics>(`/api/v1/runs/${id}/performance`);
+}
+
+export async function getAccessibilityReport(id: string): Promise<AccessibilityResult> {
+  return apiFetch<AccessibilityResult>(`/api/v1/runs/${id}/accessibility`);
+}
+
+export async function runVisualRegression(id: string): Promise<VisualRegressionResult> {
+  return apiFetch<VisualRegressionResult>(`/api/v1/runs/${id}/visual-regression`, { method: "POST" });
+}
+
+export async function exportCode(id: string, language: string = "playwright"): Promise<ExportCodeResult> {
+  return apiFetch<ExportCodeResult>(`/api/v1/runs/${id}/export-code?language=${encodeURIComponent(language)}`);
+}
+
+export async function cancelRun(id: string): Promise<{ status: string; message: string }> {
+  return apiFetch(`/api/v1/runs/${id}/cancel`, { method: "POST" });
 }
 
 // Urutan fase eksekusi untuk membangun timeline

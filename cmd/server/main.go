@@ -13,6 +13,7 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/config"
 	"github.com/go-go-golems/gotest-agent/internal/db"
 	"github.com/go-go-golems/gotest-agent/internal/queue"
+	"github.com/go-go-golems/gotest-agent/internal/tracing"
 	"github.com/hibiken/asynq"
 )
 
@@ -25,6 +26,20 @@ func main() {
 	}
 
 	ctx := context.Background()
+
+	// Initialize distributed tracing
+	tracingShutdown, err := tracing.Init(ctx, tracing.Config{
+		Enabled:           cfg.TracingEnabled,
+		ExporterEndpoint:  cfg.TracingEndpoint,
+		ServiceName:       "gotest-agent",
+		ServiceVersion:    cfg.ServiceVersion,
+		Environment:       cfg.AppEnv,
+	})
+	if err != nil {
+		slog.Warn("failed to initialize tracing", "error", err)
+	} else {
+		defer tracingShutdown(ctx)
+	}
 
 	var store db.RunStore
 	var settingsStore *db.SettingsStore

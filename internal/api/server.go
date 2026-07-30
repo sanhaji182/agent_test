@@ -22,6 +22,7 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/recordings"
 	"github.com/go-go-golems/gotest-agent/internal/release"
 	"github.com/go-go-golems/gotest-agent/internal/schedule"
+	"github.com/go-go-golems/gotest-agent/internal/tracing"
 	"github.com/go-go-golems/gotest-agent/internal/visual"
 	"github.com/go-go-golems/gotest-agent/internal/webhook"
 	"github.com/go-go-golems/gotest-agent/internal/workflow"
@@ -58,6 +59,7 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(tracing.HTTPMiddleware()) // distributed tracing for all HTTP requests
 	r.Use(rateLimitMiddleware(100, time.Minute)) // 100 req/min per client IP
 	r.Use(newCORSMiddleware(cfg.CORSAllowedOrigins))
 	r.Use(instrumentMiddleware(appm)) // count API requests/errors for /metrics

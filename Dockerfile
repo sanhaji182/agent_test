@@ -8,7 +8,8 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /bin/server ./cmd/server
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /bin/mcp ./cmd/mcp
 
 # Install Playwright driver in builder (cached layer)
-RUN go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install --with-deps chromium
+# NOTE: Disabled for ARM64 compatibility. Using Steel Browser for headless browsing.
+# RUN go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install --with-deps chromium
 
 # --- Runtime stage (minimal, non-root) ---
 FROM debian:bookworm-slim
@@ -36,12 +37,13 @@ COPY --from=builder /bin/server /usr/local/bin/server
 COPY --from=builder /bin/mcp /usr/local/bin/mcp
 
 # Copy Playwright driver + browsers from builder
-COPY --from=builder /root/.cache/ms-playwright-go /home/gotest/.cache/ms-playwright-go
-COPY --from=builder /root/.cache/ms-playwright /home/gotest/.cache/ms-playwright
+# NOTE: Disabled for ARM64 compatibility.
+# COPY --from=builder /root/.cache/ms-playwright-go /home/gotest/.cache/ms-playwright-go
+# COPY --from=builder /root/.cache/ms-playwright /home/gotest/.cache/ms-playwright
 
 # Create data directories
 RUN mkdir -p /app/data/screenshots /app/data/reports /app/data/videos \
-    && chown -R gotest:gotest /app /home/gotest/.cache
+    && chown -R gotest:gotest /app
 
 USER gotest
 

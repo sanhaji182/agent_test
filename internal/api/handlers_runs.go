@@ -16,6 +16,7 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/compare"
 	"github.com/go-go-golems/gotest-agent/internal/events"
 	"github.com/go-go-golems/gotest-agent/internal/execution"
+	"github.com/go-go-golems/gotest-agent/internal/notify"
 	"github.com/go-go-golems/gotest-agent/internal/planning"
 	"github.com/go-go-golems/gotest-agent/internal/project"
 	"github.com/go-go-golems/gotest-agent/internal/recordings"
@@ -41,6 +42,7 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 		Parallel     bool              `json:"parallel"`
 		TestData     map[string]string `json:"test_data"`
 		Tags         []string          `json:"tags"`
+		WebhookURL   string            `json:"webhook_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid body")
@@ -61,9 +63,10 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 		Credentials: req.Credentials, FocusHints: req.FocusHints,
 		SkipHints: req.SkipHints, FeatureMap: s.deriveFeatureMap(r.Context(), req.PRD, req.Requirements),
 		Browser: req.Browser, Viewport: req.Viewport, Parallel: req.Parallel, TestData: req.TestData,
-		Tags:      req.Tags,
-		State:     agent.StateIdle,
-		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		Tags:       req.Tags,
+		WebhookURL: req.WebhookURL,
+		State:      agent.StateIdle,
+		CreatedAt:  time.Now(), UpdatedAt: time.Now(),
 	}
 	if err := s.store.CreateRun(r.Context(), run); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
@@ -500,6 +503,30 @@ func (s *Server) launchRun(run *agent.TestRun) {
 			s.metrics.RunsFailed.Add(1)
 		case agent.StateCancelled:
 			s.metrics.RunsCancelled.Add(1)
+		}
+
+		// Fire outbound lifecycle webhook if configured
+		if run.WebhookURL != "" {
+			payload := map[string]string{
+				"event":   "run_completed",
+				"run_id":  run.ID,
+				"state":   string(run.State),
+				"project": run.ProjectPath,
+			}
+			if run.RunResult != nil {
+				payload["passed"] = fmt.Sprintf("%d", run.RunResult.Passed)
+				payload["failed"] = fmt.Sprintf("%d", run.RunResult.Failed)
+				payload["total"] = fmt.Sprintf("%d", run.RunResult.Total)
+			}
+			if run.Error != "" {
+				payload["error"] = run.Error
+			}
+			// Best-effort delivery — webhook failure must not affect run state
+			go func() {
+				if err := notify.DeliverWebhook(run.WebhookURL, payload); err != nil {
+					slog.Warn("webhook delivery failed", "run_id", run.ID, "url", run.WebhookURL, "error", err)
+				}
+			}()
 		}
 	}()
 }

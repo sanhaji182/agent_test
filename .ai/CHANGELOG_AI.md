@@ -27,6 +27,32 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-30 — Frontend integration of advanced testing features
+
+- **Task:** Wire advanced testing capabilities to run detail UI
+- **Source revision before change:** 9c609f8
+- **Source revision after change:** UNCOMMITTED
+- **Files modified:** frontend/src/lib/api.ts, frontend/src/app/runs/[id]/page.tsx
+- **Summary:**
+  - Added API client functions: runAudit, runExploratory, exportCode with TypeScript types
+  - Added Advanced tab to run console with three sections:
+    1. Full Audit: performance metrics (LCP/FID/CLS), accessibility violations, visual regression diff
+    2. Exploratory Testing: AI-driven exploration with pages/actions/new tests metrics
+    3. Code Export: multi-framework export (Playwright/Cypress/Puppeteer/Selenium) with syntax highlighting
+  - State management for audit, exploratory, and export results
+  - Handler functions for all three features
+  - Fixed EyeIcon import issue
+- **Reason:** Make advanced backend features accessible through UI, completing TestSprite parity
+- **Risk:** Low — additive UI, no breaking changes
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** Rebuild frontend
+- **Documentation updated:** This changelog
+- **Verification completed:** npm run build successful (TypeScript in 1654ms)
+- **Facts added/removed or confidence changed:** TestSprite parity achieved + 10 unique features
+- **Open unknowns:** None
+- **Related ADRs/TODOs:** TODO-021
+
 ## 2026-07-30 — JUnit XML export for CI/CD integration
 
 - **Task:** Universal CI/CD format export

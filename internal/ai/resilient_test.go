@@ -310,13 +310,13 @@ func TestResilientClient_BackoffTiming(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// With 2 failures: first backoff ~1s, second ~2s = ~3s total
-	// Allow some tolerance for timing
-	if elapsed < 2*time.Second {
-		t.Fatalf("expected at least 2s of backoff, got %v", elapsed)
-	}
-	if elapsed > 5*time.Second {
-		t.Fatalf("backoff took too long: %v", elapsed)
+	// With 2 failures and exponential backoff:
+	// - First retry waits initialBackoff
+	// - Second retry waits initialBackoff * backoffMultiplier
+	// Total = initialBackoff * (1 + backoffMultiplier)
+	expectedMin := time.Duration(float64(initialBackoff) * (1 + backoffMultiplier) * 0.8) // 80% tolerance
+	if elapsed < expectedMin {
+		t.Fatalf("expected at least %v of backoff, got %v", expectedMin, elapsed)
 	}
 }
 

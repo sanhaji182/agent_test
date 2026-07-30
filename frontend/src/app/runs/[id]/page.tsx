@@ -5,7 +5,11 @@ import { useParams, useRouter } from "next/navigation";
 import {
   getRun, subscribeToRun, rerunRun, reportUrl, isActive, analyzeFailure,
   getRunEvents, getRunRecordings, getRunVisuals,
+  runAudit, runExploratory, getPerformanceMetrics, getAccessibilityReport,
+  runVisualRegression, exportCode,
   type TestRun, type RunEvent, type Recording, type VisualArtifact, type FailureAnalysis,
+  type AuditResult, type PerformanceMetrics, type AccessibilityResult,
+  type VisualRegressionResult, type ExportCodeResult,
 } from "@/lib/api";
 import { StatusBadge, PriorityBadge } from "@/components/ui/badge";
 import { LoadingSkeleton } from "@/components/ui/section";
@@ -17,6 +21,7 @@ import {
   ArrowLeft, FileText, RotateCw, FileCode, AlertTriangle,
   CheckCircle2, XCircle, Image as ImageIcon, ListChecks, Eye,
   Radio, Film, GitCompare, GitBranch, KeyRound, Sparkles,
+  Wand2, Code, Gauge, Accessibility, Search, Eye as EyeIcon,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -34,6 +39,14 @@ export default function RunConsolePage() {
   const [rerunning, setRerunning] = useState(false);
   const [analysis, setAnalysis] = useState<FailureAnalysis | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
+  const [exploratoryResult, setExploratoryResult] = useState<any>(null);
+  const [performanceResult, setPerformanceResult] = useState<PerformanceMetrics | null>(null);
+  const [accessibilityResult, setAccessibilityResult] = useState<AccessibilityResult | null>(null);
+  const [visualResult, setVisualResult] = useState<VisualRegressionResult | null>(null);
+  const [codeExport, setCodeExport] = useState<ExportCodeResult | null>(null);
+  const [exportLanguage, setExportLanguage] = useState("playwright");
+  const [advancedLoading, setAdvancedLoading] = useState<string | null>(null);
 
   useEffect(() => {
     let unsub: (() => void) | undefined;
@@ -83,6 +96,45 @@ export default function RunConsolePage() {
       setError((e as Error).message);
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const handleAudit = async () => {
+    setAdvancedLoading("audit");
+    try {
+      const result = await runAudit(id);
+      setAuditResult(result);
+      setPerformanceResult(result.performance);
+      setAccessibilityResult(result.accessibility);
+      setVisualResult(result.visual_regression);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setAdvancedLoading(null);
+    }
+  };
+
+  const handleExploratory = async () => {
+    setAdvancedLoading("exploratory");
+    try {
+      const result = await runExploratory(id);
+      setExploratoryResult(result);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setAdvancedLoading(null);
+    }
+  };
+
+  const handleExportCode = async () => {
+    setAdvancedLoading("export");
+    try {
+      const result = await exportCode(id, exportLanguage);
+      setCodeExport(result);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setAdvancedLoading(null);
     }
   };
 
@@ -159,6 +211,20 @@ export default function RunConsolePage() {
           { id: "failures", label: "Failures", count: result?.failures?.length, content: <FailuresView run={run} /> },
           { id: "analysis", label: "Analysis", content: <AnalysisView analysis={analysis} loading={analyzing} onAnalyze={handleAnalyze} /> },
           { id: "visual", label: "Visual", count: visuals.length, content: <VisualView artifacts={visuals} /> },
+          { id: "advanced", label: "Advanced", content: <AdvancedView
+            auditResult={auditResult}
+            exploratoryResult={exploratoryResult}
+            performanceResult={performanceResult}
+            accessibilityResult={accessibilityResult}
+            visualResult={visualResult}
+            codeExport={codeExport}
+            exportLanguage={exportLanguage}
+            setExportLanguage={setExportLanguage}
+            loading={advancedLoading}
+            onAudit={handleAudit}
+            onExploratory={handleExploratory}
+            onExportCode={handleExportCode}
+          /> },
         ]} initial={run.video_url ? "video" : "events"} />
       </div>
     </div>
@@ -635,6 +701,243 @@ function VisualView({ artifacts }: { artifacts: VisualArtifact[] }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function AdvancedView({
+  auditResult,
+  exploratoryResult,
+  performanceResult,
+  accessibilityResult,
+  visualResult,
+  codeExport,
+  exportLanguage,
+  setExportLanguage,
+  loading,
+  onAudit,
+  onExploratory,
+  onExportCode,
+}: {
+  auditResult: any;
+  exploratoryResult: any;
+  performanceResult: any;
+  accessibilityResult: any;
+  visualResult: any;
+  codeExport: any;
+  exportLanguage: string;
+  setExportLanguage: (lang: string) => void;
+  loading: string | null;
+  onAudit: () => void;
+  onExploratory: () => void;
+  onExportCode: () => void;
+}) {
+  return (
+    <div className="space-y-6">
+      {/* Full Audit Section */}
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Wand2 className="w-4 h-4 text-[var(--accent)]" />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Full Audit</h3>
+          </div>
+          <button
+            onClick={onAudit}
+            disabled={loading === "audit"}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)] disabled:opacity-60"
+          >
+            {loading === "audit" ? "Running..." : "Run Audit"}
+          </button>
+        </div>
+        <p className="text-[12px] text-[var(--text-secondary)] mb-3">
+          Comprehensive analysis including performance metrics, accessibility checks, and visual regression testing.
+        </p>
+        {auditResult && (
+          <div className="grid grid-cols-3 gap-3 mt-3">
+            <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-card)] p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Gauge className="w-3.5 h-3.5 text-[var(--accent)]" />
+                <span className="text-[11px] font-semibold text-[var(--text-primary)]">Performance</span>
+              </div>
+              {performanceResult ? (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px]">
+                    <span className="text-[var(--text-muted)]">LCP</span>
+                    <span className="font-mono text-[var(--text-secondary)]">{performanceResult.lcp_ms}ms</span>
+                  </div>
+                  <div className="flex justify-between text-[10px]">
+                    <span className="text-[var(--text-muted)]">FID</span>
+                    <span className="font-mono text-[var(--text-secondary)]">{performanceResult.fid_ms}ms</span>
+                  </div>
+                  <div className="flex justify-between text-[10px]">
+                    <span className="text-[var(--text-muted)]">CLS</span>
+                    <span className="font-mono text-[var(--text-secondary)]">{performanceResult.cls.toFixed(3)}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[10px] text-[var(--text-muted)]">No data</p>
+              )}
+            </div>
+            <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-card)] p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Accessibility className="w-3.5 h-3.5 text-[var(--accent)]" />
+                <span className="text-[11px] font-semibold text-[var(--text-primary)]">Accessibility</span>
+              </div>
+              {accessibilityResult ? (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px]">
+                    <span className="text-[var(--text-muted)]">Violations</span>
+                    <span className={`font-mono ${accessibilityResult.violations_count > 0 ? "text-[var(--danger)]" : "text-[var(--success)]"}`}>
+                      {accessibilityResult.violations_count}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-[10px]">
+                    <span className="text-[var(--text-muted)]">Passes</span>
+                    <span className="font-mono text-[var(--success)]">{accessibilityResult.passes_count}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[10px] text-[var(--text-muted)]">No data</p>
+              )}
+            </div>
+            <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-card)] p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <EyeIcon className="w-3.5 h-3.5 text-[var(--accent)]" />
+                <span className="text-[11px] font-semibold text-[var(--text-primary)]">Visual Diff</span>
+              </div>
+              {visualResult ? (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px]">
+                    <span className="text-[var(--text-muted)]">Diff %</span>
+                    <span className={`font-mono ${visualResult.diff_percentage > 5 ? "text-[var(--warning)]" : "text-[var(--success)]"}`}>
+                      {visualResult.diff_percentage.toFixed(2)}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-[10px]">
+                    <span className="text-[var(--text-muted)]">Pixels</span>
+                    <span className="font-mono text-[var(--text-secondary)]">{visualResult.diff_count}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[10px] text-[var(--text-muted)]">No baseline</p>
+              )}
+            </div>
+          </div>
+        )}
+        {accessibilityResult?.violations?.length > 0 && (
+          <div className="mt-3 space-y-2">
+            <p className="text-[11px] font-semibold text-[var(--text-primary)]">Accessibility Violations</p>
+            {accessibilityResult.violations.slice(0, 3).map((v: any, i: number) => (
+              <div key={i} className="rounded-[var(--radius-sm)] border border-[var(--danger)]/20 bg-[var(--danger-bg)] p-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1">
+                    <p className="text-[11px] font-semibold text-[var(--danger)]">{v.id}</p>
+                    <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">{v.description}</p>
+                  </div>
+                  <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                    v.impact === "critical" ? "bg-[var(--danger)] text-white" :
+                    v.impact === "serious" ? "bg-[var(--warning)] text-white" :
+                    "bg-[var(--border)] text-[var(--text-secondary)]"
+                  }`}>
+                    {v.impact}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {accessibilityResult.violations.length > 3 && (
+              <p className="text-[10px] text-[var(--text-muted)]">
+                +{accessibilityResult.violations.length - 3} more violations
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Exploratory Testing */}
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Search className="w-4 h-4 text-[var(--accent)]" />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Exploratory Testing</h3>
+          </div>
+          <button
+            onClick={onExploratory}
+            disabled={loading === "exploratory"}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)] disabled:opacity-60"
+          >
+            {loading === "exploratory" ? "Exploring..." : "Run Exploration"}
+          </button>
+        </div>
+        <p className="text-[12px] text-[var(--text-secondary)] mb-3">
+          AI-driven autonomous exploration to discover new test scenarios and edge cases.
+        </p>
+        {exploratoryResult && (
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-card)] p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-1">Pages Visited</p>
+              <p className="text-lg font-bold text-[var(--text-primary)]">{exploratoryResult.pages_visited}</p>
+            </div>
+            <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-card)] p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-1">Actions Attempted</p>
+              <p className="text-lg font-bold text-[var(--text-primary)]">{exploratoryResult.actions_attempted}</p>
+            </div>
+            <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-card)] p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-1">New Tests Generated</p>
+              <p className="text-lg font-bold text-[var(--accent)]">{exploratoryResult.new_tests_generated}</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Code Export */}
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Code className="w-4 h-4 text-[var(--accent)]" />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Export Test Code</h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={exportLanguage}
+              onChange={(e) => setExportLanguage(e.target.value)}
+              className="text-[11px] px-2 py-1 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-primary)]"
+            >
+              <option value="playwright">Playwright</option>
+              <option value="cypress">Cypress</option>
+              <option value="puppeteer">Puppeteer</option>
+              <option value="selenium">Selenium</option>
+            </select>
+            <button
+              onClick={onExportCode}
+              disabled={loading === "export"}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)] disabled:opacity-60"
+            >
+              {loading === "export" ? "Exporting..." : "Export"}
+            </button>
+          </div>
+        </div>
+        <p className="text-[12px] text-[var(--text-secondary)] mb-3">
+          Export generated tests as executable code in your preferred testing framework.
+        </p>
+        {codeExport && (
+          <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-card)] p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-semibold text-[var(--text-muted)] uppercase">
+                {codeExport.language} - {codeExport.framework}
+              </span>
+              <button
+                onClick={() => navigator.clipboard.writeText(codeExport.code)}
+                className="text-[10px] text-[var(--accent)] hover:text-[var(--accent-hover)]"
+              >
+                Copy
+              </button>
+            </div>
+            <pre className="text-[10px] text-[var(--text-secondary)] overflow-x-auto max-h-64 bg-[var(--bg-subtle)] p-3 rounded">
+              <code>{codeExport.code}</code>
+            </pre>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

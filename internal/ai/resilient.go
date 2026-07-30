@@ -7,6 +7,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-go-golems/gotest-agent/internal/tracing"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // Resilience configuration — production defaults
@@ -197,8 +201,12 @@ func (rc *ResilientClient) GenerateWithImage(ctx context.Context, prompt, imageB
 
 // withResilience applies circuit breaker + retry logic to any Client operation
 func (rc *ResilientClient) withResilience(ctx context.Context, fn func(context.Context) (string, error)) (string, error) {
+	ctx, span := tracing.Tracer("ai").Start(ctx, "llm.call")
+	defer span.End()
+
 	// Check circuit breaker first
 	if !rc.breaker.allow() {
+		span.SetStatus(codes.Error, "circuit breaker open")
 		return "", fmt.Errorf("circuit breaker open: too many failures, retry after %v", cbRecoveryTimeout)
 	}
 
@@ -206,9 +214,12 @@ func (rc *ResilientClient) withResilience(ctx context.Context, fn func(context.C
 	backoff := initialBackoff
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
+		span.SetAttributes(attribute.Int("llm.attempt", attempt))
+
 		// Check context before each attempt
 		select {
 		case <-ctx.Done():
+			span.SetStatus(codes.Error, "context cancelled")
 			return "", ctx.Err()
 		default:
 		}
@@ -216,14 +227,17 @@ func (rc *ResilientClient) withResilience(ctx context.Context, fn func(context.C
 		result, err := fn(ctx)
 		if err == nil {
 			rc.breaker.recordSuccess()
+			span.SetStatus(codes.Ok, "success")
 			return result, nil
 		}
 
 		lastErr = err
+		span.RecordError(err)
 
 		// Don't retry non-retryable errors
 		if !isRetryableError(err) {
 			rc.breaker.recordFailure()
+			span.SetStatus(codes.Error, "non-retryable error")
 			return "", err
 		}
 
@@ -238,6 +252,7 @@ func (rc *ResilientClient) withResilience(ctx context.Context, fn func(context.C
 
 			select {
 			case <-ctx.Done():
+				span.SetStatus(codes.Error, "context cancelled during backoff")
 				return "", ctx.Err()
 			case <-time.After(sleepDuration):
 			}
@@ -252,6 +267,7 @@ func (rc *ResilientClient) withResilience(ctx context.Context, fn func(context.C
 
 	// All retries exhausted
 	rc.breaker.recordFailure()
+	span.SetStatus(codes.Error, "all retries failed")
 	return "", fmt.Errorf("all %d retries failed: %w", maxRetries+1, lastErr)
 }
 

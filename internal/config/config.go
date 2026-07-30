@@ -27,6 +27,9 @@ type Config struct {
 	TimeoutSeconds      int    // Timeout eksekusi test (detik)
 	ScreenshotsPath     string // Direktori penyimpanan screenshot
 	ReportsPath         string // Direktori penyimpanan laporan HTML
+	TracingEnabled      bool   // Enable distributed tracing (OTLP)
+	TracingEndpoint     string // OTLP gRPC endpoint (default: localhost:4317)
+	ServiceVersion      string // Service version for tracing (default: 1.0.0)
 }
 
 // Load membaca konfigurasi dari environment variables dengan nilai default
@@ -54,6 +57,9 @@ func Load() *Config {
 		TimeoutSeconds:      getEnvInt("DEFAULT_TIMEOUT_SECONDS", 300),
 		ScreenshotsPath:     getEnv("SCREENSHOTS_PATH", "./data/screenshots"),
 		ReportsPath:         getEnv("REPORTS_PATH", "./data/reports"),
+		TracingEnabled:      getEnv("TRACING_ENABLED", "false") == "true",
+		TracingEndpoint:     getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317"),
+		ServiceVersion:      getEnv("SERVICE_VERSION", "1.0.0"),
 	}
 }
 
