@@ -225,3 +225,63 @@ func (c *CloneClient) DeleteRepo(repoDir string) error {
 
 	return nil
 }
+
+// IsCloned checks if a directory contains a cloned git repository
+func (c *CloneClient) IsCloned(repoDir string) bool {
+	if repoDir == "" {
+		return false
+	}
+
+	// Check if directory exists
+	if _, err := os.Stat(repoDir); os.IsNotExist(err) {
+		return false
+	}
+
+	// Check if .git directory exists
+	if _, err := os.Stat(filepath.Join(repoDir, ".git")); os.IsNotExist(err) {
+		return false
+	}
+
+	return true
+}
+
+// Pull pulls latest changes from remote
+func (c *CloneClient) Pull(ctx context.Context, repoDir string) error {
+	if _, err := os.Stat(filepath.Join(repoDir, ".git")); os.IsNotExist(err) {
+		return fmt.Errorf("directory is not a git repository: %s", repoDir)
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "pull")
+	cmd.Dir = repoDir
+	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0")
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git pull failed: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
+}
+
+// CheckoutBranch checks out a specific branch
+func (c *CloneClient) CheckoutBranch(ctx context.Context, repoDir, branch string) error {
+	if _, err := os.Stat(filepath.Join(repoDir, ".git")); os.IsNotExist(err) {
+		return fmt.Errorf("directory is not a git repository: %s", repoDir)
+	}
+
+	if branch == "" {
+		return fmt.Errorf("branch name is required")
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "checkout", branch)
+	cmd.Dir = repoDir
+	cmd.Env = os.Environ()
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git checkout failed: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
+}
