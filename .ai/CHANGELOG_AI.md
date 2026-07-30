@@ -27,6 +27,32 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-30 — LLM retry with exponential backoff + circuit breaker
+
+- **Task:** Production resilience for the AI transport layer
+- **Source revision before change:** 4a83c60
+- **Source revision after change:** ceadb3b
+- **Files modified:** internal/ai/resilient.go (new), internal/ai/resilient_test.go (new), internal/ai/client.go
+- **Summary:**
+  - ResilientClient decorator wraps any ai.Client with retry + circuit breaker
+  - Retry: up to 3 attempts, exponential backoff 1s→2s→4s capped at 8s
+  - Circuit breaker: opens after 5 consecutive failures, half-opens after 30s, closes on success
+  - Retryable errors: connection refused/reset, timeout, HTTP 429/5xx
+  - Non-retryable: context cancellation, 4xx client errors (invalid key, model not found)
+  - Wired into ai.New() — all LLM calls automatically resilient
+  - SetResilienceTimings/ResetResilienceTimings for fast tests (1ms backoff)
+  - 16 unit tests: retry, no-retry, exhaustion, circuit breaker state transitions, context cancellation, concurrency, backoff timing
+- **Reason:** LLM endpoints are the most failure-prone component; transient network errors and rate limits should not fail a whole test run
+- **Risk:** Low — decorator pattern, no change to existing client behavior; non-retryable errors fail fast
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** This changelog
+- **Verification completed:** go build ✓, go vet ✓, go test -race -short 23/23 ✓, 16 resilience tests pass in <2s
+- **Facts added/removed or confidence changed:** ai.New() now returns *ResilientClient wrapping the provider client
+- **Open unknowns:** Retry-After header parsing is stubbed (returns 0, uses default backoff)
+- **Related ADRs/TODOs:** ADR-006 (LLM transport)
+
 ## 2026-07-29 — Prometheus metrics endpoint with run lifecycle counters
 
 - **Task:** Production observability — Prometheus scrape endpoint
