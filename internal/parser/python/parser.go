@@ -409,14 +409,297 @@ func (p *Parser) extractDjangoView(node *sitter.Node, content []byte, filePath s
 
 func (p *Parser) parseFlaskRoutes(ctx context.Context, rootDir string, codebase *types.Codebase) error {
 	// Flask routes are typically in app.py or main.py with @app.route decorators
-	// This is a stub implementation
+	err := filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		// Look for Python files that might contain Flask routes
+		if strings.HasSuffix(path, ".py") {
+			routes, err := p.extractFlaskRoutesFromFile(ctx, path)
+			if err != nil {
+				// Log error but continue
+				return nil
+			}
+			codebase.Routes = append(codebase.Routes, routes...)
+		}
+
+		return nil
+	})
+
+	return err
+}
+
+func (p *Parser) extractFlaskRoutesFromFile(ctx context.Context, filePath string) ([]types.Route, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	tree, err := p.treeSitterParser.ParseCtx(ctx, content, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	routes := []types.Route{}
+
+	// Look for @app.route decorators
+	p.traverseNode(tree.RootNode(), func(node *sitter.Node) {
+		if node.Type() == "decorated_definition" {
+			route := p.extractFlaskRoute(node, content, filePath)
+			if route != nil {
+				routes = append(routes, *route)
+			}
+		}
+	})
+
+	return routes, nil
+}
+
+func (p *Parser) extractFlaskRoute(node *sitter.Node, content []byte, filePath string) *types.Route {
+	// Flask route pattern: @app.route('/path', methods=['GET', 'POST'])
+	// def view_function():
+
+	// Get decorator
+	decoratorNode := node.ChildByFieldName("decorator")
+	if decoratorNode == nil {
+		return nil
+	}
+
+	// Check if it's a route decorator
+	decoratorName := ""
+	if decoratorNode.Type() == "decorator" {
+		nameNode := decoratorNode.ChildByFieldName("name")
+		if nameNode != nil {
+			decoratorName = string(content[nameNode.StartByte():nameNode.EndByte()])
+		}
+	}
+
+	// Check for @app.route or @blueprint.route
+	if !strings.Contains(decoratorName, "route") {
+		return nil
+	}
+
+	// Extract arguments from decorator
+	argumentsNode := decoratorNode.ChildByFieldName("arguments")
+	if argumentsNode == nil {
+		return nil
+	}
+
+	// First argument should be the path
+	pathArg := argumentsNode.Child(0)
+	if pathArg == nil {
+		return nil
+	}
+
+	path := ""
+	if pathArg.Type() == "string" {
+		path = string(content[pathArg.StartByte():pathArg.EndByte()])
+		path = strings.Trim(path, "'\"")
+	}
+
+	if path == "" {
+		return nil
+	}
+
+	// Extract methods from decorator arguments
+	methods := []string{"GET"} // Default to GET
+	for i := 1; i < argumentsNode.ChildCount(); i++ {
+		arg := argumentsNode.Child(i)
+		if arg.Type() == "keyword_argument" {
+			nameNode := arg.ChildByFieldName("name")
+			if nameNode != nil {
+				name := string(content[nameNode.StartByte():nameNode.EndByte()])
+				if name == "methods" {
+					// Extract methods list
+					valueNode := arg.ChildByFieldName("value")
+					if valueNode != nil && valueNode.Type() == "list" {
+						methods = []string{}
+						for j := 0; j < valueNode.ChildCount(); j++ {
+							methodArg := valueNode.Child(j)
+							if methodArg.Type() == "string" {
+								method := string(content[methodArg.StartByte():methodArg.EndByte()])
+								method = strings.Trim(method, "'\"")
+								methods = append(methods, method)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Get function name
+	functionNode := node.ChildByFieldName("definition")
+	handler := ""
+	if functionNode != nil {
+		nameNode := functionNode.ChildByFieldName("name")
+		if nameNode != nil {
+			handler = string(content[nameNode.StartByte():nameNode.EndByte()])
+		}
+	}
+
+	line := p.getNodeLine(node, content)
+
+	// Create a route for each method
+	routes := []types.Route{}
+	for _, method := range methods {
+		routes = append(routes, types.Route{
+			Method:  method,
+			Path:    path,
+			Handler: handler,
+			File:    filePath,
+			Line:    line,
+		})
+	}
+
+	// Return first route (we'll append all in the caller)
+	if len(routes) > 0 {
+		return &routes[0]
+	}
 	return nil
 }
 
 func (p *Parser) parseFastAPIRoutes(ctx context.Context, rootDir string, codebase *types.Codebase) error {
 	// FastAPI routes use @app.get, @app.post decorators
-	// This is a stub implementation
-	return nil
+	err := filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		// Look for Python files that might contain FastAPI routes
+		if strings.HasSuffix(path, ".py") {
+			routes, err := p.extractFastAPIRoutesFromFile(ctx, path)
+			if err != nil {
+				// Log error but continue
+				return nil
+			}
+			codebase.Routes = append(codebase.Routes, routes...)
+		}
+
+		return nil
+	})
+
+	return err
+}
+
+func (p *Parser) extractFastAPIRoutesFromFile(ctx context.Context, filePath string) ([]types.Route, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	tree, err := p.treeSitterParser.ParseCtx(ctx, content, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	routes := []types.Route{}
+
+	// Look for @app.get, @app.post, etc. decorators
+	p.traverseNode(tree.RootNode(), func(node *sitter.Node) {
+		if node.Type() == "decorated_definition" {
+			route := p.extractFastAPIRoute(node, content, filePath)
+			if route != nil {
+				routes = append(routes, *route)
+			}
+		}
+	})
+
+	return routes, nil
+}
+
+func (p *Parser) extractFastAPIRoute(node *sitter.Node, content []byte, filePath string) *types.Route {
+	// FastAPI route pattern: @app.get('/path') or @router.post('/path')
+	// def view_function():
+
+	// Get decorator
+	decoratorNode := node.ChildByFieldName("decorator")
+	if decoratorNode == nil {
+		return nil
+	}
+
+	// Check if it's a route decorator
+	decoratorName := ""
+	if decoratorNode.Type() == "decorator" {
+		nameNode := decoratorNode.ChildByFieldName("name")
+		if nameNode != nil {
+			decoratorName = string(content[nameNode.StartByte():nameNode.EndByte()])
+		}
+	}
+
+	// Check for HTTP method decorators
+	method := ""
+	methodMap := map[string]string{
+		"get":     "GET",
+		"post":    "POST",
+		"put":     "PUT",
+		"patch":   "PATCH",
+		"delete":  "DELETE",
+		"head":    "HEAD",
+		"options": "OPTIONS",
+	}
+
+	for key, httpMethod := range methodMap {
+		if strings.HasSuffix(decoratorName, "."+key) || decoratorName == key {
+			method = httpMethod
+			break
+		}
+	}
+
+	if method == "" {
+		return nil
+	}
+
+	// Extract arguments from decorator
+	argumentsNode := decoratorNode.ChildByFieldName("arguments")
+	if argumentsNode == nil {
+		return nil
+	}
+
+	// First argument should be the path
+	pathArg := argumentsNode.Child(0)
+	if pathArg == nil {
+		return nil
+	}
+
+	path := ""
+	if pathArg.Type() == "string" {
+		path = string(content[pathArg.StartByte():pathArg.EndByte()])
+		path = strings.Trim(path, "'\"")
+	}
+
+	if path == "" {
+		return nil
+	}
+
+	// Get function name
+	functionNode := node.ChildByFieldName("definition")
+	handler := ""
+	if functionNode != nil {
+		nameNode := functionNode.ChildByFieldName("name")
+		if nameNode != nil {
+			handler = string(content[nameNode.StartByte():nameNode.EndByte()])
+		}
+	}
+
+	line := p.getNodeLine(node, content)
+
+	return &types.Route{
+		Method:  method,
+		Path:    path,
+		Handler: handler,
+		File:    filePath,
+		Line:    line,
+	}
 }
 
 func (p *Parser) traverseNode(node *sitter.Node, visit func(*sitter.Node)) {
