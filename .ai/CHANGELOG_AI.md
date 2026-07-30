@@ -27,6 +27,29 @@
 - **Related ADRs/TODOs:**
 ```
 
+## 2026-07-30 — JUnit XML export for CI/CD integration
+
+- **Task:** Universal CI/CD format export
+- **Source revision before change:** bb0b2a3
+- **Source revision after change:** 46f92eb
+- **Files modified:** internal/junit/junit.go (new), internal/junit/junit_test.go (new), internal/api/handlers_admin.go, internal/api/server.go
+- **Summary:**
+  - internal/junit: generates standard JUnit XML from test run results
+  - GET /runs/{id}/export-junit: download JUnit XML report with Content-Disposition attachment
+  - Supports: passed/failed/error/skipped test cases, properties section, XML escaping
+  - Compatible with Jenkins, GitLab CI, GitHub Actions, Azure DevOps, CircleCI
+  - 9 unit tests: all-pass, failures, execution errors, nil results, XSS escaping, properties, round-trip
+- **Reason:** JUnit XML is the universal CI/CD integration format — every major CI system consumes it natively
+- **Risk:** Low — additive endpoint, no behavior change
+- **Breaking changes:** None
+- **Database migrations:** None
+- **Deployment steps:** None
+- **Documentation updated:** This changelog
+- **Verification completed:** go build ✓, go vet ✓, go test -race -short 24/24 ✓
+- **Facts added/removed or confidence changed:** Package count 24 (new junit package)
+- **Open unknowns:** None
+- **Related ADRs/TODOs:** None
+
 ## 2026-07-30 — LLM retry with exponential backoff + circuit breaker
 
 - **Task:** Production resilience for the AI transport layer
