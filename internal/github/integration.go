@@ -28,9 +28,17 @@ func NewIntegration(webhookSecret string, cloneDir string) *Integration {
 func (i *Integration) ProcessWebhookEvent(ctx context.Context, event *WebhookEvent) error {
 	switch event.Type {
 	case "push":
-		return i.processPushEvent(ctx, event)
+		pushEvent, err := i.webhookHandler.ParsePushEvent(event.Payload)
+		if err != nil {
+			return fmt.Errorf("failed to parse push event: %w", err)
+		}
+		return i.processPushEvent(ctx, pushEvent)
 	case "pull_request":
-		return i.processPullRequestEvent(ctx, event)
+		prEvent, err := i.webhookHandler.ParsePullRequestEvent(event.Payload)
+		if err != nil {
+			return fmt.Errorf("failed to parse pull request event: %w", err)
+		}
+		return i.processPullRequestEvent(ctx, prEvent)
 	case "ping":
 		log.Println("Received ping event from GitHub")
 		return nil
@@ -41,12 +49,7 @@ func (i *Integration) ProcessWebhookEvent(ctx context.Context, event *WebhookEve
 }
 
 // processPushEvent handles push webhook events
-func (i *Integration) processPushEvent(ctx context.Context, event *WebhookEvent) error {
-	pushEvent, err := i.webhookHandler.ParsePushEvent(event.Payload)
-	if err != nil {
-		return fmt.Errorf("failed to parse push event: %w", err)
-	}
-
+func (i *Integration) processPushEvent(ctx context.Context, pushEvent *PushEvent) error {
 	log.Printf("Processing push event for %s (ref: %s)", pushEvent.Repository.FullName, pushEvent.Ref)
 
 	// Skip if not a branch push (tags, etc.)
@@ -87,12 +90,7 @@ func (i *Integration) processPushEvent(ctx context.Context, event *WebhookEvent)
 }
 
 // processPullRequestEvent handles pull request webhook events
-func (i *Integration) processPullRequestEvent(ctx context.Context, event *WebhookEvent) error {
-	prEvent, err := i.webhookHandler.ParsePullRequestEvent(event.Payload)
-	if err != nil {
-		return fmt.Errorf("failed to parse pull request event: %w", err)
-	}
-
+func (i *Integration) processPullRequestEvent(ctx context.Context, prEvent *PullRequestEvent) error {
 	log.Printf("Processing pull request event for %s #%d (action: %s)",
 		prEvent.Repository.FullName, prEvent.Number, prEvent.Action)
 
