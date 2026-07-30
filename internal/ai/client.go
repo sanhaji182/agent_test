@@ -41,12 +41,13 @@ func New(cfg Config) Client {
 	if cfg.MaxTokens == 0 {
 		cfg.MaxTokens = 4096
 	}
+	var inner Client
 	switch provider {
 	case "anthropic":
 		if cfg.APIKey == "" {
 			return nil
 		}
-		return NewAnthropicClient(cfg.APIKey, cfg.Model, cfg.MaxTokens)
+		inner = NewAnthropicClient(cfg.APIKey, cfg.Model, cfg.MaxTokens)
 	case "openai", "openai-compatible", "ollama", "local", "custom",
 		"google", "deepseek", "mistral", "groq", "openrouter", "huggingface":
 		// Same OpenAI-compatible provider set as agent.NewLLM (DL-2 routing
@@ -57,10 +58,12 @@ func New(cfg Config) Client {
 		if cfg.APIKey == "" && provider != "ollama" && provider != "local" {
 			return nil
 		}
-		return NewOpenAICompatibleClient(cfg)
+		inner = NewOpenAICompatibleClient(cfg)
 	default:
 		return nil
 	}
+	// Wrap with retry + circuit breaker for production resilience
+	return NewResilientClient(inner)
 }
 
 // NewAnthropicClient constructs the Anthropic transport directly, without
