@@ -12,7 +12,7 @@
 
 - **Task:**
 - **Source revision before change:**
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:**
 - **Summary:**
 - **Reason:**
@@ -207,7 +207,7 @@
 
 - **Task:** Elevate execution engine beyond TestSprite parity
 - **Source revision before change:** 8bffa7c
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** internal/agent/playwright_runner.go, internal/agent/llm_prompts.go, internal/agent/llm_prompts_test.go, scripts/install-playwright-driver.sh
 - **Summary:**
   - Refactored PlaywrightRunner into modular architecture: executeAction() extracted with self-healing
@@ -233,7 +233,7 @@
 
 - **Task:** Run one full product loop against a live LLM + real web page — the empirical "does the core loop work" gate.
 - **Source revision before change:** 4127022
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/ai/client.go`, `internal/ai/client_test.go`, `internal/api/e2e_smoke_test.go` (new, gated), `scripts/smoke-e2e.sh`
 - **Summary:** Ran the loop against an OpenAI-compatible provider (base URL + key supplied by owner, since revoked) and `https://example.com`. Findings:
   1. **BUG FIXED — SSE default breaks planning:** the provider returned `text/event-stream` for `/chat/completions`, so `json.Unmarshal` failed with `invalid character 'd'` (from `data:` lines) and every run failed at `analysis_started`. Root cause: the request omitted `stream`, and this gateway defaults to streaming. Fix: send explicit `"stream": false` in `OpenAICompatibleClient`. Guarded by a new assertion in `client_test.go`. (A raw probe confirmed `stream:false` → clean `application/json`.)
@@ -254,7 +254,7 @@
 
 - **Task:** Coverage for `internal/report` (previously zero test files).
 - **Source revision before change:** 5ffa897
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/report/html_test.go` (new)
 - **Summary:** 3 tests: full-run rendering (stats, failure table, test-plan section), empty-run rendering ("No results available." without failures/plan sections), and an XSS guard proving failure Test/Message content — which originates from test output and LLM responses — is HTML-escaped by `html/template` (script tag and onerror payload must appear escaped, never raw).
 - **Reason:** Coverage initiative; the report endpoint serves this HTML to browsers, so a future switch to `text/template` or `template.HTML` would be an XSS regression this test now catches.
@@ -272,7 +272,7 @@
 
 - **Task:** Coverage for `internal/execution` and `internal/reporter` (both previously zero test files) — the runtime-artifact plumbing between runners and the run console.
 - **Source revision before change:** 5e7f988
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/execution/context_test.go` (new), `internal/reporter/playwright_test.go` (new)
 - **Summary:** execution (4 tests): nil-receiver/nil-store no-panic guarantees (runners call unconditionally), event forwarding, `RecordScreenshot` producing all three artifacts (recording `captured`, visual artifact, `screenshot_captured` event), and visual-baseline chaining (second capture of same step gets first's URL as baseline; different step starts empty). reporter (3 tests): `ParseAndEmit` against a realistic two-spec Playwright JSON report — event-type counts (2 test_started, 3 step_started/completed, 1 assertion each way), failed-step message propagation ("FAILED: timeout"), cumulative `timestamp_ms` arithmetic (200ms after 120+80); graceful nil-error on missing file/invalid JSON/nil ctx; `itoa` direct coverage.
 - **Reason:** Coverage initiative; baseline chaining and timestamp accumulation are the visual-regression and timeline features' correctness core.
@@ -290,7 +290,7 @@
 
 - **Task:** Coverage for `internal/workflow` (previously zero test files) — human-in-the-loop review/approval and suite management.
 - **Source revision before change:** 01cc959
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/workflow/store_test.go` (new)
 - **Summary:** 6 tests. ReviewStore: `Create` forces status to `pending` even when the caller supplies `approved` (approval MUST go through `Approve` — the review-gate invariant), Get/ByRun indexing, Approve/Reject reviewer+comment+UpdatedAt semantics with false-on-missing. SuiteStore: create defaults, newest-first List, ByTag matching, Delete pruning both the map and the order slice.
 - **Reason:** Coverage initiative; the forced-pending behavior is the workflow package's core security property and had no guard.
@@ -308,7 +308,7 @@
 
 - **Task:** Coverage for `internal/webhook` (previously zero test files) — GitHub HMAC verification is the only barrier between the public webhook endpoint and auto-triggered test runs.
 - **Source revision before change:** 5e80027
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/webhook/github_test.go` (new)
 - **Summary:** 6 tests: non-POST 405; valid sha256 signature triggers the async `onPush` callback with correctly-parsed payload; 5 invalid-signature variants all 401 without firing the callback (wrong secret, missing `sha256=` prefix, empty header, garbage hex, tampered body); empty-secret development mode accepts unsigned requests; invalid JSON 400; ping/unknown events 200 without side effects.
 - **Reason:** Security-critical production path with zero coverage; a regression in `verifySignature` (e.g. prefix handling or non-constant-time compare removal) would silently open run-triggering to forged requests.
@@ -326,7 +326,7 @@
 
 - **Task:** Coverage for `internal/recordings` (previously zero test files) — backs the run-console screenshot strip.
 - **Source revision before change:** 2255db3
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/recordings/store_test.go` (new)
 - **Summary:** 5 tests: sequential ID generation (`{runID}-rec-{n}`), explicit-ID preservation, `ByRun` filtering (nil for unknown), `All` copy semantics, and direct coverage of the hand-rolled `itoa` (0, single/multi-digit, large values) whose off-by-one would silently produce colliding recording IDs.
 - **Reason:** Continuation of the coverage initiative.
@@ -344,7 +344,7 @@
 
 - **Task:** Continue closing untested-package gaps: `internal/project` and `internal/release` (both previously zero test files).
 - **Source revision before change:** 4060be4
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/project/store_test.go` (new), `internal/release/store_test.go` (new)
 - **Summary:** project (4 tests): `prepareProject` defaults (`ui`/`default`/UUID/timestamps) with explicit-value preservation, Get/Update round-trip, `pgx.ErrNoRows` paths, List newest-first + pagination window + empty-non-nil-slice-past-end (handlers rely on this for JSON `[]`). release (5 tests): Create defaults (`active` status, explicit preserved), Get/List newest-first, Update callback + UpdatedAt advance + false-on-missing, `Summarize` aggregation (passed/failed run counting, RunResult totals across mixed states incl. in-flight run without RunResult, pass-rate, newest-first LatestStatus), empty-runs zero summary.
 - **Reason:** Same coverage initiative that exposed the critical gitignore defect; these two stores back the projects intake and release-tracking endpoints.
@@ -380,7 +380,7 @@
 
 - **Task:** Add test coverage for `internal/planning` (previously zero test files) — the store behind the project→plan→approve workflow.
 - **Source revision before change:** 9d78071
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/planning/memory_test.go` (new)
 - **Summary:** 6 tests covering all four entity types: draft lifecycle (create defaults `draft`/UUIDs/timestamps, update assigns IDs to new cases, `pgx.ErrNoRows` on missing), test-case CRUD with prepare-contract checks (`ui`/`medium`/version 1), project filtering + newest-first ordering, test lists (non-nil slice defaults), change proposals (status `pending`, ReviewedAt persistence, per-case filtering), and a clone-isolation guard mirroring `internal/db`: mutating returned copies or caller-held inputs (Steps/Tags/TestCaseIDs slices, nested Original/Proposed snapshots, ReviewedAt pointer) never touches stored state.
 - **Reason:** Same rationale as the db/notify entries: MemoryStore's deep-copy helpers are relied on by concurrent HTTP handlers but had no direct coverage.
@@ -398,7 +398,7 @@
 
 - **Task:** Add test coverage for `internal/notify` (previously zero test files) — the store behind the UW-6 failure notifier.
 - **Source revision before change:** 37b7f0a
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/notify/store_test.go` (new)
 - **Summary:** 9 tests: sequential ID/timestamp assignment, `List` copy semantics (mutation isolation), `ByRun` filtering, `DeliverWebhook` (empty-URL noop, JSON POST verified via httptest server, ≥400 error), and `TriggerFailure` (Delivered=true on 2xx, Delivered=false on webhook error, recorded-but-undelivered without webhook URL).
 - **Reason:** `TriggerFailure` became production code when UW-6 wired `StartFailureNotifier` (2026-07-27); its delivery-marking logic had no coverage.
@@ -416,7 +416,7 @@
 
 - **Task:** Add test coverage for `internal/db` (previously zero test files) focusing on the race-fix invariant.
 - **Source revision before change:** 806f482
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/db/memory_test.go` (new)
 - **Summary:** 7 tests: CRUD lifecycle, `ErrNotFound` paths (Get/Delete), `ListRuns` newest-first ordering + pagination window + past-end offset, and — the core motivation — three isolation guards proving `cloneRun` snapshot semantics: (1) mutating a run returned by `GetRun` (slices, RunResult, Failures, FinishedAt) does not affect the store; (2) mutating the caller's object after `CreateRun` (simulating the `Agent.Launch` goroutine writing to its run pointer) does not affect the stored copy; (3) `ListRuns` results are equally isolated. Plus `cloneRun` nil-safety.
 - **Reason:** The 2026-07-27 race fixes (commit 8cf727c) rest entirely on `cloneRun` deep-copy semantics, which had no direct tests — a future "optimization" removing a copy would silently reintroduce handler/goroutine data races that `-race` only catches probabilistically under load.
@@ -434,7 +434,7 @@
 
 - **Task:** Close the two remaining cosmetic documentation gaps.
 - **Source revision before change:** 4e2133e
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `docs/docker.md`, `frontend/README.md`, `.ai/DOCUMENTATION_GAP.md`
 - **Summary:** DG-6/ST-2: docker.md env-var table rewritten to match current runtime — multi-provider LLM vars, `QUEUE_ENABLED`, `CORS_ALLOWED_ORIGINS`, `JWT_SECRET`, AI-planning feature flags, execution limits; prerequisites port list fixed (3010 host port for Steel); GITHUB_WEBHOOK_SECRET fallback-to-API_KEY wording verified against `server.go:313-316`. DG-11/ST-1: frontend README refreshed — Next 16.2.12, `npm test` documented, stale "no frontend test suite exists" claim corrected (20 Vitest tests in `src/test/`, verified by running the suite). ST-3 audited: `claude-sonnet-4-5` remains the actual code default — not stale, closed without change.
 - **Reason:** Operator-facing docs promised/omitted env vars inconsistently with the runtime; README claim about missing tests could mislead contributors into duplicating coverage.
@@ -452,7 +452,7 @@
 
 - **Task:** Implement `CORS_ALLOWED_ORIGINS` (README promised it; code hard-coded wildcard) and reconcile stale DOCUMENTATION_GAP.md entries.
 - **Source revision before change:** 37b5307
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/config/config.go`, `internal/api/server.go`, `internal/api/cors_test.go` (new), `.env.example`, `.ai/DOCUMENTATION_GAP.md`
 - **Summary:** DG-12: `newCORSMiddleware(allowedOrigins)` replaces the hard-coded wildcard middleware. Empty or `*` keeps historical wildcard behavior (development default — zero behavior change for existing deployments). With a comma-separated allowlist: matching `Origin` is echoed back with `Access-Control-Allow-Credentials: true` and `Vary: Origin`; non-matching origins get no ACAO header. Matching is case- and trailing-slash-insensitive. Gap registry reconciled: DG-1/3/4/5/7/9/12 resolved, DG-10 substantially resolved (DL-2 Phase 1), DG-8 correctly marked; env-drift table replaced with the 3 remaining items.
 - **Reason:** README:203 instructs operators to set `CORS_ALLOWED_ORIGINS` for production, but no code consumed it — a silent security gap for anyone following the hardening guide.
@@ -470,7 +470,7 @@
 
 - **Task:** Execute accepted ADR-006: merge the two LLM transport layers.
 - **Source revision before change:** 630fd51
-- **Source revision after change:** UNKNOWN until committed (steps landed as b1a80d2, aab3963, f8464aa + this docs commit)
+- **Source revision after change:** 6cf1c67 (steps landed as b1a80d2, aab3963, f8464aa + this docs commit)
 - **Files modified:** `internal/ai/client.go` (+`client_test.go` new), `internal/agent/llm_prompts.go` (new), `llm_prompts_test.go` (new), `llm_adapter.go` (new), `llm_factory.go` (rewritten), `llm_anthropic.go` (deleted), `llm_openai.go` (deleted), `.ai/ADR-006.md`, `.ai/TECHNICAL_DEBT.md`, `.ai/DEPENDENCIES.md`
 - **Summary:** Step A (b1a80d2): `ai.Client` gains `GenerateWithImage`; both transports implement vision; OpenAI errors include response body; stub-server transport tests. Step B (aab3963): 6 prompt builders + parsers extracted to `llm_prompts.go`; fixed latent bug where `OpenAILLM.HealAction` sent the vision prompt ("screenshot attached") with no image. Step C (f8464aa): `promptLLM` adapter (prompts × `ai.Client`) replaces both structs; duplicated transports deleted (net −184 lines); `ai` gains ungated direct constructors preserving the execution layer's construct-always/fail-at-request contract; factory parity tests passed with zero edits. Step D: docs updated, DL-2 marked resolved.
 - **Reason:** DL-2 — final remaining HIGH-origin debt; single transport means timeouts/retries/redaction patch in one place.
@@ -488,7 +488,7 @@
 
 - **Task:** Produce the design pass required before merging the two LLM transport layers (deferred remainder of DL-2).
 - **Source revision before change:** 3b56bc9
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `.ai/ADR-006.md` (new), `.ai/TECHNICAL_DEBT.md` (DL-2 entry links ADR-006)
 - **Summary:** ADR-006 (Status: Proposed) documents the current two-layer state with a comparison table (interfaces, vision support, temperature/max-tokens handling, error text), decides `internal/ai` becomes the single transport layer with `agent.LLM` rebuilt as prompt-domain wrappers over `ai.Client`, and lays out a 4-step migration (A: vision in `ai`; B: extract prompts with byte-identical parity test; C: `promptLLM` adapter replaces both structs; D: cleanup). Each step independently shippable and gated by build + `-race` suite. `agent.LLM` interface and all its consumers unchanged throughout. Evidence claims verified against source (`chatWithVision` at llm_anthropic.go:203, image_url block at llm_openai.go:51, hard-coded MaxTokens 4096).
 - **Reason:** Repo protocol: architectural changes require investigation + design before implementation; DL-2's remaining transport merge touches the core execution path.
@@ -506,7 +506,7 @@
 
 - **Task:** Fix the routing inconsistency half of DL-2 (HIGH): `agent.NewLLM` (execution + test-connection) and `ai.New` (planning) accepted different provider sets with different normalization and base-URL defaults.
 - **Source revision before change:** a62a3e2
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/agent/llm_factory.go`, `internal/ai/client.go`, `internal/agent/llm_factory_test.go`, `.ai/TECHNICAL_DEBT.md`
 - **Summary:** Three concrete inconsistencies fixed. (1) Normalization: `ai.New` lowercased/trimmed provider names, `agent.NewLLM` matched case-sensitively — a DB-stored `"Anthropic"` worked for planning but returned nil (unsupported provider) for run execution. `NewLLM` now normalizes identically. (2) Provider set: `ai.New` rejected `google`/`deepseek`/`mistral`/`groq`/`openrouter`/`huggingface`, which `agent.NewLLM` accepted — with those providers configured, runs executed but AI planning silently returned nil. `ai.New` now accepts the same set. (3) Default base URL: both layers fell back to `https://api.openai.com/v1` for ALL OpenAI-compatible providers, so `google` etc. without explicit `LLM_BASE_URL` hit the wrong endpoint with the wrong key. New shared `ai.DefaultOpenAICompatibleBaseURL(provider)` maps each hosted provider to its documented OpenAI-compatible endpoint (aligned with `isApprovedLLMOrigin`); both factories use it.
 - **Reason:** DL-2 (HIGH): a settings change validated by "test connection" could behave differently in planning; provider misconfiguration failed silently.
@@ -524,7 +524,7 @@
 
 - **Task:** Resolve DC-3 (placeholder endpoint) and reconcile stale UC-4 registry entry.
 - **Source revision before change:** d9adac3
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/api/handlers_runs.go`, `internal/api/server.go`, `.ai/TECHNICAL_DEBT.md`
 - **Summary:** DC-3: `handleGetAPILogs` always returned `{"logs": []}` — a placeholder with no artifact-reading implementation. Grep across backend and `frontend/src` found zero consumers of `/runs/{id}/api-logs` (only the handler and its route registration). Removed both. If real API-log capture ships later, the endpoint can return with an actual implementation. UC-4: `class-variance-authority` is no longer in `frontend/package.json` (already removed in an earlier dependency pass); remaining runtime deps (`clsx`, `lucide-react`, `tailwind-merge`) all verified to have source imports — registry entry marked resolved.
 - **Reason:** DC-3 (MEDIUM): dead placeholder gives callers false confidence the feature exists; UC-4 registry was stale.
@@ -542,7 +542,7 @@
 
 - **Task:** Resolve duplicate-logic debt items DL-3 and DL-4.
 - **Source revision before change:** c78f79b
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/api/handlers_planning.go`, `internal/api/handlers_projects.go`, `internal/api/handlers_schedules.go`, `.ai/TECHNICAL_DEBT.md`
 - **Summary:** DL-3: extracted `createDraftPlanResponse(w, r, projectID, cases)` in `handlers_planning.go`; `handleGenerateProjectTestPlan` and `handleParseAPIDocs` now delegate (removed unused `planning` import from `handlers_projects.go`). DL-4: extracted `startScheduleRun(ctx, sch, scheduleID, now, lastRunStatus, eventMsg)` in `handlers_schedules.go`; the non-list branches of `handleRunNow` and `ProcessDueSchedules` delegate. Behavioral differences preserved via parameters: run-now records `LastRunStatus="running"` with message "Run created via schedule run-now"; due-schedule records `string(agent.StateIdle)` with "Run created via due schedule". The helper does NOT call `launchRun` — callers launch, so run-now keeps its snapshot-before-launch ordering (race-safety invariant from the 2026-07-27 race fixes).
 - **Reason:** DL-3 (LOW) and DL-4 (MEDIUM) in TECHNICAL_DEBT.md; duplicated orchestration blocks drift independently.
@@ -560,7 +560,7 @@
 
 - **Task:** Resolve technical-debt items UC-2/UC-3: `.env.example` documented env vars that `config.Load` hard-coded.
 - **Source revision before change:** b62e591
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/config/config.go`, `internal/config/config_test.go` (new), `.env.example`, `.ai/TECHNICAL_DEBT.md`
 - **Summary:** `MaxFixAttempts`, `TimeoutSeconds`, and `SteelMaxSessions` are now read via `getEnvInt` (`MAX_FIX_ATTEMPTS`, `DEFAULT_TIMEOUT_SECONDS`, `STEEL_MAX_SESSIONS`) with the same defaults (3/300/10). Invalid or non-positive values fall back to defaults. `.env.example` moved these vars from the UNUSED list to a documented "Execution limits" section. Added first test file for the config package (defaults, overrides, invalid fallback).
 - **Reason:** UC-2 (MEDIUM) and UC-3 (LOW) in TECHNICAL_DEBT.md — documented configuration silently ignored at runtime is an operator trap.
@@ -596,7 +596,7 @@
 
 - **Task:** Continue engineering improvement: LLM HTTP timeouts, wire failure notifications, fix data races surfaced by `-race`, update stale debt entries.
 - **Source revision before change:** 1276fda
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/agent/llm_openai.go`, `internal/ai/client.go` (2-min timeouts); new `internal/api/failure_notifier.go` + test; `cmd/server/main.go` (notifier goroutine); `internal/db/memory.go` (cloneRun snapshot semantics); `internal/api/handlers_{runs,planning,schedules}.go` (pre-launch response snapshots); `.ai/TECHNICAL_DEBT.md` (UW-1, UW-6, LF-1, DC-1, DC-2, DC-4 resolved; DC-3 relocated); `PROJECT_STATE.md`.
 - **Summary:** (1) OpenAI-compatible clients previously had no HTTP timeout — a hung endpoint pinned run goroutines forever; now 2 minutes. (2) `notify.TriggerFailure` gains its production caller: `StartFailureNotifier` subscribes to the global event stream and fires notifications + schedule webhooks on `run_failed`. (3) `go test -race` exposed that MemoryStore shared live `*TestRun` pointers with the execution goroutine; MemoryStore now clones on read/write, and handlers snapshot response fields before `launchRun`.
 - **Reason:** PROJECT_STATE deferred item (timeouts); TECHNICAL_DEBT UW-6 HIGH; race-safety is a production-grade requirement.
@@ -614,7 +614,7 @@
 
 - **Task:** Execute all recommended next actions: (1) commit the verified working tree as 7 atomic commits, (2) split `internal/api/server.go` into domain handler files, (3) add `Agent.Launch()` lifecycle integration tests, (4) wire optional Redis/Asynq durable run queue behind `QUEUE_ENABLED`.
 - **Source revision before change:** 7b54053
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/api/server.go` (3,617→~335 lines), new `internal/api/handlers_{projects,planning,runs,auth,schedules,releases,metrics,intelligence,reviews,admin}.go`, new `internal/agent/launch_test.go` (4 tests), new `internal/queue/run_worker.go` (`runs:execute` job), new `internal/api/queue_integration_test.go` (4 tests), `internal/config/config.go` (+`QueueEnabled`), `cmd/server/main.go` (queue wiring), `internal/queue/worker.go` (doc update), `.env.example`, `.ai/OPERATIONS.md`.
 - **Summary:** server.go split is a pure mechanical move (143 functions preserved, imports minimized per file). `launchRun` refactored into `buildAgent()` + queue-aware dispatch: when `SetRunEnqueuer` is installed (cmd/server, `QUEUE_ENABLED=true`), runs are enqueued to Redis/Asynq by ID and executed by an in-process worker via `ExecuteRunByID` (terminal states skipped for idempotent retries); enqueue failure falls back to in-process `Agent.Launch`, so no run is lost. Default path unchanged (goroutines + semaphore).
 - **Reason:** TECHNICAL_DEBT server.go size; PROJECT_STATE deferred item "Redis/Asynq wiring"; test-coverage gap on the canonical async execution path (ADR-001).
@@ -632,7 +632,7 @@
 
 - **Task:** Replace 3 divergent provider-routing sites with single `agent.NewLLM()` factory
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:**
   - `internal/agent/llm_factory.go` — New: unified `NewLLM(provider, model, apiKey, baseURL)` with explicit routing for all providers
   - `internal/api/server.go` — `launchRun` and `handleTestAIProvider` now use `agent.NewLLM()`
@@ -683,7 +683,7 @@
 
 - **Task:** Cache playwright.Install() with sync.Once instead of reinstalling on every run
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:**
   - `internal/agent/playwright_runner.go` — Added `sync.Once` guard; `playwright.Install()` now runs at most once per process lifetime
 - **Summary:** Replaced per-Run `playwright.Install()` call with `sync.Once`-protected install. First run triggers installation; subsequent runs skip it. Install errors are cached and returned immediately on all subsequent calls.
@@ -702,7 +702,7 @@
 
 - **Task:** Add EXPERIMENTAL tags to unwired or semi-connected packages
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:**
   - `internal/queue/worker.go` — EXPERIMENTAL: not wired to cmd/server
   - `internal/steel/client.go` — EXPERIMENTAL: not wired to cmd/server
@@ -725,7 +725,7 @@
 
 - **Task:** Strip `Credentials` from all run JSON responses
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:**
   - `internal/api/server.go` — Added `redactCredentials()` (shallow-copy → clear Credentials); applied at handleListRuns, handleGetRun, handleExportRun, handleCompare, handleExportCompare, handleMonitoringSummary
 - **Summary:** All API endpoints that return run data now strip `Credentials` before serialization. Uses shallow copy so the store's original is not mutated. Includes: list runs, get single run, export run JSON, compare two runs, export comparison, monitoring summary recent_runs.
@@ -744,7 +744,7 @@
 
 - **Task:** Cap per-run events at 10,000 to prevent unbounded memory growth
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:**
   - `internal/events/store.go` — Added `MaxEventsPerRun = 10_000` constant; Emit now trims oldest events on overflow (FIFO)
   - `internal/events/store_test.go` — Added `TestEmit_CapsPerRunEvents` (verifies cap + correct ID window)
@@ -764,7 +764,7 @@
 
 - **Task:** Rewrite PROJECT_STATE.md to reflect post-TODO resolution state; add historical prefaces to DISCOVERY.md and AUDIT.md
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:**
   - `PROJECT_STATE.md` — Complete rewrite: summary of all 22 resolved TODOs, current-complete inventory, remaining blockers, architecture invariants
   - `DISCOVERY.md` — Added ⚠️ HISTORICAL preface with pointer to TODO.md + CHANGELOG_AI.md
@@ -786,7 +786,7 @@
 
 - **Task:** Replace server-side `executeRealRun` with Agent pipeline via `Agent.Launch` + `RunPersistence`
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:**
   - `internal/agent/agent.go` — Added `RunPersistence` interface, `Store` field, `Launch` method, `save` helper, auto-save at all state transitions, `fail()` now sets `FinishedAt` and calls `save()`
   - `internal/api/server.go` — Replaced `launchRun` body with Agent constructor + `Launch` delegation; removed 96-line `executeRealRun`
@@ -814,7 +814,7 @@
 
 - **Task:** Reconstruct the never-committed `internal/planning` package from surviving repository evidence.
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/planning/types.go`, `internal/planning/memory.go`, `internal/planning/db.go` (new)
 - **Summary:** Reconstructed the missing `internal/planning` package that `internal/api/server.go:25,44,63,67` imports. Created three files following the established `internal/project` pattern: `types.go` (domain types + Store interface), `memory.go` (concurrency-safe in-memory implementation), `db.go` (PostgreSQL implementation faithful to migrations 004/005/008). Reconstruction evidence: surviving lifecycle test (`internal/api/planning_test.go`), ~70 handler call sites in `server.go`, frontend JSON contracts (`frontend/src/lib/api.ts`), and migration column definitions.
 - **Reason:** Unblocked compilation. The package never existed in any Git commit; `git log --all -- internal/planning/*` returned no results.
@@ -867,7 +867,7 @@
 
 - **Task:** Create the evidence-backed `.ai/` knowledge base requested by the engineering owner.
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `.ai/README.md`, `.ai/PROJECT_STATE.md`, `.ai/DISCOVERY.md`, `.ai/ARCHITECTURE.md`, `.ai/CODEMAP.md`, `.ai/DATABASE.md`, `.ai/API.md`, `.ai/DOMAIN.md`, `.ai/DEPENDENCIES.md`, `.ai/DECISIONS.md`, `.ai/ROADMAP.md`, `.ai/TODO.md`, `.ai/CHANGELOG_AI.md`
 - **Summary:** Added a tracked internal engineering knowledge base with explicit document ownership, authority order, evidence labels, source revision, current status, architecture/domain/code navigation, database/API/dependency references, ADR register, outcome roadmap, actionable backlog, and append-only AI provenance.
 - **Reason:** Root `DISCOVERY.md`, `AUDIT.md`, and `PROJECT_STATE.md` were untracked point-in-time artifacts with overlapping responsibilities; `README.md:32` pointed to an absent ignored `planning/` directory.
@@ -885,7 +885,7 @@
 
 - **Task:** Ensure run-now and due non-list schedules start execution rather than only creating idle rows
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/api/server.go`
 - **Summary:** Added `s.events.Emit` + `go s.executeRealRun(run)` after `CreateRun` in both `handleRunNow` and `ProcessDueSchedules` for non-list schedule paths. Both now follow the canonical three-step pattern (create → emit → goroutine) already used by `handleCreateRun` and the webhook handler. TestList schedules were already correctly triggering execution via `startTestListRuns` → `startTestCaseRun` → `go s.executeApprovedTestCaseRun`.
 - **Reason:** `handleRunNow` lines 2582-2602 and `ProcessDueSchedules` lines 2632-2653 created runs with `StateIdle` but never triggered async execution, leaving runs permanently idle.
@@ -903,7 +903,7 @@
 
 - **Task:** Add typed PATCH bodies, body limits, consistent JSON errors, server timeouts, and graceful shutdown
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/api/server.go`, `cmd/server/main.go`
 - **Summary:**
   - **Safe type assertions:** Replaced 10 naked `v.(string)`/`v.(bool)` in `handleUpdateSchedule` and `handleUpdateRelease` with `safeString()`/`safeBool()` helpers. Type-mismatched patch fields are silently ignored instead of panicking.
@@ -926,7 +926,7 @@
 
 - **Task:** Treat unresolved Playwright actions, mocked API execution, and simulated approved-case execution as explicitly labeled simulation
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/agent/agent.go`, `internal/agent/playwright_runner.go`, `internal/agent/api_runner.go`, `internal/api/server.go`
 - **Summary:**
   - **New `StateSimulated`** (`internal/agent/agent.go`): Added `State = "simulated"` to distinguish synthetic results from real execution outcomes.
@@ -949,7 +949,7 @@
 
 - **Task:** Correct conflicting documentation claims against tracked source behavior
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `frontend/src/lib/docs.ts`, `docs/docker.md`
 - **Summary:** Four evidence-backed corrections:
   - **State machine** (EN+ID): Added `simulated` state post-TODO-010.
@@ -971,7 +971,7 @@
 
 - **Task:** Write pending ADRs to unblock 7 blocked TODOs
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `.ai/ADR-001.md` through `.ai/ADR-005.md` (new)
 - **Summary:** Five architecture decision records written, each with context, decision, consequences, alternatives, and related cross-references:
   - **ADR-001 (Canonical Executor):** Unify 5 divergent execution paths into a single `Executor` type in `internal/agent`. All entry points become thin adapters. Unblocks TODO-007, TODO-008, TODO-010.
@@ -1006,7 +1006,7 @@
 
 - **Task:** Address remaining error-message disclosure from TODO-020 disclosure; add consumed env vars to .env.example
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/api/server.go`, `.env.example`
 - **Summary:**
   - **Error leak fixes:** Replaced all 3 `http.Error(w, err.Error(), ...)` call sites with `slog.Error(...)` + `writeJSONError(w, http.StatusInternalServerError, ...)`. Added `"log/slog"` import. Internal error details are now logged server-side only; clients see safe messages like "failed to start test list runs" and "ai generation failed".
@@ -1028,7 +1028,7 @@
 
 - **Task:** Implement browser-safe JWT cookie auth for dashboard REST and SSE access
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/auth/auth.go`, `internal/api/server.go`, `internal/config/config.go`, `cmd/server/main.go`
 - **Summary:**
   - **Login endpoint:** `POST /api/v1/auth/login` accepts `{"api_key": "..."}`, validates against `cfg.APIKey`, returns JWT as httpOnly cookie (`gotest_token`). This endpoint is outside the normal auth middleware so the browser can exchange its API key for a cookie session.
@@ -1051,7 +1051,7 @@
 
 - **Task:** Replace `--network host` with host-gateway; fix TypeScript injection in Playwright config
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `internal/runner/docker.go`
 - **Summary:**
   - **Network restriction:** Replaced `"--network", "host"` with `"--add-host", "host.docker.internal:host-gateway"`. The Docker test container no longer gets full host network access — only a single hostname mapping to reach the test target.
@@ -1071,7 +1071,7 @@
 
 - **Task:** Remove `class-variance-authority` from frontend dependencies after confirming zero source imports
 - **Source revision before change:** `7b54053642e614cccf5e1128defabd25ac88b437`
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** `frontend/package.json`
 - **Summary:** Removed `"class-variance-authority": "^0.7.1"` from `frontend/package.json` dependencies. Exhaustive grep across `frontend/src/` confirmed zero imports of `class-variance-authority` or `cva` in any TypeScript/JavaScript source file.
 - **Reason:** Declared dependency with no source imports — dead weight in `node_modules` and lockfile.
@@ -1144,7 +1144,7 @@ These files were generated by AI during the same repository-analysis session but
 
 - **Task:** Make all Phase 1 multi-language parsers build, pass tests, and be usable via the registry
 - **Source revision before change:** 9dbe9be
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** go.sum, internal/parser/go/parser.go, internal/parser/javascript/parser.go, internal/parser/python/parser.go, internal/parser/php/parser.go, internal/parser/php/parser_test.go, internal/parser/registry.go, internal/parser/registry_test.go, internal/parser/golang/parser.go (deleted)
 - **Summary:**
   - Added missing go.sum entries for github.com/smacker/go-tree-sitter (build was broken for all 4 parsers)
@@ -1170,7 +1170,7 @@ These files were generated by AI during the same repository-analysis session but
 
 - **Task:** Connect the previously unwired internal/github TestGenerationService to the live POST /api/v1/webhooks/github endpoint (Phase 3 foundation)
 - **Source revision before change:** 0ea3062
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** internal/github/test_generation.go, internal/github/test_generation_test.go, internal/github/integration.go, internal/webhook/github.go, internal/api/server.go, internal/api/webhook_testgen.go (new), internal/api/webhook_testgen_test.go (new)
 - **Summary:**
   - TestGenerationService now takes a launch callback instead of an *agent.Agent, so runs launched from webhooks go through the server's queue/concurrency/cancellation semantics (Server.launchRun)
@@ -1217,7 +1217,7 @@ These files were generated by AI during the same repository-analysis session but
 
 - **Task:** Code review of drift endpoints and webhook wiring; fix issues found
 - **Source revision before change:** c1d7a9d
-- **Source revision after change:** UNKNOWN until committed
+- **Source revision after change:** 6cf1c67
 - **Files modified:** internal/api/server.go, internal/drift/store.go, internal/drift/detector.go, internal/drift/detector_test.go
 - **Summary:**
   - Fixed race: drift detection ran in its own goroutine concurrently with the test-gen clone, so on-disk test checks could miss the repository (misclassifying outdated_test as missing_test). The webhook callback is already async (webhook/github.go go h.onPush), so detection now runs synchronously after processPushWithTestGen
