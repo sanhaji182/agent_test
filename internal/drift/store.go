@@ -86,16 +86,20 @@ func (s *Store) List(repository, driftType, status string) []Drift {
 	return result
 }
 
-func (s *Store) Get(id string) (*Drift, bool) {
+// HasPending reports whether a pending drift already exists for the same
+// repository, type, and file path (used to dedup repeated pushes).
+func (s *Store) HasPending(repository, driftType, filePath string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for i := range s.items {
-		if s.items[i].ID == id {
-			d := s.items[i]
-			return &d, true
+		if s.items[i].Status == StatusPending &&
+			s.items[i].Repository == repository &&
+			s.items[i].Type == driftType &&
+			s.items[i].FilePath == filePath {
+			return true
 		}
 	}
-	return nil, false
+	return false
 }
 
 // UpdateStatus transitions a drift to pending, fixed, or ignored.

@@ -86,6 +86,9 @@ func (d *Detector) DetectDrift(repository, repoDir string, added, modified, remo
 
 	result := make([]Drift, 0, len(found))
 	for _, dr := range found {
+		if d.store.HasPending(dr.Repository, dr.Type, dr.FilePath) {
+			continue
+		}
 		result = append(result, *d.store.Add(dr))
 	}
 	return result

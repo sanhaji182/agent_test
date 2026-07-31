@@ -341,11 +341,13 @@ func (s *Server) routes() {
 		webhookSecret = s.cfg.APIKey // fallback: existing deployments that only set API_KEY
 	}
 	wh := webhook.NewGitHubHandler(webhookSecret, func(event webhook.PushEvent) {
-		// Phase 3: detect code/test drift from the changed files.
-		go s.detectDriftFromPush(event)
 		// Prefer AI test generation (clone, parse, synthesize plan); fall
 		// back to a plain auto-triggered run when unavailable or failing.
-		if s.processPushWithTestGen(event) {
+		generated := s.processPushWithTestGen(event)
+		// Phase 3: detect code/test drift. Runs after the test-gen clone
+		// attempt so on-disk test checks see the repository.
+		s.detectDriftFromPush(event)
+		if generated {
 			return
 		}
 		run := &agent.TestRun{

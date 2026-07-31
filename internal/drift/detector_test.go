@@ -141,6 +141,31 @@ func TestDetectDriftOrphanedTest(t *testing.T) {
 	}
 }
 
+func TestDetectDriftDedupsPending(t *testing.T) {
+	store := NewStore()
+	det := NewDetector(store)
+
+	first := det.DetectDrift("acme/app", "", nil, []string{"internal/api/server.go"}, nil)
+	if len(first) != 1 {
+		t.Fatalf("expected 1 drift on first push, got %d", len(first))
+	}
+	second := det.DetectDrift("acme/app", "", nil, []string{"internal/api/server.go"}, nil)
+	if len(second) != 0 {
+		t.Fatalf("expected 0 new drifts on repeated push, got %d", len(second))
+	}
+	if got := store.List("acme/app", "", ""); len(got) != 1 {
+		t.Fatalf("expected 1 stored drift, got %d", len(got))
+	}
+
+	if _, err := store.UpdateStatus(first[0].ID, StatusFixed); err != nil {
+		t.Fatal(err)
+	}
+	third := det.DetectDrift("acme/app", "", nil, []string{"internal/api/server.go"}, nil)
+	if len(third) != 1 {
+		t.Fatalf("expected re-detection after fix, got %d", len(third))
+	}
+}
+
 func TestDetectDriftIgnoresNonSourceAndTraversal(t *testing.T) {
 	det := NewDetector(NewStore())
 	drifts := det.DetectDrift("acme/app", "/tmp/nonexistent",
