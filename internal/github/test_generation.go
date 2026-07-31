@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-go-golems/gotest-agent/internal/agent"
@@ -18,7 +18,7 @@ type TestGenerationService struct {
 	integration *Integration
 	parser      *parser.Registry
 	llm         ai.Client
-	agent       *agent.Agent
+	launch      func(*agent.TestRun)
 	store       agent.RunPersistence
 }
 
@@ -27,14 +27,14 @@ func NewTestGenerationService(
 	integration *Integration,
 	parserRegistry *parser.Registry,
 	llmClient ai.Client,
-	testAgent *agent.Agent,
+	launch func(*agent.TestRun),
 	store agent.RunPersistence,
 ) *TestGenerationService {
 	return &TestGenerationService{
 		integration: integration,
 		parser:      parserRegistry,
 		llm:         llmClient,
-		agent:       testAgent,
+		launch:      launch,
 		store:       store,
 	}
 }
@@ -43,9 +43,17 @@ func NewTestGenerationService(
 func (s *TestGenerationService) ProcessPushEvent(ctx context.Context, pushEvent *PushEvent) error {
 	log.Printf("Processing push event for %s (ref: %s)", pushEvent.Repository.FullName, pushEvent.Ref)
 
+	if !strings.HasPrefix(pushEvent.Ref, "refs/heads/") {
+		log.Printf("Skipping non-branch push: %s", pushEvent.Ref)
+		return nil
+	}
+	branch := strings.TrimPrefix(pushEvent.Ref, "refs/heads/")
+
 	// Clone or pull repository
-	repoDir := filepath.Join(s.integration.cloneDir, pushEvent.Repository.FullName)
-	branch := pushEvent.Ref
+	repoDir, err := s.integration.repoPath(pushEvent.Repository.FullName)
+	if err != nil {
+		return err
+	}
 	if err := s.integration.ensureRepository(ctx, pushEvent.Repository.FullName, repoDir, branch); err != nil {
 		return fmt.Errorf("failed to ensure repository: %w", err)
 	}
@@ -102,7 +110,9 @@ func (s *TestGenerationService) ProcessPushEvent(ctx context.Context, pushEvent 
 
 	// Launch the test execution
 	log.Printf("Launching test execution for run %s", testRun.ID)
-	s.agent.Launch(testRun)
+	if s.launch != nil {
+		s.launch(testRun)
+	}
 
 	return nil
 }
@@ -116,7 +126,10 @@ func (s *TestGenerationService) ProcessPullRequestEvent(ctx context.Context, prE
 	switch prEvent.Action {
 	case "opened", "synchronize", "reopened":
 		// Clone repository and checkout PR branch
-		repoDir := filepath.Join(s.integration.cloneDir, prEvent.Repository.FullName)
+		repoDir, err := s.integration.repoPath(prEvent.Repository.FullName)
+		if err != nil {
+			return err
+		}
 		if err := s.integration.ensureRepository(ctx, prEvent.Repository.FullName, repoDir, prEvent.PullRequest.Head.Ref); err != nil {
 			return fmt.Errorf("failed to ensure repository: %w", err)
 		}
@@ -159,7 +172,9 @@ func (s *TestGenerationService) ProcessPullRequestEvent(ctx context.Context, prE
 
 		// Launch the test execution
 		log.Printf("Launching test execution for PR #%d, run %s", prEvent.Number, testRun.ID)
-		s.agent.Launch(testRun)
+		if s.launch != nil {
+			s.launch(testRun)
+		}
 
 	case "closed":
 		if prEvent.PullRequest.Merged {

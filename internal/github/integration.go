@@ -24,6 +24,17 @@ func NewIntegration(webhookSecret string, cloneDir string) *Integration {
 	}
 }
 
+// repoPath resolves the clone directory for a repository full name from a
+// webhook payload, rejecting names that would escape the base clone dir.
+func (i *Integration) repoPath(repoFullName string) (string, error) {
+	base := filepath.Clean(i.cloneDir)
+	dir := filepath.Clean(filepath.Join(base, repoFullName))
+	if dir == base || !strings.HasPrefix(dir, base+string(filepath.Separator)) {
+		return "", fmt.Errorf("invalid repository name: %q", repoFullName)
+	}
+	return dir, nil
+}
+
 // ProcessWebhookEvent processes a webhook event and triggers appropriate actions
 func (i *Integration) ProcessWebhookEvent(ctx context.Context, event *WebhookEvent) error {
 	switch event.Type {
@@ -62,7 +73,10 @@ func (i *Integration) processPushEvent(ctx context.Context, pushEvent *PushEvent
 	branch := strings.TrimPrefix(pushEvent.Ref, "refs/heads/")
 
 	// Clone or pull repository
-	repoDir := filepath.Join(i.cloneDir, pushEvent.Repository.FullName)
+	repoDir, err := i.repoPath(pushEvent.Repository.FullName)
+	if err != nil {
+		return err
+	}
 	if err := i.ensureRepository(ctx, pushEvent.Repository.FullName, repoDir, branch); err != nil {
 		return fmt.Errorf("failed to ensure repository: %w", err)
 	}
@@ -98,7 +112,10 @@ func (i *Integration) processPullRequestEvent(ctx context.Context, prEvent *Pull
 	switch prEvent.Action {
 	case "opened", "synchronize", "reopened":
 		// Clone repository and checkout PR branch
-		repoDir := filepath.Join(i.cloneDir, prEvent.Repository.FullName)
+		repoDir, err := i.repoPath(prEvent.Repository.FullName)
+		if err != nil {
+			return err
+		}
 		if err := i.ensureRepository(ctx, prEvent.Repository.FullName, repoDir, prEvent.PullRequest.Head.Ref); err != nil {
 			return fmt.Errorf("failed to ensure repository: %w", err)
 		}

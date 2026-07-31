@@ -333,7 +333,11 @@ func (s *Server) routes() {
 		webhookSecret = s.cfg.APIKey // fallback: existing deployments that only set API_KEY
 	}
 	wh := webhook.NewGitHubHandler(webhookSecret, func(event webhook.PushEvent) {
-		// Auto-trigger test run on github push event
+		// Prefer AI test generation (clone, parse, synthesize plan); fall
+		// back to a plain auto-triggered run when unavailable or failing.
+		if s.processPushWithTestGen(event) {
+			return
+		}
 		run := &agent.TestRun{
 			ID:           uuid.New().String(),
 			ProjectPath:  event.Repository.CloneURL,

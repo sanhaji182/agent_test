@@ -24,6 +24,7 @@ type PushEvent struct {
 	Ref        string     `json:"ref"`
 	Repository Repository `json:"repository"`
 	HeadCommit Commit     `json:"head_commit"`
+	Commits    []Commit   `json:"commits"`
 }
 
 // Repository info dari GitHub
@@ -34,8 +35,11 @@ type Repository struct {
 
 // Commit info dari push event
 type Commit struct {
-	ID      string `json:"id"`
-	Message string `json:"message"`
+	ID       string   `json:"id"`
+	Message  string   `json:"message"`
+	Added    []string `json:"added"`
+	Removed  []string `json:"removed"`
+	Modified []string `json:"modified"`
 }
 
 // NewGitHubHandler membuat handler baru dengan secret dan callback

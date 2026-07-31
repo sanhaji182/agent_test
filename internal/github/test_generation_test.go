@@ -72,9 +72,8 @@ func TestNewTestGenerationService(t *testing.T) {
 	parserReg := parser.NewRegistry()
 	llmClient := &mockLLMClient{}
 	store := &mockTestStore{runs: make(map[string]*agent.TestRun)}
-	testAgent := agent.New(nil, nil, 3)
 
-	service := NewTestGenerationService(integration, parserReg, llmClient, testAgent, store)
+	service := NewTestGenerationService(integration, parserReg, llmClient, func(*agent.TestRun) {}, store)
 
 	if service == nil {
 		t.Fatal("Expected service to be created, got nil")
@@ -162,9 +161,8 @@ func TestProcessPushEventWithNoChangedFiles(t *testing.T) {
 	parserReg := parser.NewRegistry()
 	llmClient := &mockLLMClient{}
 	store := &mockTestStore{runs: make(map[string]*agent.TestRun)}
-	testAgent := agent.New(nil, nil, 3)
 
-	service := NewTestGenerationService(integration, parserReg, llmClient, testAgent, store)
+	service := NewTestGenerationService(integration, parserReg, llmClient, func(*agent.TestRun) {}, store)
 
 	// Note: Full integration test would require mocking git clone operations
 	// For now, we just verify the service can be created without errors
@@ -181,9 +179,8 @@ func TestProcessPullRequestEventWithNoChangedFiles(t *testing.T) {
 	parserReg := parser.NewRegistry()
 	llmClient := &mockLLMClient{}
 	store := &mockTestStore{runs: make(map[string]*agent.TestRun)}
-	testAgent := agent.New(nil, nil, 3)
 
-	service := NewTestGenerationService(integration, parserReg, llmClient, testAgent, store)
+	service := NewTestGenerationService(integration, parserReg, llmClient, func(*agent.TestRun) {}, store)
 
 	if service == nil {
 		t.Fatal("Expected service to be created")
