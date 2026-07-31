@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/go-go-golems/gotest-agent/internal/parser"
-	"github.com/go-go-golems/gotest-agent/internal/parser/golang"
+	golang "github.com/go-go-golems/gotest-agent/internal/parser/go"
 	"github.com/go-go-golems/gotest-agent/internal/parser/javascript"
 	"github.com/go-go-golems/gotest-agent/internal/parser/php"
 	"github.com/go-go-golems/gotest-agent/internal/parser/python"
