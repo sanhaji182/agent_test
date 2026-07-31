@@ -62,6 +62,11 @@ func (p *Parser) Parse(ctx context.Context, rootDir string) (*types.Codebase, er
 	return codebase, nil
 }
 
+// DetectFramework detects the Python framework used
+func (p *Parser) DetectFramework(rootDir string) (string, error) {
+	return p.detectFramework(rootDir), nil
+}
+
 func (p *Parser) detectFramework(rootDir string) string {
 	// Check for Django (manage.py exists)
 	if _, err := os.Stat(filepath.Join(rootDir, "manage.py")); err == nil {
@@ -137,7 +142,7 @@ func (p *Parser) extractDjangoRoutesFromFile(ctx context.Context, filePath strin
 		return nil, err
 	}
 
-	tree, err := p.treeSitterParser.ParseCtx(ctx, content, nil)
+	tree, err := p.treeSitterParser.ParseCtx(ctx, nil, content)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +184,7 @@ func (p *Parser) extractDjangoRoute(node *sitter.Node, content []byte, filePath 
 	}
 
 	// First argument should be the path (string)
-	pathArg := argumentsNode.Child(0)
+	pathArg := argumentsNode.NamedChild(0)
 	if pathArg == nil {
 		return nil
 	}
@@ -187,9 +192,9 @@ func (p *Parser) extractDjangoRoute(node *sitter.Node, content []byte, filePath 
 	path := ""
 	if pathArg.Type() == "string" {
 		path = string(content[pathArg.StartByte():pathArg.EndByte()])
-		// Remove quotes and r prefix
-		path = strings.Trim(path, "'\"")
+		// Remove r prefix and quotes
 		path = strings.TrimPrefix(path, "r")
+		path = strings.Trim(path, "'\"")
 	}
 
 	if path == "" {
@@ -198,8 +203,8 @@ func (p *Parser) extractDjangoRoute(node *sitter.Node, content []byte, filePath 
 
 	// Extract handler (second argument)
 	handler := ""
-	if argumentsNode.ChildCount() > 1 {
-		handlerArg := argumentsNode.Child(1)
+	if argumentsNode.NamedChildCount() > 1 {
+		handlerArg := argumentsNode.NamedChild(1)
 		handler = string(content[handlerArg.StartByte():handlerArg.EndByte()])
 	}
 
@@ -245,7 +250,7 @@ func (p *Parser) extractDjangoModelsFromFile(ctx context.Context, filePath strin
 		return nil, err
 	}
 
-	tree, err := p.treeSitterParser.ParseCtx(ctx, content, nil)
+	tree, err := p.treeSitterParser.ParseCtx(ctx, nil, content)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +286,7 @@ func (p *Parser) extractDjangoModel(node *sitter.Node, content []byte, filePath 
 	}
 
 	isModel := false
-	for i := 0; i < superclassesNode.ChildCount(); i++ {
+	for i := 0; i < int(superclassesNode.ChildCount()); i++ {
 		superclass := superclassesNode.Child(i)
 		superclassName := string(content[superclass.StartByte():superclass.EndByte()])
 		if superclassName == "models.Model" || superclassName == "Model" {
@@ -300,7 +305,7 @@ func (p *Parser) extractDjangoModel(node *sitter.Node, content []byte, filePath 
 		return nil
 	}
 
-	fields := []string{}
+	fields := []types.Field{}
 	p.traverseNode(bodyNode, func(n *sitter.Node) {
 		if n.Type() == "expression_statement" {
 			assignment := n.Child(0)
@@ -308,7 +313,7 @@ func (p *Parser) extractDjangoModel(node *sitter.Node, content []byte, filePath 
 				left := assignment.ChildByFieldName("left")
 				if left != nil {
 					fieldName := string(content[left.StartByte():left.EndByte()])
-					fields = append(fields, fieldName)
+					fields = append(fields, types.Field{Name: fieldName})
 				}
 			}
 		}
@@ -355,7 +360,7 @@ func (p *Parser) extractDjangoViewsFromFile(ctx context.Context, filePath string
 		return nil, err
 	}
 
-	tree, err := p.treeSitterParser.ParseCtx(ctx, content, nil)
+	tree, err := p.treeSitterParser.ParseCtx(ctx, nil, content)
 	if err != nil {
 		return nil, err
 	}
@@ -386,16 +391,17 @@ func (p *Parser) extractDjangoView(node *sitter.Node, content []byte, filePath s
 
 	// Check if first parameter is 'request'
 	parametersNode := node.ChildByFieldName("parameters")
-	if parametersNode == nil || parametersNode.ChildCount() == 0 {
+	if parametersNode == nil || parametersNode.NamedChildCount() == 0 {
 		return nil
 	}
 
-	firstParam := parametersNode.Child(0)
-	if firstParam.Type() == "identifier" {
-		paramName := string(content[firstParam.StartByte():firstParam.EndByte()])
-		if paramName != "request" && paramName != "self" {
-			return nil
-		}
+	firstParam := parametersNode.NamedChild(0)
+	if firstParam == nil || firstParam.Type() != "identifier" {
+		return nil
+	}
+	paramName := string(content[firstParam.StartByte():firstParam.EndByte()])
+	if paramName != "request" && paramName != "self" {
+		return nil
 	}
 
 	line := p.getNodeLine(node, content)
@@ -440,7 +446,7 @@ func (p *Parser) extractFlaskRoutesFromFile(ctx context.Context, filePath string
 		return nil, err
 	}
 
-	tree, err := p.treeSitterParser.ParseCtx(ctx, content, nil)
+	tree, err := p.treeSitterParser.ParseCtx(ctx, nil, content)
 	if err != nil {
 		return nil, err
 	}
@@ -508,7 +514,7 @@ func (p *Parser) extractFlaskRoute(node *sitter.Node, content []byte, filePath s
 
 	// Extract methods from decorator arguments
 	methods := []string{"GET"} // Default to GET
-	for i := 1; i < argumentsNode.ChildCount(); i++ {
+	for i := 1; i < int(argumentsNode.ChildCount()); i++ {
 		arg := argumentsNode.Child(i)
 		if arg.Type() == "keyword_argument" {
 			nameNode := arg.ChildByFieldName("name")
@@ -519,7 +525,7 @@ func (p *Parser) extractFlaskRoute(node *sitter.Node, content []byte, filePath s
 					valueNode := arg.ChildByFieldName("value")
 					if valueNode != nil && valueNode.Type() == "list" {
 						methods = []string{}
-						for j := 0; j < valueNode.ChildCount(); j++ {
+						for j := 0; j < int(valueNode.ChildCount()); j++ {
 							methodArg := valueNode.Child(j)
 							if methodArg.Type() == "string" {
 								method := string(content[methodArg.StartByte():methodArg.EndByte()])
@@ -597,7 +603,7 @@ func (p *Parser) extractFastAPIRoutesFromFile(ctx context.Context, filePath stri
 		return nil, err
 	}
 
-	tree, err := p.treeSitterParser.ParseCtx(ctx, content, nil)
+	tree, err := p.treeSitterParser.ParseCtx(ctx, nil, content)
 	if err != nil {
 		return nil, err
 	}
@@ -707,7 +713,7 @@ func (p *Parser) traverseNode(node *sitter.Node, visit func(*sitter.Node)) {
 		return
 	}
 	visit(node)
-	for i := 0; i < node.ChildCount(); i++ {
+	for i := 0; i < int(node.ChildCount()); i++ {
 		p.traverseNode(node.Child(i), visit)
 	}
 }

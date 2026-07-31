@@ -58,6 +58,11 @@ func (p *Parser) Parse(ctx context.Context, rootDir string) (*types.Codebase, er
 	return codebase, nil
 }
 
+// DetectFramework detects the PHP framework used
+func (p *Parser) DetectFramework(rootDir string) (string, error) {
+	return p.detectFramework(rootDir), nil
+}
+
 func (p *Parser) detectFramework(rootDir string) string {
 	// Check for Laravel
 	if _, err := os.Stat(filepath.Join(rootDir, "artisan")); err == nil {
@@ -101,14 +106,14 @@ func (p *Parser) extractRoutesFromFile(ctx context.Context, filePath string) ([]
 		return nil, err
 	}
 
-	tree, err := p.treeSitterParser.ParseCtx(ctx, content, nil)
+	tree, err := p.treeSitterParser.ParseCtx(ctx, nil, content)
 	if err != nil {
 		return nil, err
 	}
 
 	routes := []types.Route{}
 	p.traverseNode(tree.RootNode(), func(node *sitter.Node) {
-		if node.Type() == "function_call_expression" {
+		if node.Type() == "scoped_call_expression" {
 			route := p.extractLaravelRoute(node, content, filePath)
 			if route != nil {
 				routes = append(routes, *route)
@@ -122,33 +127,25 @@ func (p *Parser) extractRoutesFromFile(ctx context.Context, filePath string) ([]
 func (p *Parser) extractLaravelRoute(node *sitter.Node, content []byte, filePath string) *types.Route {
 	// Laravel route pattern: Route::get('/path', [Controller::class, 'method'])
 	// or Route::get('/path', function() { ... })
+	// In tree-sitter-php this is a scoped_call_expression with fields:
+	// scope ("Route"), name ("get"), arguments.
 
-	functionNode := node.ChildByFieldName("function")
-	if functionNode == nil {
-		return nil
-	}
-
-	// Check if it's a scoped property access (Route::get)
-	if functionNode.Type() != "scoped_property_access_expression" {
-		return nil
-	}
-
-	scopeNode := functionNode.ChildByFieldName("scope")
+	scopeNode := node.ChildByFieldName("scope")
 	if scopeNode == nil || scopeNode.Type() != "name" {
 		return nil
 	}
 
-	scopeName := string(content[scopeNode.StartByte():scopeName.EndByte()])
+	scopeName := string(content[scopeNode.StartByte():scopeNode.EndByte()])
 	if scopeName != "Route" {
 		return nil
 	}
 
-	propertyNode := functionNode.ChildByFieldName("property")
-	if propertyNode == nil || propertyNode.Type() != "name" {
+	methodNode := node.ChildByFieldName("name")
+	if methodNode == nil || methodNode.Type() != "name" {
 		return nil
 	}
 
-	method := string(content[propertyNode.StartByte():propertyNode.EndByte()])
+	method := string(content[methodNode.StartByte():methodNode.EndByte()])
 
 	// Map Laravel methods to HTTP methods
 	httpMethod := ""
@@ -176,14 +173,17 @@ func (p *Parser) extractLaravelRoute(node *sitter.Node, content []byte, filePath
 	}
 
 	// First argument should be the path (string)
-	pathArg := argumentsNode.Child(0)
+	pathArg := argumentsNode.NamedChild(0)
 	if pathArg == nil {
 		return nil
 	}
 
 	// Unwrap argument node
 	if pathArg.Type() == "argument" {
-		pathArg = pathArg.ChildByFieldName("value")
+		pathArg = pathArg.NamedChild(0)
+	}
+	if pathArg == nil {
+		return nil
 	}
 
 	path := ""
@@ -199,10 +199,10 @@ func (p *Parser) extractLaravelRoute(node *sitter.Node, content []byte, filePath
 
 	// Extract handler (second argument)
 	handler := ""
-	if argumentsNode.ChildCount() > 1 {
-		handlerArg := argumentsNode.Child(1)
-		if handlerArg.Type() == "argument" {
-			handlerArg = handlerArg.ChildByFieldName("value")
+	if argumentsNode.NamedChildCount() > 1 {
+		handlerArg := argumentsNode.NamedChild(1)
+		if handlerArg.Type() == "argument" && handlerArg.NamedChildCount() > 0 {
+			handlerArg = handlerArg.NamedChild(0)
 		}
 		handler = string(content[handlerArg.StartByte():handlerArg.EndByte()])
 	}
@@ -219,12 +219,34 @@ func (p *Parser) extractLaravelRoute(node *sitter.Node, content []byte, filePath
 					// Extract middleware names from arguments
 					args := n.ChildByFieldName("arguments")
 					if args != nil {
-						for i := 0; i < args.ChildCount(); i++ {
-							arg := args.Child(i)
-							if arg.Type() == "argument" {
-								value := arg.ChildByFieldName("value")
-								mwName := string(content[value.StartByte():value.EndByte()])
-								mwName = strings.Trim(mwName, "'\"")
+						for i := 0; i < int(args.NamedChildCount()); i++ {
+							arg := args.NamedChild(i)
+							if arg.Type() != "argument" {
+								continue
+							}
+							value := arg.NamedChild(0)
+							if value == nil {
+								continue
+							}
+							if value.Type() == "array_creation_expression" {
+								// ->middleware(['auth', 'verified'])
+								for j := 0; j < int(value.NamedChildCount()); j++ {
+									elem := value.NamedChild(j)
+									if elem.Type() != "array_element_initializer" {
+										continue
+									}
+									elemValue := elem.NamedChild(0)
+									if elemValue == nil {
+										continue
+									}
+									mwName := strings.Trim(p.getNodeContent(elemValue, content), "'\"")
+									if mwName != "" {
+										middleware = append(middleware, mwName)
+									}
+								}
+							} else {
+								// ->middleware('auth')
+								mwName := strings.Trim(p.getNodeContent(value, content), "'\"")
 								if mwName != "" {
 									middleware = append(middleware, mwName)
 								}
@@ -279,7 +301,7 @@ func (p *Parser) extractModelsFromFile(ctx context.Context, filePath string) ([]
 		return nil, err
 	}
 
-	tree, err := p.treeSitterParser.ParseCtx(ctx, content, nil)
+	tree, err := p.treeSitterParser.ParseCtx(ctx, nil, content)
 	if err != nil {
 		return nil, err
 	}
@@ -312,43 +334,31 @@ func (p *Parser) extractLaravelModel(node *sitter.Node, content []byte, filePath
 	}
 
 	// Extract table name if specified
+	// tree-sitter-php: property_declaration > property_element >
+	//   variable_name ("$table") + property_initializer ("= 'users'")
 	table := ""
-	p.traverseNode(bodyNode, func(n *sitter.Node) {
-		if n.Type() == "property_declaration" {
-			propName := p.getNodeContent(n.ChildByFieldName("name"), content)
-			if propName == "table" {
-				value := n.ChildByFieldName("value")
-				if value != nil {
-					table = string(content[value.StartByte():value.EndByte()])
-					table = strings.Trim(table, "'\"")
-				}
-			}
-		}
-	})
+	if value := p.findPropertyValue(bodyNode, "table", content); value != nil {
+		table = strings.Trim(p.getNodeContent(value, content), "'\"")
+	}
 
 	// Extract fillable fields
-	fillable := []string{}
-	p.traverseNode(bodyNode, func(n *sitter.Node) {
-		if n.Type() == "property_declaration" {
-			propName := p.getNodeContent(n.ChildByFieldName("name"), content)
-			if propName == "fillable" {
-				value := n.ChildByFieldName("value")
-				if value != nil && value.Type() == "array_creation_expression" {
-					for i := 0; i < value.ChildCount(); i++ {
-						elem := value.Child(i)
-						if elem.Type() == "array_element_initializer" {
-							fieldValue := elem.Child(0)
-							fieldName := string(content[fieldValue.StartByte():fieldValue.EndByte()])
-							fieldName = strings.Trim(fieldName, "'\"")
-							if fieldName != "" {
-								fillable = append(fillable, fieldName)
-							}
-						}
-					}
-				}
+	fillable := []types.Field{}
+	if value := p.findPropertyValue(bodyNode, "fillable", content); value != nil && value.Type() == "array_creation_expression" {
+		for i := 0; i < int(value.NamedChildCount()); i++ {
+			elem := value.NamedChild(i)
+			if elem.Type() != "array_element_initializer" {
+				continue
+			}
+			fieldValue := elem.NamedChild(0)
+			if fieldValue == nil {
+				continue
+			}
+			fieldName := strings.Trim(p.getNodeContent(fieldValue, content), "'\"")
+			if fieldName != "" {
+				fillable = append(fillable, types.Field{Name: fieldName})
 			}
 		}
-	})
+	}
 
 	line := p.getNodeLine(node, content)
 
@@ -359,6 +369,37 @@ func (p *Parser) extractLaravelModel(node *sitter.Node, content []byte, filePath
 		File:     filePath,
 		Line:     line,
 	}
+}
+
+// findPropertyValue searches a class body for a property named propName
+// (without the leading $) and returns the value node of its initializer.
+func (p *Parser) findPropertyValue(bodyNode *sitter.Node, propName string, content []byte) *sitter.Node {
+	var result *sitter.Node
+	p.traverseNode(bodyNode, func(n *sitter.Node) {
+		if result != nil || n.Type() != "property_element" {
+			return
+		}
+		var varName *sitter.Node
+		var initializer *sitter.Node
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			child := n.NamedChild(i)
+			switch child.Type() {
+			case "variable_name":
+				varName = child
+			case "property_initializer":
+				initializer = child
+			}
+		}
+		if varName == nil || initializer == nil {
+			return
+		}
+		name := strings.TrimPrefix(p.getNodeContent(varName, content), "$")
+		if name != propName {
+			return
+		}
+		result = initializer.NamedChild(0)
+	})
+	return result
 }
 
 func (p *Parser) parseLaravelControllers(ctx context.Context, rootDir string, codebase *types.Codebase) error {
@@ -392,7 +433,7 @@ func (p *Parser) extractHandlersFromFile(ctx context.Context, filePath string) (
 		return nil, err
 	}
 
-	tree, err := p.treeSitterParser.ParseCtx(ctx, content, nil)
+	tree, err := p.treeSitterParser.ParseCtx(ctx, nil, content)
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +479,7 @@ func (p *Parser) extractControllerMethod(node *sitter.Node, content []byte, file
 
 	// Check visibility
 	visibility := "public"
-	for i := 0; i < node.ChildCount(); i++ {
+	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
 		if child.Type() == "visibility_modifier" {
 			visibility = string(content[child.StartByte():child.EndByte()])
@@ -471,7 +512,7 @@ func (p *Parser) traverseNode(node *sitter.Node, visit func(*sitter.Node)) {
 		return
 	}
 	visit(node)
-	for i := 0; i < node.ChildCount(); i++ {
+	for i := 0; i < int(node.ChildCount()); i++ {
 		p.traverseNode(node.Child(i), visit)
 	}
 }

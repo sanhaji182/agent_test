@@ -141,7 +141,7 @@ func (p *Parser) parseFile(ctx context.Context, filePath string, codebase *types
 	}
 
 	// Parse with tree-sitter
-	tree, err := p.sitterParser.ParseCtx(ctx, content, nil)
+	tree, err := p.sitterParser.ParseCtx(ctx, nil, content)
 	if err != nil {
 		return fmt.Errorf("failed to parse: %w", err)
 	}
@@ -220,12 +220,12 @@ func (p *Parser) parseRouteCall(node *sitter.Node, content []byte, filePath stri
 
 	// Get arguments
 	argsNode := node.ChildByFieldName("arguments")
-	if argsNode == nil || argsNode.ChildCount() < 2 {
+	if argsNode == nil || argsNode.NamedChildCount() < 2 {
 		return nil
 	}
 
 	// First argument should be the path (string)
-	pathNode := argsNode.Child(0)
+	pathNode := argsNode.NamedChild(0)
 	if pathNode.Type() != "string" {
 		return nil
 	}
@@ -236,8 +236,8 @@ func (p *Parser) parseRouteCall(node *sitter.Node, content []byte, filePath stri
 
 	// Remaining arguments are middleware/handlers
 	var middleware []string
-	for i := 1; i < int(argsNode.ChildCount()); i++ {
-		argNode := argsNode.Child(i)
+	for i := 1; i < int(argsNode.NamedChildCount()); i++ {
+		argNode := argsNode.NamedChild(i)
 		if argNode.Type() == "identifier" {
 			name := string(content[argNode.StartByte():argNode.EndByte()])
 			middleware = append(middleware, name)

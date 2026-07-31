@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/go-go-golems/gotest-agent/internal/parser/types"
 )
 
 func TestPHPParser_SupportedLanguages(t *testing.T) {
@@ -241,41 +243,41 @@ class Post extends Model
 	}
 
 	// Check User model
-	var userModel *Model
+	var foundUser *types.Model
 	for i := range codebase.Models {
 		if codebase.Models[i].Name == "User" {
-			userModel = &codebase.Models[i]
+			foundUser = &codebase.Models[i]
 			break
 		}
 	}
 
-	if userModel == nil {
+	if foundUser == nil {
 		t.Fatal("Expected User model")
 	}
 
-	if userModel.Table != "users" {
-		t.Errorf("Expected table 'users', got %s", userModel.Table)
+	if foundUser.Table != "users" {
+		t.Errorf("Expected table 'users', got %s", foundUser.Table)
 	}
 
-	if len(userModel.Fields) != 3 {
-		t.Errorf("Expected 3 fillable fields, got %d", len(userModel.Fields))
+	if len(foundUser.Fields) != 3 {
+		t.Errorf("Expected 3 fillable fields, got %d", len(foundUser.Fields))
 	}
 
 	// Check Post model
-	var postModel *Model
+	var foundPost *types.Model
 	for i := range codebase.Models {
 		if codebase.Models[i].Name == "Post" {
-			postModel = &codebase.Models[i]
+			foundPost = &codebase.Models[i]
 			break
 		}
 	}
 
-	if postModel == nil {
+	if foundPost == nil {
 		t.Fatal("Expected Post model")
 	}
 
-	if len(postModel.Fields) != 3 {
-		t.Errorf("Expected 3 fillable fields, got %d", len(postModel.Fields))
+	if len(foundPost.Fields) != 3 {
+		t.Errorf("Expected 3 fillable fields, got %d", len(foundPost.Fields))
 	}
 }
 

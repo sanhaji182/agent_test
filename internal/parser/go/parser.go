@@ -138,7 +138,7 @@ func (p *Parser) parseFile(ctx context.Context, filePath string, codebase *types
 	}
 
 	// Parse with tree-sitter
-	tree, err := p.sitterParser.ParseCtx(ctx, content, nil)
+	tree, err := p.sitterParser.ParseCtx(ctx, nil, content)
 	if err != nil {
 		return fmt.Errorf("failed to parse: %w", err)
 	}
@@ -230,12 +230,12 @@ func (p *Parser) parseChiRouteCall(node *sitter.Node, content []byte, filePath s
 	}
 
 	argsNode := node.ChildByFieldName("arguments")
-	if argsNode == nil || argsNode.ChildCount() < 2 {
+	if argsNode == nil || argsNode.NamedChildCount() < 2 {
 		return nil
 	}
 
 	// First argument is path
-	pathNode := argsNode.Child(0)
+	pathNode := argsNode.NamedChild(0)
 	if pathNode.Type() != "interpreted_string_literal" {
 		return nil
 	}
@@ -245,8 +245,8 @@ func (p *Parser) parseChiRouteCall(node *sitter.Node, content []byte, filePath s
 
 	// Remaining arguments are middleware/handlers
 	var middleware []string
-	for i := 1; i < int(argsNode.ChildCount()); i++ {
-		argNode := argsNode.Child(i)
+	for i := 1; i < int(argsNode.NamedChildCount()); i++ {
+		argNode := argsNode.NamedChild(i)
 		if argNode.Type() == "identifier" {
 			name := string(content[argNode.StartByte():argNode.EndByte()])
 			middleware = append(middleware, name)
@@ -321,11 +321,11 @@ func (p *Parser) parseGinRouteCall(node *sitter.Node, content []byte, filePath s
 	}
 
 	argsNode := node.ChildByFieldName("arguments")
-	if argsNode == nil || argsNode.ChildCount() < 2 {
+	if argsNode == nil || argsNode.NamedChildCount() < 2 {
 		return nil
 	}
 
-	pathNode := argsNode.Child(0)
+	pathNode := argsNode.NamedChild(0)
 	if pathNode.Type() != "interpreted_string_literal" {
 		return nil
 	}
@@ -334,8 +334,8 @@ func (p *Parser) parseGinRouteCall(node *sitter.Node, content []byte, filePath s
 	path = strings.Trim(path, "\"")
 
 	var middleware []string
-	for i := 1; i < int(argsNode.ChildCount()); i++ {
-		argNode := argsNode.Child(i)
+	for i := 1; i < int(argsNode.NamedChildCount()); i++ {
+		argNode := argsNode.NamedChild(i)
 		if argNode.Type() == "identifier" {
 			name := string(content[argNode.StartByte():argNode.EndByte()])
 			middleware = append(middleware, name)
@@ -435,11 +435,11 @@ func (p *Parser) parseFiberRouteCall(node *sitter.Node, content []byte, filePath
 	}
 
 	argsNode := node.ChildByFieldName("arguments")
-	if argsNode == nil || argsNode.ChildCount() < 2 {
+	if argsNode == nil || argsNode.NamedChildCount() < 2 {
 		return nil
 	}
 
-	pathNode := argsNode.Child(0)
+	pathNode := argsNode.NamedChild(0)
 	if pathNode.Type() != "interpreted_string_literal" {
 		return nil
 	}
@@ -448,8 +448,8 @@ func (p *Parser) parseFiberRouteCall(node *sitter.Node, content []byte, filePath
 	path = strings.Trim(path, "\"")
 
 	var middleware []string
-	for i := 1; i < int(argsNode.ChildCount()); i++ {
-		argNode := argsNode.Child(i)
+	for i := 1; i < int(argsNode.NamedChildCount()); i++ {
+		argNode := argsNode.NamedChild(i)
 		if argNode.Type() == "identifier" {
 			name := string(content[argNode.StartByte():argNode.EndByte()])
 			middleware = append(middleware, name)
@@ -511,11 +511,11 @@ func (p *Parser) parseGorillaRouteCall(node *sitter.Node, content []byte, filePa
 	}
 
 	argsNode := node.ChildByFieldName("arguments")
-	if argsNode == nil || argsNode.ChildCount() < 2 {
+	if argsNode == nil || argsNode.NamedChildCount() < 2 {
 		return nil
 	}
 
-	pathNode := argsNode.Child(0)
+	pathNode := argsNode.NamedChild(0)
 	if pathNode.Type() != "interpreted_string_literal" {
 		return nil
 	}
@@ -556,7 +556,7 @@ func (p *Parser) parseStructModel(node *sitter.Node, content []byte, filePath st
 	// Full version would extract fields, json tags, validation tags, etc.
 
 	// Get struct name
-	specNode := node.Child(0)
+	specNode := node.NamedChild(0)
 	if specNode == nil || specNode.Type() != "type_spec" {
 		return nil
 	}
