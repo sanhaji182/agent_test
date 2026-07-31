@@ -102,6 +102,19 @@ func (s *Store) HasPending(repository, driftType, filePath string) bool {
 	return false
 }
 
+// Get returns a single drift by ID.
+func (s *Store) Get(id string) (*Drift, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for i := range s.items {
+		if s.items[i].ID == id {
+			d := s.items[i]
+			return &d, true
+		}
+	}
+	return nil, false
+}
+
 // UpdateStatus transitions a drift to pending, fixed, or ignored.
 func (s *Store) UpdateStatus(id, status string) (*Drift, error) {
 	switch status {

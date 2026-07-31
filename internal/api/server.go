@@ -44,6 +44,7 @@ type Server struct {
 	releases      *release.Store
 	notifs        *notify.Store
 	drifts        *drift.Store
+	driftTests    *drift.GeneratedTestStore
 	driftDetector *drift.Detector
 	reviews       *workflow.ReviewStore
 	suites        *workflow.SuiteStore
@@ -101,6 +102,7 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 		releases:   release.NewStore(),
 		notifs:     notify.NewStore(),
 		drifts:     drift.NewStore(),
+		driftTests: drift.NewGeneratedTestStore(),
 		reviews:    workflow.NewReviewStore(),
 		suites:     workflow.NewSuiteStore(),
 		jwtAuth:    jwtAuth,
@@ -293,6 +295,9 @@ func (s *Server) routes() {
 		// Drift detection (Phase 3)
 		r.Get("/drifts", s.handleListDrifts)
 		r.Patch("/drifts/{id}", s.handleUpdateDriftStatus)
+		r.Post("/drifts/{id}/generate-test", s.handleGenerateDriftTest)
+		r.Get("/drifts/{id}/generated-tests", s.handleListDriftTests)
+		r.Patch("/generated-tests/{id}", s.handleUpdateDriftTestStatus)
 		// Metrics
 		r.Get("/metrics/summary", s.handleMetricsSummary)
 		r.Get("/metrics/hotspots", s.handleMetricsHotspots)
