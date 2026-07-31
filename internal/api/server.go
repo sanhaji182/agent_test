@@ -15,6 +15,7 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/auth"
 	"github.com/go-go-golems/gotest-agent/internal/config"
 	"github.com/go-go-golems/gotest-agent/internal/db"
+	"github.com/go-go-golems/gotest-agent/internal/drift"
 	"github.com/go-go-golems/gotest-agent/internal/events"
 	"github.com/go-go-golems/gotest-agent/internal/notify"
 	"github.com/go-go-golems/gotest-agent/internal/planning"
@@ -30,26 +31,28 @@ import (
 )
 
 type Server struct {
-	router     *chi.Mux
-	cfg        *config.Config
-	store      db.RunStore
-	settings   *db.SettingsStore
-	projects   project.Store
-	planning   planning.Store
-	events     *events.Store
-	recordings *recordings.Store
-	visuals    *visual.Store
-	schedules  schedule.Repository
-	releases   *release.Store
-	notifs     *notify.Store
-	reviews    *workflow.ReviewStore
-	suites     *workflow.SuiteStore
-	jwtAuth    *auth.Auth
-	runSem     chan struct{}            // concurrency cap for run goroutines (AUDIT S-01)
-	enqueueRun func(runID string) error // optional durable-queue enqueuer (Redis/Asynq); nil = in-process execution
-	runCancels map[string]context.CancelFunc // active run cancellation functions
-	cancelsMu  sync.RWMutex
-	metrics    *appmetrics.Metrics // Prometheus-format application metrics
+	router        *chi.Mux
+	cfg           *config.Config
+	store         db.RunStore
+	settings      *db.SettingsStore
+	projects      project.Store
+	planning      planning.Store
+	events        *events.Store
+	recordings    *recordings.Store
+	visuals       *visual.Store
+	schedules     schedule.Repository
+	releases      *release.Store
+	notifs        *notify.Store
+	drifts        *drift.Store
+	driftDetector *drift.Detector
+	reviews       *workflow.ReviewStore
+	suites        *workflow.SuiteStore
+	jwtAuth       *auth.Auth
+	runSem        chan struct{}                 // concurrency cap for run goroutines (AUDIT S-01)
+	enqueueRun    func(runID string) error      // optional durable-queue enqueuer (Redis/Asynq); nil = in-process execution
+	runCancels    map[string]context.CancelFunc // active run cancellation functions
+	cancelsMu     sync.RWMutex
+	metrics       *appmetrics.Metrics // Prometheus-format application metrics
 }
 
 func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.SettingsStore) *Server {
@@ -59,7 +62,7 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(tracing.HTTPMiddleware()) // distributed tracing for all HTTP requests
+	r.Use(tracing.HTTPMiddleware())              // distributed tracing for all HTTP requests
 	r.Use(rateLimitMiddleware(100, time.Minute)) // 100 req/min per client IP
 	r.Use(newCORSMiddleware(cfg.CORSAllowedOrigins))
 	r.Use(instrumentMiddleware(appm)) // count API requests/errors for /metrics
@@ -97,6 +100,7 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 		schedules:  scheduleStore,
 		releases:   release.NewStore(),
 		notifs:     notify.NewStore(),
+		drifts:     drift.NewStore(),
 		reviews:    workflow.NewReviewStore(),
 		suites:     workflow.NewSuiteStore(),
 		jwtAuth:    jwtAuth,
@@ -104,6 +108,7 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 		runCancels: make(map[string]context.CancelFunc),
 		metrics:    appm,
 	}
+	s.driftDetector = drift.NewDetector(s.drifts)
 	s.routes()
 	return s
 }
@@ -285,6 +290,9 @@ func (s *Server) routes() {
 		r.Get("/releases/{id}/summary", s.handleReleaseSummary)
 		// Notifications
 		r.Get("/notifications", s.handleListNotifications)
+		// Drift detection (Phase 3)
+		r.Get("/drifts", s.handleListDrifts)
+		r.Patch("/drifts/{id}", s.handleUpdateDriftStatus)
 		// Metrics
 		r.Get("/metrics/summary", s.handleMetricsSummary)
 		r.Get("/metrics/hotspots", s.handleMetricsHotspots)
@@ -333,6 +341,8 @@ func (s *Server) routes() {
 		webhookSecret = s.cfg.APIKey // fallback: existing deployments that only set API_KEY
 	}
 	wh := webhook.NewGitHubHandler(webhookSecret, func(event webhook.PushEvent) {
+		// Phase 3: detect code/test drift from the changed files.
+		go s.detectDriftFromPush(event)
 		// Prefer AI test generation (clone, parse, synthesize plan); fall
 		// back to a plain auto-triggered run when unavailable or failing.
 		if s.processPushWithTestGen(event) {
