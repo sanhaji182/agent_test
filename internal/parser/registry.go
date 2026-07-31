@@ -7,6 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	golang "github.com/go-go-golems/gotest-agent/internal/parser/go"
+	"github.com/go-go-golems/gotest-agent/internal/parser/javascript"
+	"github.com/go-go-golems/gotest-agent/internal/parser/php"
+	"github.com/go-go-golems/gotest-agent/internal/parser/python"
 	"github.com/go-go-golems/gotest-agent/internal/parser/types"
 )
 
@@ -15,16 +19,20 @@ type Registry struct {
 	parsers map[string]Parser
 }
 
-// NewRegistry membuat registry baru dengan semua parser default
+// NewRegistry membuat registry kosong; gunakan Register untuk menambahkan parser
 func NewRegistry() *Registry {
-	r := &Registry{
+	return &Registry{
 		parsers: make(map[string]Parser),
 	}
+}
 
-	// Register semua parser yang tersedia
-	// NOTE: Parser implementations akan ditambahkan di Task 1.4-1.7
-	// Untuk sekarang, registry ini siap untuk menerima parser implementations
-
+// NewDefaultRegistry membuat registry dengan semua parser default terdaftar
+func NewDefaultRegistry() *Registry {
+	r := NewRegistry()
+	r.Register("javascript", javascript.NewParser())
+	r.Register("go", golang.NewParser())
+	r.Register("php", php.NewParser())
+	r.Register("python", python.NewParser())
 	return r
 }
 
