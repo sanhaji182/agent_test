@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-go-golems/gotest-agent/internal/agent"
@@ -24,6 +26,10 @@ func (s *Server) handleExploratoryTest(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.URL == "" {
 		writeJSONError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+	if !agent.IsSafeBrowserURL(req.URL, s.cfg.BrowserAllowedHosts) {
+		writeJSONError(w, http.StatusBadRequest, "unsafe browser URL")
 		return
 	}
 	if req.MaxDepth == 0 {
@@ -53,9 +59,14 @@ func (s *Server) handleExploratoryTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer page.Close()
+	if err := agent.InstallPageEgressGuard(page, s.cfg.BrowserAllowedHosts); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "could not install browser egress guard")
+		return
+	}
 
 	runner := agent.NewPlaywrightRunner("/tmp/agent_test/videos", nil)
 	runner.ScreenshotDir = "/tmp/agent_test/screenshots"
+	runner.WithAllowedHosts(s.cfg.BrowserAllowedHosts)
 
 	result, err := runner.RunExploratoryTest(r.Context(), page, req.URL, req.MaxDepth)
 	if err != nil {
@@ -78,6 +89,10 @@ func (s *Server) handlePerformanceAudit(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.URL == "" {
 		writeJSONError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+	if !agent.IsSafeBrowserURL(req.URL, s.cfg.BrowserAllowedHosts) {
+		writeJSONError(w, http.StatusBadRequest, "unsafe browser URL")
 		return
 	}
 
@@ -103,6 +118,10 @@ func (s *Server) handlePerformanceAudit(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	defer page.Close()
+	if err := agent.InstallPageEgressGuard(page, s.cfg.BrowserAllowedHosts); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "could not install browser egress guard")
+		return
+	}
 
 	_, err = page.Goto(req.URL)
 	if err != nil {
@@ -136,6 +155,10 @@ func (s *Server) handleAccessibilityAudit(w http.ResponseWriter, r *http.Request
 		writeJSONError(w, http.StatusBadRequest, "url is required")
 		return
 	}
+	if !agent.IsSafeBrowserURL(req.URL, s.cfg.BrowserAllowedHosts) {
+		writeJSONError(w, http.StatusBadRequest, "unsafe browser URL")
+		return
+	}
 
 	pw, err := playwright.Run()
 	if err != nil {
@@ -159,6 +182,10 @@ func (s *Server) handleAccessibilityAudit(w http.ResponseWriter, r *http.Request
 		return
 	}
 	defer page.Close()
+	if err := agent.InstallPageEgressGuard(page, s.cfg.BrowserAllowedHosts); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "could not install browser egress guard")
+		return
+	}
 
 	_, err = page.Goto(req.URL)
 	if err != nil {
@@ -197,6 +224,10 @@ func (s *Server) handleVisualRegression(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.URL == "" {
 		writeJSONError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+	if !agent.IsSafeBrowserURL(req.URL, s.cfg.BrowserAllowedHosts) {
+		writeJSONError(w, http.StatusBadRequest, "unsafe browser URL")
 		return
 	}
 	if len(req.Browsers) == 0 {
@@ -255,6 +286,10 @@ func (s *Server) handleVisualRegression(w http.ResponseWriter, r *http.Request) 
 			if err != nil {
 				continue
 			}
+			if err := agent.InstallContextEgressGuard(bCtx, s.cfg.BrowserAllowedHosts); err != nil {
+				bCtx.Close()
+				continue
+			}
 
 			page, err := bCtx.NewPage()
 			if err != nil {
@@ -293,10 +328,10 @@ func (s *Server) handleVisualRegression(w http.ResponseWriter, r *http.Request) 
 
 	// Compare: group by viewport, check if hashes differ across browsers
 	type comparison struct {
-		Viewport    string   `json:"viewport"`
-		Identical   bool     `json:"identical"`
-		Browsers    []string `json:"browsers"`
-		UniqueHashes int     `json:"unique_hashes"`
+		Viewport     string   `json:"viewport"`
+		Identical    bool     `json:"identical"`
+		Browsers     []string `json:"browsers"`
+		UniqueHashes int      `json:"unique_hashes"`
 	}
 	byViewport := map[string][]capture{}
 	for _, c := range captures {
@@ -343,6 +378,10 @@ func (s *Server) handleFullAudit(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "url is required")
 		return
 	}
+	if !agent.IsSafeBrowserURL(req.URL, s.cfg.BrowserAllowedHosts) {
+		writeJSONError(w, http.StatusBadRequest, "unsafe browser URL")
+		return
+	}
 
 	pw, err := playwright.Run()
 	if err != nil {
@@ -375,6 +414,10 @@ func (s *Server) handleFullAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer bCtx.Close()
+	if err := agent.InstallContextEgressGuard(bCtx, s.cfg.BrowserAllowedHosts); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "could not install browser egress guard")
+		return
+	}
 
 	page, err := bCtx.NewPage()
 	if err != nil {
@@ -431,8 +474,24 @@ func (s *Server) handleFullAudit(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleExportCode converts a run's generated action JSON into runnable
-// Playwright TypeScript test files.
-// GET /api/v1/runs/{id}/export-code
+// framework-specific test files.
+// GET /api/v1/runs/{id}/export-code?language=playwright|cypress|puppeteer|selenium|appium|webdriverio
+func combineExportScripts(scripts map[string]string) string {
+	if len(scripts) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(scripts))
+	for name := range scripts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		parts = append(parts, fmt.Sprintf("// File: %s\n%s", name, scripts[name]))
+	}
+	return strings.Join(parts, "\n")
+}
+
 func (s *Server) handleExportCode(w http.ResponseWriter, r *http.Request) {
 	runID := chi.URLParam(r, "id")
 	if !isValidID(runID) {
@@ -449,13 +508,21 @@ func (s *Server) handleExportCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	requestedTarget := r.URL.Query().Get("language")
+	if requestedTarget == "" {
+		requestedTarget = r.URL.Query().Get("framework")
+	}
 	opts := agent.ExportOptions{AddWaits: true, Timeout: 5000}
-	scripts := agent.ExportAllScripts(run.TestFiles, opts)
+	scripts, target := agent.ExportAllScriptsForTarget(run.TestFiles, requestedTarget, opts)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"run_id":  runID,
-		"count":   len(scripts),
-		"scripts": scripts,
+		"run_id":    runID,
+		"target":    target.Key,
+		"language":  target.Language,
+		"framework": target.Framework,
+		"count":     len(scripts),
+		"scripts":   scripts,
+		"code":      combineExportScripts(scripts),
 	})
 }
 

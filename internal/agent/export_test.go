@@ -92,6 +92,53 @@ func TestExportPlaywrightScript_SpecialActions(t *testing.T) {
 	}
 }
 
+func TestExportAllScriptsForTarget_MultiFramework(t *testing.T) {
+	files := []TestFile{{
+		Name:    "login.json",
+		Content: `[{"action":"goto","url":"https://example.com"},{"action":"fill","selector":"#email","value":"user@test.com"},{"action":"click","selector":"button"},{"action":"assert","selector":".dashboard","assert":"visible"}]`,
+	}}
+
+	cases := []struct {
+		target    string
+		file      string
+		language  string
+		framework string
+		contains  []string
+	}{
+		{target: "playwright", file: "login.spec.ts", language: "typescript", framework: "Playwright", contains: []string{"@playwright/test", "page.goto"}},
+		{target: "cypress", file: "login.cy.js", language: "javascript", framework: "Cypress", contains: []string{"cy.visit", "cy.get('#email'"}},
+		{target: "puppeteer", file: "login.mjs", language: "javascript", framework: "Puppeteer", contains: []string{"import puppeteer", "page.goto"}},
+		{target: "selenium", file: "login.py", language: "python", framework: "Selenium", contains: []string{"from selenium import webdriver", "driver.get"}},
+		{target: "appium", file: "login.appium.mjs", language: "javascript", framework: "Appium WebdriverIO", contains: []string{"import { remote } from 'webdriverio'", "appium:automationName"}},
+		{target: "webdriverio", file: "login.wdio.js", language: "javascript", framework: "WebdriverIO", contains: []string{"describe('login'", "await browser.url"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.target, func(t *testing.T) {
+			scripts, meta := ExportAllScriptsForTarget(files, tc.target, ExportOptions{AddWaits: true})
+			if meta.Language != tc.language || meta.Framework != tc.framework {
+				t.Fatalf("unexpected target metadata: %+v", meta)
+			}
+			code, ok := scripts[tc.file]
+			if !ok {
+				t.Fatalf("missing script %s in %+v", tc.file, scripts)
+			}
+			for _, want := range tc.contains {
+				if !strings.Contains(code, want) {
+					t.Fatalf("export for %s missing %q\nGot:\n%s", tc.target, want, code)
+				}
+			}
+		})
+	}
+}
+
+func TestResolveExportTarget_DefaultsToPlaywright(t *testing.T) {
+	meta := ResolveExportTarget("unknown")
+	if meta.Key != "playwright" || meta.Language != "typescript" || meta.Framework != "Playwright" {
+		t.Fatalf("unexpected default export target: %+v", meta)
+	}
+}
+
 func TestExportAllScripts(t *testing.T) {
 	files := []TestFile{
 		{Name: "a.json", Content: `[{"action":"goto","url":"https://a.com"}]`},

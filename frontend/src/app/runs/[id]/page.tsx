@@ -905,7 +905,9 @@ function AdvancedView({
               <option value="playwright">Playwright</option>
               <option value="cypress">Cypress</option>
               <option value="puppeteer">Puppeteer</option>
-              <option value="selenium">Selenium</option>
+              <option value="selenium">Selenium Python</option>
+              <option value="appium">Appium Mobile</option>
+              <option value="webdriverio">WebdriverIO</option>
             </select>
             <button
               onClick={onExportCode}
@@ -917,7 +919,7 @@ function AdvancedView({
           </div>
         </div>
         <p className="text-[12px] text-[var(--text-secondary)] mb-3">
-          Export generated tests as executable code in your preferred testing framework.
+          Export generated tests as executable code for browser, mobile-web, or WebDriver-based workflows.
         </p>
         {codeExport && (
           <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-card)] p-3">

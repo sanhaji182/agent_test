@@ -245,9 +245,13 @@ export interface VisualRegressionResult {
 }
 
 export interface ExportCodeResult {
+  run_id?: string;
+  target?: string;
   language: string;
   code: string;
   framework: string;
+  count?: number;
+  scripts?: Record<string, string>;
 }
 
 export interface Failure {
@@ -299,11 +303,17 @@ export async function login(apiKey: string): Promise<{ status: string; redirect?
   if (!res.ok) {
     return res.json().catch(() => ({ status: "error" }));
   }
-  const redirect = typeof window !== "undefined" ? sessionStorage.getItem("redirect_after_login") : null;
-  if (redirect) {
-    sessionStorage.removeItem("redirect_after_login");
+  const data = await res.json();
+  if (typeof window !== "undefined") {
+    sessionStorage.setItem("user_role", data.role || "admin");
+    sessionStorage.setItem("user_label", data.role ? (data.role === "admin" ? "Admin" : data.role) : "Admin");
+    const redirect = sessionStorage.getItem("redirect_after_login");
+    if (redirect) {
+      sessionStorage.removeItem("redirect_after_login");
+      return { status: "ok", redirect };
+    }
   }
-  return { status: "ok", redirect: redirect || "/" };
+  return { status: "ok", redirect: "/" };
 }
 
 // logout clears the httpOnly cookie session
@@ -799,5 +809,128 @@ export async function getAIProviders(): Promise<AIProvider[]> {
 
 export async function testAIProvider(data: { provider: string; model: string; api_key: string; base_url: string }): Promise<{ success: boolean; error?: string }> {
   return apiFetch<{ success: boolean; error?: string }>("/api/v1/ai/test-provider", { method: "POST", body: JSON.stringify(data) });
+}
+
+// --- Recording Sessions ---
+export interface RecordingSession {
+  id: string;
+  name: string;
+  project_path: string;
+  base_url: string;
+  status: string;
+  metadata?: Record<string, unknown>;
+  event_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecordedEvent {
+  id: string;
+  session_id: string;
+  event_type: string;
+  selector?: string;
+  value?: string;
+  url?: string;
+  timestamp: string;
+  sequence_order: number;
+}
+
+export async function listRecordingSessions(): Promise<RecordingSession[]> {
+  return apiFetch<RecordingSession[]>("/api/v1/recording-sessions");
+}
+
+export async function getRecordingSession(id: string): Promise<{ session: RecordingSession; events: RecordedEvent[] }> {
+  return apiFetch<{ session: RecordingSession; events: RecordedEvent[] }>(`/api/v1/recording-sessions/${id}`);
+}
+
+export async function createRecordingSession(data: { name: string; project_path: string; base_url: string }): Promise<RecordingSession> {
+  return apiFetch<RecordingSession>("/api/v1/recording-sessions", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function addRecordingEvent(sessionId: string, event: Omit<RecordedEvent, "id" | "session_id" | "timestamp">): Promise<RecordedEvent> {
+  return apiFetch<RecordedEvent>(`/api/v1/recording-sessions/${sessionId}/events`, { method: "POST", body: JSON.stringify(event) });
+}
+
+export async function generateRecordingTest(sessionId: string): Promise<{ test_code: string; language: string; framework: string }> {
+  return apiFetch<{ test_code: string; language: string; framework: string }>(`/api/v1/recording-sessions/${sessionId}/generate`, { method: "POST" });
+}
+
+export async function deleteRecordingSession(id: string): Promise<void> {
+  await fetch(`${API_BASE}/api/v1/recording-sessions/${id}`, { method: "DELETE", credentials: "include" });
+}
+
+export async function updateRecordingSession(id: string, data: Partial<RecordingSession>): Promise<RecordingSession> {
+  return apiFetch<RecordingSession>(`/api/v1/recording-sessions/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+// --- API Key Management (admin-only) ---
+
+export interface APIKeyEntry {
+  id: string;
+  key?: string;        // only returned on creation
+  label: string;
+  role: string;
+  active: boolean;
+  created_at: string;
+  created_by?: string;
+}
+
+export async function createAPIKey(label: string, role: string): Promise<APIKeyEntry> {
+  return apiFetch<APIKeyEntry>("/api/v1/keys", { method: "POST", body: JSON.stringify({ label, role }) });
+}
+
+export async function listAPIKeys(): Promise<APIKeyEntry[]> {
+  return apiFetch<APIKeyEntry[]>("/api/v1/keys");
+}
+
+export async function revokeAPIKey(id: string, active: boolean): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>(`/api/v1/keys/${id}/revoke`, { method: "POST", body: JSON.stringify({ active }) });
+}
+
+export async function deleteAPIKey(id: string): Promise<void> {
+  await fetch(`${API_BASE}/api/v1/keys/${id}`, { method: "DELETE", credentials: "include" });
+}
+
+// --- Audit Log (admin-only) ---
+
+export interface AuditEntry {
+  id: string;
+  actor_id: string;
+  actor_role: string;
+  action: string;
+  resource: string;
+  resource_id: string;
+  detail: string;
+  created_at: string;
+}
+
+export async function listAuditLog(): Promise<AuditEntry[]> {
+  return apiFetch<AuditEntry[]>("/api/v1/audit-log");
+}
+
+// --- User Role (from JWT session) ---
+
+// getUserRole returns the current user's role from sessionStorage.
+// Returns "admin" as default for backward compatibility.
+export function getUserRole(): string {
+  if (typeof window === "undefined") return "admin";
+  return sessionStorage.getItem("user_role") || "admin";
+}
+
+// getUserLabel returns a human-readable label for the current session.
+export function getUserLabel(): string {
+  if (typeof window === "undefined") return "";
+  return sessionStorage.getItem("user_label") || "";
+}
+
+// isAdmin returns true if the current user has admin role.
+export function isAdmin(): boolean {
+  return getUserRole() === "admin";
+}
+
+// isReviewerOrAbove returns true if the user can approve/review.
+export function isReviewerOrAbove(): boolean {
+  const role = getUserRole();
+  return role === "admin" || role === "reviewer";
 }
 
