@@ -8,14 +8,23 @@ GoTest Agent includes comprehensive parsers for multiple programming languages a
 
 ## Supported Languages and Frameworks
 
-### JavaScript/TypeScript
-- **Frameworks**: Express.js, Next.js, NestJS
+### JavaScript
+- **Frameworks**: Express.js, Next.js-style route patterns
 - **Parser**: `internal/parser/javascript/parser.go`
 - **Capabilities**:
   - Extract Express routes (`app.get()`, `app.post()`, etc.)
   - Extract route parameters (`:id`, `:userId`, etc.)
   - Extract middleware
   - Extract handlers and controllers
+
+### TypeScript
+- **Frameworks**: Express.js, NestJS
+- **Parser**: `internal/parser/typescript/parser.go`
+- **Capabilities**:
+  - Extract Express route chains
+  - Extract NestJS controllers and method decorators
+  - Extract interfaces/classes as models
+  - Extract modules and handlers
 
 ### Go
 - **Frameworks**: Chi, Gin, Echo, Fiber
@@ -44,6 +53,40 @@ GoTest Agent includes comprehensive parsers for multiple programming languages a
   - **Flask**: Extract `@app.route()` decorators, extract HTTP methods from decorator arguments
   - **FastAPI**: Extract `@app.get()`, `@app.post()` decorators, extract route handlers
 
+### Ruby
+- **Frameworks**: Ruby on Rails
+- **Parser**: `internal/parser/ruby/parser.go`
+- **Capabilities**:
+  - Extract Rails routes from `config/routes.rb`
+  - Expand RESTful `resources` declarations
+  - Extract ActiveRecord models and associations
+  - Extract controller actions
+
+### Java
+- **Frameworks**: Spring Boot / Spring MVC
+- **Parser**: `internal/parser/java/parser.go`
+- **Capabilities**:
+  - Extract `@RestController`/`@Controller` classes
+  - Extract `@RequestMapping`, `@GetMapping`, `@PostMapping`, etc.
+  - Extract `@Entity` models and repositories
+
+### C#
+- **Frameworks**: ASP.NET Core
+- **Parser**: `internal/parser/csharp/parser.go`
+- **Capabilities**:
+  - Extract controllers and `[Http*]` attributes
+  - Extract minimal API `MapGet`/`MapPost` route declarations
+  - Extract model classes and public properties
+
+### Rust
+- **Frameworks**: Actix Web, Axum, Rocket/Warp indicators
+- **Parser**: `internal/parser/rust/parser.go`
+- **Capabilities**:
+  - Detect Cargo-based Rust web frameworks
+  - Extract Actix/Rocket-style route macros (`#[get]`, `#[post]`, `#[route]`)
+  - Extract Axum `.route()` chains
+  - Extract structs as models and functions as handlers
+
 ## Parser Architecture
 
 ### Common Interface
@@ -53,13 +96,13 @@ All parsers implement a common interface defined in `internal/parser/interface.g
 ```go
 type Parser interface {
     // Parse analyzes the codebase and extracts routes, models, and handlers
-    Parse(ctx context.Context, rootDir string) (*Codebase, error)
-    
+    Parse(ctx context.Context, rootDir string) (*types.Codebase, error)
+
+    // SupportedLanguages returns the language keys supported by the parser
+    SupportedLanguages() []string
+
     // DetectFramework detects the framework used in the codebase
     DetectFramework(rootDir string) (string, error)
-    
-    // GetSupportedFrameworks returns the list of supported frameworks
-    GetSupportedFrameworks() []string
 }
 ```
 
@@ -69,12 +112,14 @@ The `Codebase` type represents the parsed codebase:
 
 ```go
 type Codebase struct {
+    RootDir    string    // Path to root directory
     Language   string    // Programming language (e.g., "javascript", "go", "python")
     Framework  string    // Framework (e.g., "express", "gin", "django")
     Routes     []Route   // Extracted routes
     Models     []Model   // Extracted models
     Handlers   []Handler // Extracted handlers
-    Metadata   map[string]interface{} // Additional metadata
+    AnalyzedAt time.Time // Analysis timestamp
+    FileCount  int       // Number of source files processed
 }
 ```
 
@@ -86,12 +131,7 @@ type Route struct {
     Path       string            // Route path (e.g., "/users/:id")
     Handler    string            // Handler function name
     Middleware []string          // Middleware applied to the route
-    Parameters []RouteParameter  // Route parameters
-}
-
-type RouteParameter struct {
-    Name string // Parameter name (e.g., "id")
-    Type string // Parameter type (if known)
+    Params     map[string]string // Route parameters, name -> type
 }
 ```
 
@@ -122,10 +162,16 @@ type Relation struct {
 
 ```go
 type Handler struct {
-    Name       string   // Handler function name
-    File       string   // File where the handler is defined
-    Line       int      // Line number
-    Parameters []string // Handler parameters
+    Name          string      // Handler function name
+    Controller    string      // Controller name when available
+    Method        string      // HTTP method when specific
+    Parameters    []Parameter // Handler parameters
+    ReturnType    string      // Return type
+    HasValidation bool        // Whether validation is detected
+    DatabaseOps   []string    // create/read/update/delete hints
+    ExternalCalls []string    // External API/client call hints
+    File          string      // File where the handler is defined
+    Line          int         // Line number
 }
 ```
 
@@ -139,8 +185,8 @@ import (
     "github.com/go-go-golems/gotest-agent/internal/parser"
 )
 
-// Create parser registry
-registry := parser.NewRegistry()
+// Create parser registry with all default parsers registered
+registry := parser.NewDefaultRegistry()
 
 // Parse codebase
 codebase, err := registry.Parse(context.Background(), "/path/to/project")

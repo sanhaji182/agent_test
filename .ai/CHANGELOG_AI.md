@@ -2,7 +2,7 @@
 
 **Owner:** Engineering  
 **Purpose:** Append-only provenance for AI-generated repository and knowledge-base modifications  
-**Last updated:** 2026-07-28  
+**Last updated:** 2026-08-01
 **Rule:** Do not rewrite or delete historical entries. Corrections are new entries that supersede earlier statements.
 
 ## Entry Template
@@ -26,6 +26,350 @@
 - **Open unknowns:**
 - **Related ADRs/TODOs:**
 ```
+
+## 2026-08-01 — Enterprise RBAC roles + audit logging infrastructure
+
+- **Task:** Add role-based access control and an append-only audit log, closing the enterprise/Katalon gap.
+- **Source revision before change:** UNCOMMITTED
+- **Source revision after change:** UNCOMMITTED
+- **Files modified:** internal/auth/roles.go, internal/auth/auth.go, internal/audit/store.go, internal/api/server.go, internal/api/handlers_audit.go, internal/db/migrations/013_audit_log.sql, .ai/CHANGELOG_AI.md
+- **Summary:**
+  - **RBAC:** Added `admin`, `reviewer`, `viewer`, `api_client` roles with priority hierarchy, middleware (`RequireRole`, `RequireAnyRole`), and helpers (`CanManage`, `CanView`, `CanConfigure`, `CanRunTests`, `AtLeast`).
+  - **JWT Claims:** Added optional `Role` field for role-aware token generation.
+  - **Audit Log:** Append-only `audit.Store` with in-memory + PostgreSQL persistence.
+  - **API:** `GET /api/v1/audit-log` + by-user/by-resource endpoints, all admin-only.
+  - **DB:** Migration `013_audit_log.sql` with indexes on actor, resource, action.
+- **Reason:** Close the enterprise/Katalon competitive gap for multi-user deployments.
+- **Risk:** Low — additive infrastructure, no changes to existing auth paths.
+- **Verification completed:** `go build ./...` ✅; `go test ./internal/auth ./internal/audit ./internal/api -count=1 -short` ✅.
+- **Open unknowns:** Frontend role-aware UI; wiring RBAC onto all routes.
+- **Related ADRs/TODOs:** Enterprise/Katalon gap, RBAC, audit logging.
+
+## 2026-08-01 — Native CDP accessibility tree snapshot for LLM (zero external deps)
+
+- **Task:** Implement compact LLM-efficient page snapshots directly in Go via Playwright's CDP connection, and wire into the self-healing action loop.
+- **Source revision before change:** UNCOMMITTED
+- **Source revision after change:** UNCOMMITTED
+- **Files modified:** internal/browser/cdp_snapshot.go, internal/browser/cdp_smoke_test.go, internal/browser/agent_browser.go, internal/browser/agent_browser_test.go, internal/agent/playwright_runner.go, scripts/install-agent-browser.sh, docs/AGENT_BROWSER_INTEGRATION.md, .ai/CHANGELOG_AI.md
+- **Summary:**
+  - **Primary CDP path:** `GetPageSnapshotFromPlaywright()` injects JS accessibility-tree extractor via `page.Evaluate()`, flattens to compact elements with deterministic refs, converts to LLM-optimized prompt via `CDPSnapshotToPrompt()`.
+  - **Zero external dependencies** — uses Playwright Go's existing CDP connection. No Rust binary, no npm, no brew.
+  - **Wired into healing loop:** `getCompactDOMSnapshot()` in `playwright_runner.go` replaces the old crude CSS-selector-based DOM extraction with rich accessibility tree snapshots.
+  - **Live smoke test:** `TestCDPSnapshotLiveSmoke` validated against example.com — 6 elements, 231 byte prompt ($\ll$ 5000 byte limit).
+  - **Agent-browser fallback retained** for users who have it installed.
+  - **26 tests** covering parsing, CDP flatten/format/ref determinism, fallback availability check, element search, and live browser smoke.
+- **Reason:** User wanted compact snapshots bundled with GoTest Agent without requiring separate agent-browser installation, and wired into the actual agent pipeline for immediate benefit.
+- **Risk:** Low — additive package + 1-line replacement in healing loop.
+- **Breaking changes:** None.
+- **Deployment steps:** None — CDP snapshots work out of the box with any Playwright page.
+- **Verification completed:** `go test ./internal/browser -count=1 -v` ✅ (25 tests); `GOTEST_CDP_SNAPSHOT_SMOKE=1 go test ./internal/browser -run TestCDPSnapshotLiveSmoke -count=1 -v` ✅ (231-byte prompt); `go test ./internal/agent -count=1 -short` ✅; `go build ./...` ✅.
+- **Facts added/removed or confidence changed:** Compact accessibility tree snapshots now work with zero external deps AND are actively used by the agent's self-healing loop for richer LLM context.
+- **Open unknowns:** Exploratory testing integration, Steel runner integration — future steps.
+- **Related ADRs/TODOs:** Compact snapshot for LLM-efficient page analysis, agent healing improvements.
+
+## 2026-08-01 — True-browser frontend Playwright E2E coverage
+- **Breaking changes:** None.
+- **Database migrations:** None.
+- **Deployment steps:** Developers may need `npx --prefix frontend playwright install chromium` on new machines before `npm --prefix frontend run test:e2e`.
+- **Documentation updated:** `docs/ACHIEVEMENT_SUMMARY.md`, `docs/AI_AGENT_HANDOFF.md`, `docs/AI_AGENT_PROMPTS.md`, `docs/FINAL_ACHIEVEMENT_REPORT.md`.
+- **Verification completed:** `npx --prefix frontend playwright install chromium` ✅; `npm --prefix frontend run test:e2e` ✅ (3 passed); `npm --prefix frontend test` ✅; `npm --prefix frontend run build` ✅; `go test ./internal/... ./chrome-extension -count=1 -short` ✅; `go build ./...` ✅.
+- **Facts added/removed or confidence changed:** Frontend now has both page-level Vitest/RTL coverage and true-browser Playwright E2E coverage for critical flows.
+- **Open unknowns:** Full native mobile/desktop runner remains future work beyond the Appium/WebdriverIO export bridge.
+- **Related ADRs/TODOs:** Frontend E2E validation, Katalon gap follow-up.
+
+## 2026-08-01 — Live Chrome extension record-flow smoke coverage
+
+- **Task:** Convert the remaining Chrome extension manual validation gap into an opt-in automated browser smoke test.
+- **Source revision before change:** UNCOMMITTED
+- **Source revision after change:** UNCOMMITTED
+- **Files modified:** chrome-extension/extension_smoke_test.go, docs/ACHIEVEMENT_SUMMARY.md, docs/AI_AGENT_HANDOFF.md, docs/AI_AGENT_PROMPTS.md, docs/FINAL_ACHIEVEMENT_REPORT.md, .ai/CHANGELOG_AI.md
+- **Summary:**
+  - Added `TestChromeExtensionRecordFlowSmoke`, opt-in via `GOTEST_CHROME_EXTENSION_SMOKE=1`, using Playwright Chromium persistent context to load the actual MV3 extension from `chrome-extension/`.
+  - The smoke test opens the extension popup, configures backend URL/API key, starts recording, interacts with a fixture page, verifies events reach a backend fixture, stops recording, and verifies the session is marked completed.
+  - The fixture asserts the extension uses `X-Api-Key`, covering the frontend extension auth contract end-to-end.
+  - Updated docs/status so Chrome extension browser interaction validation is now backed by automated smoke evidence.
+- **Reason:** Remove the last manual-only Phase 2 validation gap by exercising the real extension in a browser runtime.
+- **Risk:** Low — additive opt-in test and documentation updates.
+- **Breaking changes:** None.
+- **Database migrations:** None.
+- **Deployment steps:** None.
+- **Documentation updated:** `docs/ACHIEVEMENT_SUMMARY.md`, `docs/AI_AGENT_HANDOFF.md`, `docs/AI_AGENT_PROMPTS.md`, `docs/FINAL_ACHIEVEMENT_REPORT.md`.
+- **Verification completed:** `go test ./chrome-extension -run TestChromeExtensionRecordFlowSmoke -count=1 -short` ✅; `GOTEST_CHROME_EXTENSION_SMOKE=1 go test ./chrome-extension -run TestChromeExtensionRecordFlowSmoke -count=1` ✅.
+- **Facts added/removed or confidence changed:** Chrome extension validation now includes load-readiness static tests and live browser record-flow smoke evidence.
+- **Open unknowns:** Optional true-browser frontend E2E and full native mobile/desktop runner remain future choices.
+- **Related ADRs/TODOs:** Phase 2 Record & Playback validation.
+
+## 2026-08-01 — Real multi-framework export targets including Appium/WebdriverIO bridge
+
+- **Task:** Make backend export-code honor requested framework targets and add Appium/WebdriverIO export bridges for mobile/WebDriver workflows.
+- **Source revision before change:** UNCOMMITTED
+- **Source revision after change:** UNCOMMITTED
+- **Files modified:** internal/agent/export.go, internal/agent/export_test.go, internal/api/handlers_testing.go, internal/api/handlers_testing_test.go, frontend/src/lib/api.ts, frontend/src/app/runs/[id]/page.tsx, FEATURES_COMPARISON.md, docs/ACHIEVEMENT_SUMMARY.md, docs/AI_AGENT_HANDOFF.md, docs/FINAL_ACHIEVEMENT_REPORT.md, .ai/CHANGELOG_AI.md
+- **Summary:**
+  - Added concrete export generators for Cypress, Puppeteer, Selenium Python, Appium/WebdriverIO mobile-web, and WebdriverIO, while preserving Playwright export defaults.
+  - Updated `/api/v1/runs/{id}/export-code?language=...` to honor the requested target and return `target`, `language`, `framework`, `scripts`, and combined `code` metadata.
+  - Added regression tests for all export targets and an API test proving `language=appium` returns Appium/WebdriverIO output.
+  - Updated frontend export selector to include `Appium Mobile` and `WebdriverIO` options and adjusted the response type.
+  - Updated comparison/status docs so previous multi-framework claims now match real backend behavior and note Appium/WebdriverIO as a bridge toward the Katalon mobile/desktop gap.
+- **Reason:** The UI/docs claimed multi-framework export, but backend export previously ignored the requested language and always generated Playwright. Appium/WebdriverIO export reduces the competitive mobile/WebDriver gap without introducing a full native runner yet.
+- **Risk:** Medium-low — export output changes for `/export-code` are additive but response shape now includes metadata/code fields expected by the frontend.
+- **Breaking changes:** None intended; Playwright remains default when target is omitted or unknown.
+- **Database migrations:** None.
+- **Deployment steps:** None.
+- **Documentation updated:** `FEATURES_COMPARISON.md`, `docs/ACHIEVEMENT_SUMMARY.md`, `docs/AI_AGENT_HANDOFF.md`, `docs/FINAL_ACHIEVEMENT_REPORT.md`.
+- **Verification completed:** `go test ./internal/agent ./internal/api -count=1 -short` ✅.
+- **Facts added/removed or confidence changed:** Multi-framework export is now implemented in backend behavior, not only represented in docs/UI. Native mobile/desktop runner remains a gap vs Katalon, but Appium/WebdriverIO export now provides a practical bridge.
+- **Open unknowns:** Full native mobile/desktop execution runner remains future work.
+- **Related ADRs/TODOs:** Katalon competitive gap follow-up; export-code API.
+
+## 2026-08-01 — Live controlled browser egress redirect smoke coverage
+
+- **Task:** Add and run an opt-in live browser smoke test proving the Playwright context egress guard blocks unsafe redirects.
+- **Source revision before change:** UNCOMMITTED
+- **Source revision after change:** UNCOMMITTED
+- **Files modified:** internal/agent/browser_egress_smoke_test.go, .ai/TODO.md, docs/ACHIEVEMENT_SUMMARY.md, docs/AI_AGENT_HANDOFF.md, docs/AI_AGENT_PROMPTS.md, .ai/CHANGELOG_AI.md
+- **Summary:**
+  - Added `TestBrowserEgressGuardBlocksUnsafeRedirectSmoke`, opt-in via `GOTEST_BROWSER_EGRESS_SMOKE=1`, using a local HTTP fixture that redirects to `http://169.254.169.254/latest/meta-data/`.
+  - The test allowlists only the local fixture host and verifies the route guard blocks the unsafe metadata redirect instead of allowing browser navigation to complete.
+  - Updated TODO/docs status so controlled browser egress smoke is now marked complete with live evidence.
+- **Reason:** Close the remaining browser egress validation gap that required a real browser/runtime rather than unit/API-only coverage.
+- **Risk:** Low — additive opt-in smoke test and documentation updates.
+- **Breaking changes:** None.
+- **Database migrations:** None.
+- **Deployment steps:** None.
+- **Documentation updated:** `.ai/TODO.md`, `docs/ACHIEVEMENT_SUMMARY.md`, `docs/AI_AGENT_HANDOFF.md`, `docs/AI_AGENT_PROMPTS.md`.
+- **Verification completed:** `go test ./internal/agent -run TestBrowserEgressGuardBlocksUnsafeRedirectSmoke -count=1 -short` ✅; `GOTEST_BROWSER_EGRESS_SMOKE=1 go test ./internal/agent -run TestBrowserEgressGuardBlocksUnsafeRedirectSmoke -count=1` ✅.
+- **Facts added/removed or confidence changed:** Browser egress hardening now has unit, API-handler, and live controlled redirect smoke evidence.
+- **Open unknowns:** Manual Chrome extension browser interaction validation remains.
+- **Related ADRs/TODOs:** `TODO-016`, `ADR-002`.
+
+## 2026-08-01 — Chrome extension load-readiness validation and auth/header fixes
+
+- **Task:** Make the Chrome extension load-ready by fixing manifest assets, backend auth headers, popup error handling, and adding automated static validation.
+- **Source revision before change:** UNCOMMITTED
+- **Source revision after change:** UNCOMMITTED
+- **Files modified:** chrome-extension/background.js, chrome-extension/popup.js, chrome-extension/manifest.json, chrome-extension/icons/icon16.png, chrome-extension/icons/icon48.png, chrome-extension/icons/icon128.png, chrome-extension/extension_test.go, docs/ACHIEVEMENT_SUMMARY.md, docs/AI_AGENT_HANDOFF.md, docs/AI_AGENT_PROMPTS.md, .ai/CHANGELOG_AI.md
+- **Summary:**
+  - Replaced missing icon references with valid PNG assets so the MV3 extension can be loaded unpacked without missing-file errors.
+  - Updated the background worker to send API keys using `X-Api-Key`, matching the backend auth middleware instead of incorrectly using a JWT bearer header.
+  - Added URL normalization/validation for backend and target URLs in the extension to avoid invalid protocol inputs.
+  - Improved popup async error handling so `START_RECORDING`, `STOP_RECORDING`, settings, and list-load failures are surfaced instead of being treated as success.
+  - Added Go-based static regression tests that verify manifest assets exist, icon PNGs are valid, the auth header contract matches backend expectations, and the popup/service-worker error contract is explicit.
+- **Reason:** The extension was implementation-complete but not actually load-ready because manifest icon files were missing and the auth header contract did not match the backend.
+- **Risk:** Low — extension-only compatibility and validation changes.
+- **Breaking changes:** None for the backend; extension recording now uses the documented API-key header contract.
+- **Database migrations:** None.
+- **Deployment steps:** Reload the unpacked extension after pulling the updated `chrome-extension/` assets.
+- **Documentation updated:** `docs/ACHIEVEMENT_SUMMARY.md`, `docs/AI_AGENT_HANDOFF.md`, `docs/AI_AGENT_PROMPTS.md`.
+- **Verification completed:** `go test ./chrome-extension -count=1` ✅; `node --check chrome-extension/background.js` ✅; `node --check chrome-extension/content.js` ✅; `node --check chrome-extension/popup.js` ✅.
+- **Facts added/removed or confidence changed:** The extension is now load-ready in static validation terms and aligned with backend API-key auth; manual Chrome browser interaction remains the last validation step.
+- **Open unknowns:** Manual browser interaction smoke test still remains.
+- **Related ADRs/TODOs:** `TODO-011`, `TODO-012`, Chrome extension manual validation follow-up.
+
+## 2026-08-01 — Sidecar job durability, frontend page tests, and live PostgreSQL workflow smoke coverage
+
+- **Task:** Add sidecar job persistence plus page-level frontend regression coverage and live PostgreSQL smoke coverage for workflow persistence.
+- **Source revision before change:** UNCOMMITTED
+- **Source revision after change:** UNCOMMITTED
+- **Files modified:** sidecar/main.py, sidecar/tests/test_api.py, docker-compose.yml, frontend/src/test/setup.ts, frontend/src/test/pages.test.tsx, internal/db/postgres_smoke_test.go, .ai/TODO.md, .ai/CHANGELOG_AI.md
+- **Summary:**
+  - Added a dict-like `JobStore` in `sidecar/main.py` with optional SQLite persistence via `SIDECAR_JOBS_DB`, while preserving in-memory behavior for existing tests and local dev.
+  - Mounted `sidecar_jobs:/data` in `docker-compose.yml` and pointed the sidecar at `/data/jobs.sqlite3` so job state survives container restarts in Compose deployments.
+  - Added a sidecar persistence regression test that verifies a fresh `JobStore` instance can read a job written by another instance to SQLite.
+  - Added Vitest/React Testing Library page-level tests for login, create-run wizard, recording session list/search/create, review/proposal decisions, and suite list/create/schedule workflows.
+  - Added global RTL cleanup in `frontend/src/test/setup.ts` to prevent DOM leakage between tests.
+  - Added opt-in `TestPostgresWorkflowPersistenceSmoke` for live PostgreSQL verification of migration `012_releases_reviews_suites.sql` and release/review/suite persistence round trips using fresh stores.
+  - Updated TODO-011/TODO-012 to reflect verified sidecar job durability, PostgreSQL workflow persistence, and frontend test evidence.
+- **Reason:** Close remaining production-readiness gaps after Phase 1-4 completion without adding heavier browser E2E dependencies.
+- **Risk:** Low — additive persistence paths and tests, plus compose volume wiring.
+- **Breaking changes:** None for default local dev; sidecar persistence is opt-in unless Compose mounts the SQLite volume.
+- **Database migrations:** No new migration; smoke test validates existing `012_releases_reviews_suites.sql`.
+- **Deployment steps:** For Compose deployments, retain the new `sidecar_jobs` volume. Optional standalone deployments can set `SIDECAR_JOBS_DB` to a writable SQLite path.
+- **Documentation updated:** `.ai/TODO.md` and this changelog.
+- **Verification completed:** `python3 -m pytest sidecar/tests/ -v` ✅; `go test ./internal/db/... ./internal/release/... ./internal/workflow/... -count=1 -short` ✅; temporary PostgreSQL 16.14 container + `GOTEST_POSTGRES_SMOKE_URL=postgres://postgres:password@localhost:55432/gotest_agent?sslmode=disable go test ./internal/db -run TestPostgresWorkflowPersistenceSmoke -count=1` ✅; `npm --prefix frontend test` ✅; `npm --prefix frontend run build` ✅; `go test ./internal/... -count=1 -short` ✅; `go build ./...` ✅.
+- **Facts added/removed or confidence changed:** Sidecar job state can now survive restarts when SQLite persistence is configured; frontend now has 26 passing Vitest tests across 4 files; workflow PostgreSQL persistence has live migration/round-trip evidence.
+- **Open unknowns:** Optional true-browser frontend E2E and manual Chrome extension validation remain.
+- **Related ADRs/TODOs:** `TODO-011`, `TODO-012`, Phase 2/3 validation follow-ups.
+
+## 2026-08-01 — API regression tests for browser egress safety gate
+
+- **Task:** Add API-level regression coverage for unsafe browser URL rejection.
+- **Source revision before change:** UNCOMMITTED
+- **Source revision after change:** UNCOMMITTED
+- **Files modified:** internal/api/handlers_testing.go, internal/api/handlers_testing_test.go, .ai/CHANGELOG_AI.md
+- **Summary:**
+  - Added early `agent.IsSafeBrowserURL` validation to the exploratory testing endpoint so unsafe URLs are rejected before Playwright startup.
+  - Added API regression tests for `/testing/explore`, `/testing/performance`, `/testing/accessibility`, `/testing/visual-regression`, and `/testing/audit`.
+  - Tests cover metadata endpoints, localhost, private IPs, `.local` names, and disallowed URL schemes.
+- **Reason:** Strengthen browser egress hardening with API-level guard tests that do not require a live browser.
+- **Risk:** Low — additive tests and earlier validation for an already-blocked unsafe path.
+- **Breaking changes:** None beyond the intended unsafe URL rejection behavior from the egress hardening change.
+- **Database migrations:** None.
+- **Deployment steps:** None.
+- **Documentation updated:** This changelog.
+- **Verification completed:** `go test ./internal/api/... -count=1 -short` ✅.
+- **Facts added/removed or confidence changed:** Unsafe browser URL rejection is now covered at both utility and API-handler levels.
+- **Open unknowns:** Controlled live redirect/browser smoke test still remains.
+- **Related ADRs/TODOs:** Browser egress hardening regression coverage.
+
+## 2026-08-01 — Status documentation refresh after Phase 1-4 completion
+
+- **Task:** Reconcile stale handoff/achievement/parser prompt docs with the implemented codebase state.
+- **Source revision before change:** UNCOMMITTED
+- **Source revision after change:** UNCOMMITTED
+- **Files modified:** docs/AI_AGENT_PROMPTS.md, docs/AI_AGENT_HANDOFF.md, docs/ACHIEVEMENT_SUMMARY.md, docs/FINAL_ACHIEVEMENT_REPORT.md, docs/PARSERS.md, .ai/CHANGELOG_AI.md
+- **Summary:**
+  - Updated Phase 1-4 status from planned/ready to implemented where code now exists.
+  - Updated parser coverage from 4 languages to 9 registered languages.
+  - Replaced stale `FINAL_SUMMARY.md` references with `FINAL_ACHIEVEMENT_REPORT.md` / `.ai/TODO.md`.
+  - Updated next-step recommendations to focus on manual/live validation, PostgreSQL migration smoke testing, browser egress smoke testing, frontend E2E, and Katalon native mobile/desktop gap strategy.
+  - Corrected parser reference snippets to match current interfaces and model types.
+- **Reason:** User requested full docs/status review; stale docs were under-reporting implemented features and pointing agents toward already-completed Phase 2-4 work.
+- **Risk:** Documentation-only.
+- **Breaking changes:** None.
+- **Database migrations:** None.
+- **Deployment steps:** None.
+- **Documentation updated:** Listed files above.
+- **Verification completed:** No code validation required for docs-only edits. Prior code validation in this session: `go build ./...` ✅; `go test ./internal/... -count=1 -short` ✅; `npm --prefix frontend run build` ✅; `npm --prefix frontend test` ✅.
+- **Facts added/removed or confidence changed:** Handoff docs now state Phase 1-4 core implementation is complete and list remaining validation/hardening gaps.
+- **Open unknowns:** Some broader docs may still contain historical roadmap language, but primary handoff/status/parser docs are reconciled.
+- **Related ADRs/TODOs:** Documentation drift cleanup.
+
+## 2026-08-01 — Browser egress hardening and allowlist policy
+
+- **Task:** Close browser egress validation gap from TODO-016 / ADR-002.
+- **Source revision before change:** UNCOMMITTED
+- **Source revision after change:** UNCOMMITTED
+- **Files modified:** internal/agent/browser_egress.go, internal/agent/playwright_runner.go, internal/agent/steel_runner.go, internal/agent/playwright_runner_test.go, internal/config/config.go, internal/config/config_test.go, internal/api/handlers_runs.go, internal/api/handlers_testing.go, .ai/TODO.md, .ai/CHANGELOG_AI.md
+- **Summary:**
+  - Added `agent.IsSafeBrowserURL` with explicit `http`/`https` scheme enforcement, credential-in-URL rejection, metadata endpoint blocking, private/loopback/link-local/unspecified/multicast IP blocking, and DNS-resolution checks.
+  - Added Playwright page/context route guards to abort unsafe requests, protecting explicit `goto`, redirects, clicked links, exploratory testing, performance/a11y/visual audit endpoints, local Playwright runner, and Steel runner paths.
+  - Added `BROWSER_ALLOWED_HOSTS` config for explicit local/private host allowlisting when teams intentionally test non-public targets.
+  - Added unit coverage for unsafe schemes, local/internal names, metadata endpoints, IP ranges, wildcard host allowlisting, and metadata non-bypass with wildcard.
+  - Updated TODO-016 status to done with remaining optional live redirect smoke test noted.
+- **Reason:** Reduce SSRF/internal-network exposure from generated or healed browser actions and audit endpoints.
+- **Risk:** Medium — local/private browser targets are now blocked unless explicitly allowlisted with `BROWSER_ALLOWED_HOSTS`.
+- **Breaking changes:** Potential operational behavior change for teams testing `localhost`, RFC1918, `.local`, `.internal`, `.lan`, `.home`, or `.corp` targets without an allowlist.
+- **Database migrations:** None.
+- **Deployment steps:** Set `BROWSER_ALLOWED_HOSTS` for intentional local/private test targets, for example `BROWSER_ALLOWED_HOSTS=localhost,127.0.0.1,myapp.local`.
+- **Documentation updated:** `.ai/TODO.md` and this changelog.
+- **Verification completed:** `go test ./internal/agent/... ./internal/api/... ./internal/config/... -count=1 -short` ✅; `go test ./internal/parser/... ./internal/release/... ./internal/workflow/... -count=1 -short` ✅.
+- **Facts added/removed or confidence changed:** Browser egress validation is now enforced at both URL validation and Playwright request-routing levels.
+- **Open unknowns:** Live redirect smoke test against a controlled fixture not run in this session.
+- **Related ADRs/TODOs:** ADR-002, TODO-016.
+
+## 2026-08-01 — Rust parser coverage and default registry expansion
+
+- **Task:** Extend Phase 4 parser coverage with Rust and ensure default registry exposes all implemented parsers.
+- **Source revision before change:** UNCOMMITTED
+- **Source revision after change:** UNCOMMITTED
+- **Files modified:** internal/parser/rust/parser.go, internal/parser/rust/parser_test.go, internal/parser/registry.go, internal/parser/registry_test.go, .ai/CHANGELOG_AI.md
+- **Summary:**
+  - Added a new regex-based Rust parser that detects Cargo-based frameworks, extracts Actix-style route macros, Axum router chains, struct models, and handler functions.
+  - Added unit tests covering Actix Web route parsing, model field extraction, handler detection, and Axum router parsing.
+  - Registered Rust in the default parser registry and updated language detection to recognize Cargo projects.
+  - Expanded registry tests so default parser registration includes Ruby, C#, and Rust coverage.
+- **Reason:** Close the remaining Phase 4 language coverage gap and keep parser registry aligned with implemented languages.
+- **Risk:** Medium — parser heuristics are additive and non-destructive, but regex parsing can be imperfect on unusual Rust syntax.
+- **Breaking changes:** None.
+- **Database migrations:** None.
+- **Deployment steps:** None.
+- **Documentation updated:** This changelog.
+- **Verification completed:** `go test ./internal/parser/... -count=1 -short` ✅; `go build ./...` ✅; `go test ./internal/... -count=1 -short` ✅.
+- **Facts added/removed or confidence changed:** Rust is now supported by the default parser registry and language detection.
+- **Open unknowns:** Parser coverage for advanced Rust patterns, macros, and Rocket/Warp route styles may still need refinement.
+- **Related ADRs/TODOs:** Phase 4 parser coverage.
+
+## 2026-08-01 — PostgreSQL persistence for Releases, Reviews, Suites
+
+- **Task:** Continue production-readiness hardening by closing remaining ADR-003 durability gaps for release management and human workflow stores.
+- **Source revision before change:** UNCOMMITTED
+- **Source revision after change:** UNCOMMITTED
+- **Files modified:** internal/db/migrations/012_releases_reviews_suites.sql, internal/release/store.go, internal/release/db.go, internal/workflow/store.go, internal/workflow/db.go, internal/api/server.go, .ai/CHANGELOG_AI.md
+- **Summary:**
+  - Added migration `012_releases_reviews_suites.sql` for durable `releases`, `reviews`, and `suites` tables with JSONB-backed `run_ids`/`tags` and useful indexes.
+  - Added optional PostgreSQL persistence to `release.Store` with DB reads/list/update and in-memory fallback.
+  - Added optional PostgreSQL persistence to `workflow.ReviewStore` for create/get/by-run/approve/reject workflows.
+  - Added optional PostgreSQL persistence to `workflow.SuiteStore` for create/get/list/tag-query/delete workflows.
+  - Wired `releases`, `reviews`, and `suites` stores in `api.NewServer` whenever the primary run store is PostgreSQL-backed.
+  - Kept development-safe in-memory behavior when PostgreSQL is not configured.
+- **Reason:** Prevent release/review/suite metadata loss on restart and align Phase 2-4 workflow state with production durability requirements.
+- **Risk:** Medium — persistence behavior changes when PostgreSQL is configured, but APIs and memory fallback remain unchanged.
+- **Breaking changes:** None.
+- **Database migrations:** `012_releases_reviews_suites.sql` must be applied by the existing migration flow.
+- **Deployment steps:** Run existing migration process before/with deployment.
+- **Documentation updated:** This changelog.
+- **Verification completed:** `go test ./internal/release/... ./internal/workflow/... ./internal/api/... -count=1 -short` ✅; `go build ./...` ✅; `go test ./internal/... -count=1 -short` ✅; `npm --prefix frontend run build` ✅; `npm --prefix frontend test` ✅.
+- **Facts added/removed or confidence changed:** Releases, reviews, and suites now persist when PostgreSQL is configured.
+- **Open unknowns:** Live PostgreSQL migration smoke test not run in this session; Chrome extension still needs manual browser load test.
+- **Related ADRs/TODOs:** ADR-003 production durability.
+
+## 2026-07-31 — PostgreSQL persistence for Recordings, Webhooks, Drifts, Generated Drift Tests
+
+- **Task:** Continue production-readiness hardening by wiring PostgreSQL persistence into previously in-memory Phase 2/3 stores.
+- **Source revision before change:** UNCOMMITTED
+- **Source revision after change:** UNCOMMITTED
+- **Files modified:** internal/recordings/store.go, internal/recordings/db.go, internal/webhook/store.go, internal/webhook/db.go, internal/drift/store.go, internal/drift/db.go, internal/drift/generator.go, internal/drift/generated_db.go, internal/api/server.go
+- **Summary:**
+  - Added optional DB persistence to recording sessions and recorded events using `recording_sessions` / `recorded_events`.
+  - Added optional DB persistence to webhook registrations using `webhook_registrations`.
+  - Added optional DB persistence to drifts and generated drift tests using `drifts` / `drift_generated_tests`.
+  - Wired stores in `NewServer` when the main RunStore is PostgreSQL-backed.
+  - Switched persisted store IDs to UUIDs to avoid counter collisions after restart.
+  - Kept memory fallback behavior for development and for DB read/write errors.
+- **Reason:** Close ADR-003 production durability gaps for Phase 2/3 workflows.
+- **Risk:** Medium — persistence behavior changed when PostgreSQL is available, but memory fallback remains.
+- **Breaking changes:** None.
+- **Database migrations:** Uses existing `010_drifts.sql` and `011_recording_sessions.sql`.
+- **Deployment steps:** Apply migrations through existing migration flow.
+- **Documentation updated:** This changelog.
+- **Verification completed:** `go build ./...` ✅; `go test ./internal/recordings/... ./internal/webhook/... ./internal/drift/... ./internal/api/... -short` ✅; `go test ./internal/... -short` ✅; `npm --prefix frontend run build` ✅.
+- **Facts added/removed or confidence changed:** Recordings, webhook registrations, drifts, and generated drift tests now persist when PostgreSQL is configured.
+- **Open unknowns:** Releases/reviews/suites still need DB persistence; Chrome extension still needs manual browser test.
+- **Related ADRs/TODOs:** ADR-003 Phase 2/3.
+
+## 2026-07-31 — Phase 2-4 full implementation: Record & Playback, Continuous Sync, Advanced AI
+
+- **Task:** Implement all Phase 2, 3, and 4 features for production readiness
+- **Source revision before change:** 544f454
+- **Source revision after change:** UNCOMMITTED
+- **Files modified:** 26 files created, 6 files modified
+- **Summary:**
+  - **Phase 2 - Record & Playback:**
+    - Database migration 011_recordings.sql (recording_sessions, recorded_events)
+    - Recording sessions + events domain model (store.go, sort.go, store_test.go)
+    - AI recording generator with prompt building + confidence scoring (recording_generator.go)
+    - API handlers for sessions CRUD + events + test generation (handlers_recordings.go)
+    - Chrome extension Manifest V3 (chrome-extension/) with content.js, background.js, popup
+    - Backward compatible with existing screenshot recording metadata
+  - **Phase 3 - Continuous Sync:**
+    - Webhook registration store + API handlers (webhook/store.go, handlers_webhooks.go)
+    - Alert rules engine for drift notifications (notify/rules.go)
+    - Batch drift test generator with async event emission (drift/batch_generator.go)
+    - Drift auto-generation in webhook push flow (handlers_drifts.go)
+    - Alert notifications for high-severity and missing-test drifts
+    - Config options: AutoGenerateDriftTests, MaxAutoGenerateDrifts (config.go)
+  - **Phase 4 - Advanced AI:**
+    - Ruby Rails parser: routes.rb, models, controllers (parser/ruby/)
+    - Java Spring Boot parser: controllers, entities, repositories (parser/java/)
+    - C# ASP.NET Core parser: controllers, minimal API, models (parser/csharp/)
+    - All 3 parsers registered in registry.go
+    - Test quality analyzer: flakiness, performance, completeness scoring (intelligence/analyzer.go)
+    - Redundancy detection for overlapping tests
+    - Code review assistant: selector, assertion, structure analysis (intelligence/reviewer.go)
+    - API handlers: /intelligence/quality, /intelligence/redundancy, /intelligence/review, /runs/{id}/review
+  - Total: 35 Go packages passing all tests
+  - 7 language parsers: JavaScript, Go, Python, PHP, Ruby, Java, C#
+- **Reason:** Complete Phase 2-4 to achieve full feature parity and exceed TestSprite
+- **Risk:** Medium — large code changes across many packages
+- **Breaking changes:** None — all existing endpoints and tests preserved
+- **Database migrations:** 011_recordings.sql added
+- **Deployment steps:** None beyond migration
+- **Documentation updated:** FINAL_SUMMARY.md, AI_AGENT_PROMPTS.md status updated
+- **Verification completed:** go build ./... ✅, go test ./internal/... -short (35/35 pass) ✅
+- **Facts added/removed or confidence changed:** Phase 2-4 moved from PLANNED to IMPLEMENTED
+- **Open unknowns:** Tree-sitter dependencies need manual install if Ruby/Java/C# grammars needed in future
+- **Related ADRs/TODOs:** PHASE-2-IMPLEMENTATION.md, PHASE-3-IMPLEMENTATION.md, PHASE-4-IMPLEMENTATION.md
 
 ## 2026-07-30 — Frontend integration of advanced testing features
 

@@ -97,3 +97,14 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(list)
 }
+
+// handleListNotificationTypes returns the supported notification channels and
+// alert rule types.
+func (s *Server) handleListNotificationTypes(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"channels":   []string{"slack", "email", "webhook"},
+		"rule_types": []string{"drift", "failure", "flake"},
+		"conditions": []string{"severity == high", "type == missing_test"},
+	})
+}

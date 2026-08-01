@@ -1,11 +1,13 @@
 package release
 
 import (
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/go-go-golems/gotest-agent/internal/agent"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Release struct {
@@ -35,10 +37,15 @@ type Store struct {
 	mu       sync.RWMutex
 	releases map[string]*Release
 	order    []string
+	dbPool   *pgxpool.Pool
 }
 
 func NewStore() *Store {
 	return &Store{releases: make(map[string]*Release)}
+}
+
+func (s *Store) EnableDB(pool *pgxpool.Pool) {
+	s.dbPool = pool
 }
 
 func (s *Store) Create(r *Release) *Release {
@@ -47,30 +54,60 @@ func (s *Store) Create(r *Release) *Release {
 	if r.ID == "" {
 		r.ID = uuid.New().String()
 	}
-	r.CreatedAt = time.Now()
-	r.UpdatedAt = time.Now()
+	now := time.Now()
+	if r.CreatedAt.IsZero() {
+		r.CreatedAt = now
+	}
+	if r.UpdatedAt.IsZero() {
+		r.UpdatedAt = now
+	}
 	if r.Status == "" {
 		r.Status = "active"
 	}
-	s.releases[r.ID] = r
+	stored := *r
+	s.releases[r.ID] = &stored
 	s.order = append([]string{r.ID}, s.order...)
-	return r
+	if s.dbPool != nil {
+		if err := s.persistReleaseDB(&stored); err != nil {
+			slog.Warn("release persistence failed", "release_id", stored.ID, "error", err)
+		}
+	}
+	return &stored
 }
 
 func (s *Store) Get(id string) (*Release, bool) {
+	if s.dbPool != nil {
+		if rel, err := s.getReleaseDB(id); err == nil {
+			return rel, true
+		} else {
+			slog.Warn("release DB read failed, falling back to memory", "release_id", id, "error", err)
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	r, ok := s.releases[id]
-	return r, ok
+	if !ok {
+		return nil, false
+	}
+	copied := *r
+	return &copied, true
 }
 
 func (s *Store) List() []*Release {
+	if s.dbPool != nil {
+		if rels, err := s.listReleasesDB(); err == nil {
+			return rels
+		} else {
+			slog.Warn("releases DB list failed, falling back to memory", "error", err)
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var result []*Release
 	for _, id := range s.order {
 		if r, ok := s.releases[id]; ok {
-			result = append(result, r)
+			copied := *r
+			result = append(result, &copied)
 		}
 	}
 	return result
@@ -78,14 +115,46 @@ func (s *Store) List() []*Release {
 
 func (s *Store) Update(id string, fn func(*Release)) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	r, ok := s.releases[id]
-	if !ok {
+	if ok {
+		fn(r)
+		r.UpdatedAt = time.Now()
+		copied := *r
+		s.mu.Unlock()
+		if s.dbPool != nil {
+			if err := s.persistReleaseDB(&copied); err != nil {
+				slog.Warn("release update persistence failed", "release_id", id, "error", err)
+			}
+		}
+		return true
+	}
+	s.mu.Unlock()
+
+	if s.dbPool == nil {
 		return false
 	}
-	fn(r)
-	r.UpdatedAt = time.Now()
+	rel, err := s.getReleaseDB(id)
+	if err != nil {
+		return false
+	}
+	fn(rel)
+	rel.UpdatedAt = time.Now()
+	if err := s.persistReleaseDB(rel); err != nil {
+		slog.Warn("release update persistence failed", "release_id", id, "error", err)
+		return false
+	}
+	s.rememberRelease(rel)
 	return true
+}
+
+func (s *Store) rememberRelease(rel *Release) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stored := *rel
+	if _, ok := s.releases[rel.ID]; !ok {
+		s.order = append([]string{rel.ID}, s.order...)
+	}
+	s.releases[rel.ID] = &stored
 }
 
 // Summarize computes aggregated metrics for a release given its runs

@@ -3,8 +3,12 @@ package drift
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Drift types
@@ -46,15 +50,21 @@ type Store struct {
 	mu      sync.RWMutex
 	items   []Drift
 	counter int64
+	dbPool  *pgxpool.Pool
 }
 
 func NewStore() *Store { return &Store{} }
+
+// EnableDB enables PostgreSQL persistence for drifts.
+func (s *Store) EnableDB(pool *pgxpool.Pool) { s.dbPool = pool }
 
 func (s *Store) Add(d Drift) *Drift {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.counter++
-	d.ID = fmt.Sprintf("drift-%d", s.counter)
+	if d.ID == "" {
+		d.ID = uuid.New().String()
+	}
 	if d.Status == "" {
 		d.Status = StatusPending
 	}
@@ -62,12 +72,24 @@ func (s *Store) Add(d Drift) *Drift {
 	d.CreatedAt = now
 	d.UpdatedAt = now
 	s.items = append(s.items, d)
+	if s.dbPool != nil {
+		if err := s.persistDriftDB(&d); err != nil {
+			slog.Warn("drift persistence failed", "drift_id", d.ID, "error", err)
+		}
+	}
 	return &d
 }
 
 // List returns drifts, optionally filtered by repository, type, and status
 // (empty string matches all).
 func (s *Store) List(repository, driftType, status string) []Drift {
+	if s.dbPool != nil {
+		if list, err := s.listDriftsDB(repository, driftType, status); err == nil {
+			return list
+		} else {
+			slog.Warn("drifts DB list failed, falling back to memory", "error", err)
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	result := []Drift{}
@@ -89,6 +111,13 @@ func (s *Store) List(repository, driftType, status string) []Drift {
 // HasPending reports whether a pending drift already exists for the same
 // repository, type, and file path (used to dedup repeated pushes).
 func (s *Store) HasPending(repository, driftType, filePath string) bool {
+	if s.dbPool != nil {
+		if ok, err := s.hasPendingDB(repository, driftType, filePath); err == nil {
+			return ok
+		} else {
+			slog.Warn("drift pending DB check failed, falling back to memory", "error", err)
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for i := range s.items {
@@ -104,6 +133,13 @@ func (s *Store) HasPending(repository, driftType, filePath string) bool {
 
 // Get returns a single drift by ID.
 func (s *Store) Get(id string) (*Drift, bool) {
+	if s.dbPool != nil {
+		if d, err := s.getDriftDB(id); err == nil {
+			return d, true
+		} else {
+			slog.Warn("drift DB read failed, falling back to memory", "drift_id", id, "error", err)
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for i := range s.items {
@@ -121,6 +157,16 @@ func (s *Store) UpdateStatus(id, status string) (*Drift, error) {
 	case StatusPending, StatusFixed, StatusIgnored:
 	default:
 		return nil, fmt.Errorf("invalid status: %q", status)
+	}
+	if s.dbPool != nil {
+		if d, err := s.getDriftDB(id); err == nil {
+			d.Status = status
+			d.UpdatedAt = time.Now()
+			if err := s.persistDriftDB(d); err != nil {
+				slog.Warn("drift status persistence failed", "drift_id", id, "error", err)
+			}
+			return d, nil
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

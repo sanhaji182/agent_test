@@ -3,34 +3,67 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-go-golems/gotest-agent/internal/drift"
+	"github.com/go-go-golems/gotest-agent/internal/events"
 )
+
+var (
+	errDriftNotFound = errors.New("drift not found")
+	errAIDisabled    = errors.New("AI planning is not enabled (set GOTEST_AI_PLANNING=1)")
+)
+
+// generateDriftTest generates a test for a drift and stores it as a generated
+// test (status: generated). It is used by both the synchronous POST
+// /drifts/{id}/generate-test endpoint and the GET /drifts/{id}/auto-generate
+// convenience endpoint.
+func (s *Server) generateDriftTest(ctx context.Context, id string, emitEvent bool) (*drift.GeneratedTest, error) {
+	d, ok := s.drifts.Get(id)
+	if !ok {
+		return nil, errDriftNotFound
+	}
+
+	llm := s.aiClientForDrift(ctx)
+	if llm == nil {
+		return nil, errAIDisabled
+	}
+
+	gen := drift.NewGenerator(llm, s.driftTests)
+	gt, err := gen.GenerateForDrift(ctx, *d)
+	if err != nil {
+		return nil, err
+	}
+
+	if emitEvent && s.events != nil {
+		s.events.Emit(id, events.EventType("drift_test_generated"), "auto_generate", "Generated test for drift", map[string]string{
+			"drift_id":   d.ID,
+			"test_id":    gt.ID,
+			"test_name":  gt.TestName,
+			"repository": d.Repository,
+			"file_path":  d.FilePath,
+		})
+	}
+
+	return gt, nil
+}
 
 // handleGenerateDriftTest synthesizes a test for a drift via the LLM and stores
 // it as a generated test (status: generated). Requires AI planning enabled.
 func (s *Server) handleGenerateDriftTest(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	d, ok := s.drifts.Get(id)
-	if !ok {
-		http.Error(w, "drift not found", http.StatusNotFound)
-		return
-	}
-
-	llm := s.aiClient(r.Context())
-	if llm == nil {
-		http.Error(w, "AI planning is not enabled (set GOTEST_AI_PLANNING=1)", http.StatusServiceUnavailable)
-		return
-	}
-
-	gen := drift.NewGenerator(llm, s.driftTests)
-	gt, err := gen.GenerateForDrift(context.Background(), *d)
+	gt, err := s.generateDriftTest(r.Context(), id, false)
 	if err != nil {
 		status := http.StatusInternalServerError
-		if strings.Contains(err.Error(), "cannot auto-generate") {
+		switch {
+		case err == errDriftNotFound:
+			status = http.StatusNotFound
+		case err == errAIDisabled:
+			status = http.StatusServiceUnavailable
+		case strings.Contains(err.Error(), "cannot auto-generate"):
 			status = http.StatusUnprocessableEntity
 		}
 		http.Error(w, err.Error(), status)

@@ -79,9 +79,10 @@ GoTest Agent is a **self-hosted, open-source AI testing platform** that provides
 |---------|--------------|------------|-----------|
 | **Playwright Export** | ✅ Export to Playwright | ✅ Playwright export | 🟡 Tie |
 | **Cypress Export** | ✅ Export to Cypress | ⚠️ Limited export | 🟢 **GoTest Agent** |
-| **Selenium Export** | ✅ Export to Selenium | ⚠️ Limited export | 🟢 **GoTest Agent** |
+| **Selenium Export** | ✅ Export to Selenium Python | ⚠️ Limited export | 🟢 **GoTest Agent** |
 | **Puppeteer Export** | ✅ Export to Puppeteer | ❌ No Puppeteer export | 🟢 **GoTest Agent** |
-| **Multi-Framework** | ✅ 4+ frameworks | ⚠️ 2 frameworks | 🟢 **GoTest Agent** |
+| **Mobile/WebDriver Export** | ✅ Appium + WebdriverIO export | ⚠️ Limited | 🟢 **GoTest Agent** |
+| **Multi-Framework** | ✅ 6+ frameworks/targets | ⚠️ 2 frameworks | 🟢 **GoTest Agent** |
 
 ### Documentation & Support
 
@@ -172,14 +173,16 @@ GoTest Agent provides enterprise-grade observability:
 
 ### 7. Multi-Framework Export
 
-GoTest Agent exports to 4+ testing frameworks:
+GoTest Agent exports to 6+ testing frameworks/targets:
 
 - **Playwright** (JavaScript/TypeScript)
 - **Cypress** (JavaScript)
-- **Selenium** (Java, Python, JavaScript)
+- **Selenium** (Python)
 - **Puppeteer** (JavaScript)
+- **Appium** (mobile web via WebdriverIO)
+- **WebdriverIO** (desktop browser / WebDriver grids)
 
-**Advantage**: TestSprite only exports to 2 frameworks.
+**Advantage**: TestSprite only exports to fewer framework targets, while GoTest now includes a practical mobile/WebDriver bridge.
 
 ### 8. Self-Hosted Deployment
 

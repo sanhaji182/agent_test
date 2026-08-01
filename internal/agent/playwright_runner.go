@@ -5,63 +5,17 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"net"
-	"net/url"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-go-golems/gotest-agent/internal/browser"
 	"github.com/playwright-community/playwright-go"
 )
 
 var playwrightInstallOnce sync.Once
 var playwrightInstallErr error
-
-// isSafeBrowserURL validates that a URL won't navigate the browser to internal
-// infrastructure (AUDIT SEC-06). Rejects loopback, RFC1918 private networks,
-// link-local, and cloud metadata endpoints.
-func isSafeBrowserURL(rawURL string) bool {
-	if rawURL == "" {
-		return false
-	}
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return false
-	}
-	host := u.Hostname()
-	if host == "" {
-		return false
-	}
-	lower := strings.ToLower(host)
-
-	// Block cloud metadata endpoints
-	if lower == "169.254.169.254" || lower == "metadata.google.internal" || lower == "metadata" {
-		return false
-	}
-
-	ip := net.ParseIP(host)
-	if ip != nil {
-		if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-			return false
-		}
-		if ip.IsPrivate() {
-			return false
-		}
-		return true
-	}
-
-	// Block hostnames that resolve to loopback
-	if ips, err := net.LookupIP(host); err == nil {
-		for _, resolved := range ips {
-			if resolved.IsLoopback() || resolved.IsLinkLocalUnicast() || resolved.IsPrivate() {
-				return false
-			}
-		}
-	}
-
-	return true
-}
 
 type PlaywrightRunner struct {
 	VideoDir      string
@@ -71,6 +25,7 @@ type PlaywrightRunner struct {
 	Parallel      bool   // execute test files concurrently
 	Viewport      *ViewportPreset
 	TestData      map[string]string // parameterized test data (template key → value)
+	AllowedHosts  []string          // explicit browser egress allowlist for local/private targets
 }
 
 // ViewportPreset defines browser viewport dimensions for responsive testing.
@@ -115,6 +70,13 @@ func (r *PlaywrightRunner) WithViewport(preset string) *PlaywrightRunner {
 	if vp, ok := ViewportPresets[preset]; ok {
 		r.Viewport = &vp
 	}
+	return r
+}
+
+// WithAllowedHosts configures explicit host allowlist entries for browser egress.
+// Entries can be exact hosts, comma-separated hosts, URLs, or wildcard suffixes like *.example.test.
+func (r *PlaywrightRunner) WithAllowedHosts(hosts ...string) *PlaywrightRunner {
+	r.AllowedHosts = append(r.AllowedHosts, hosts...)
 	return r
 }
 
@@ -197,6 +159,9 @@ func (r *PlaywrightRunner) Run(ctx context.Context, testFiles []TestFile, projec
 		return nil, fmt.Errorf("could not create context: %w", err)
 	}
 	defer bCtx.Close()
+	if err := InstallContextEgressGuard(bCtx, r.AllowedHosts...); err != nil {
+		return nil, fmt.Errorf("could not install browser egress guard: %w", err)
+	}
 
 	page, err := bCtx.NewPage()
 	if err != nil {
@@ -319,6 +284,10 @@ func (r *PlaywrightRunner) runParallel(ctx context.Context, browser playwright.B
 				return
 			}
 			defer bCtx.Close()
+			if err := InstallContextEgressGuard(bCtx, r.AllowedHosts...); err != nil {
+				results[i] = fileResult{failed: 1, total: 1}
+				return
+			}
 
 			page, err := bCtx.NewPage()
 			if err != nil {
@@ -371,7 +340,7 @@ func (r *PlaywrightRunner) executeAction(ctx context.Context, page playwright.Pa
 	var err error
 	switch a.Action {
 	case "goto":
-		if !isSafeBrowserURL(a.URL) {
+		if !IsSafeBrowserURL(a.URL, r.AllowedHosts...) {
 			return fmt.Errorf("browser egress blocked: unsafe URL %q", a.URL)
 		}
 		_, err = page.Goto(a.URL)
@@ -479,15 +448,8 @@ func (r *PlaywrightRunner) executeAction(ctx context.Context, page playwright.Pa
 	// SELF-HEALING LOOP on failure
 	if err != nil && r.llm != nil {
 		for attempt := 1; attempt <= 3; attempt++ {
-			domSnapshot, _ := page.Evaluate(`() => {
-				let result = "";
-				document.querySelectorAll("button, input, a, select, [role='button']").forEach(el => {
-					if (el.offsetParent !== null) {
-						result += el.tagName + (el.id ? "#"+el.id : "") + (el.className ? "."+el.className.split(" ").join(".") : "") + " '" + (el.innerText || el.value || "").trim() + "'\n";
-					}
-				});
-				return result;
-			}`)
+			// Use CDP accessibility tree snapshot for richer, LLM-efficient context
+			domSnapshot := getCompactDOMSnapshot(page)
 
 			var imageBase64 string
 			if screenshot, errImg := page.Screenshot(playwright.PageScreenshotOptions{
@@ -516,7 +478,7 @@ func (r *PlaywrightRunner) executeAction(ctx context.Context, page playwright.Pa
 				// Retry the healed action (without recursion into healing)
 				switch a.Action {
 				case "goto":
-					if !isSafeBrowserURL(a.URL) {
+					if !IsSafeBrowserURL(a.URL, r.AllowedHosts...) {
 						return fmt.Errorf("browser egress blocked: unsafe URL %q", a.URL)
 					}
 					_, err = page.Goto(a.URL)
@@ -558,4 +520,32 @@ func expandString(s string, data map[string]string) string {
 		s = strings.ReplaceAll(s, "{{"+k+"}}", v)
 	}
 	return s
+}
+
+// getCompactDOMSnapshot extracts a compact accessibility tree snapshot
+// from the current page state using the CDP-based browser package.
+// Falls back to a basic element list if the browser package is unavailable.
+func getCompactDOMSnapshot(page playwright.Page) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Try CDP accessibility tree
+	if result, err := browser.GetPageSnapshotFromPlaywright(ctx, page); err == nil && result != nil {
+		return browser.CDPSnapshotToPrompt(result)
+	}
+
+	// Fallback: basic element extraction
+	raw, err := page.Evaluate(`() => {
+		let result = "";
+		document.querySelectorAll("button, input, a, select, [role='button'], h1, h2, h3, h4, h5, h6").forEach(el => {
+			if (el.offsetParent !== null) {
+				result += el.tagName + (el.id ? "#"+el.id : "") + " '" + (el.innerText || el.value || "").trim() + "'\n";
+			}
+		});
+		return result;
+	}`)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", raw)
 }

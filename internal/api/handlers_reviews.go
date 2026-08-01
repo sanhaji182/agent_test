@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-go-golems/gotest-agent/internal/audit"
 	"github.com/go-go-golems/gotest-agent/internal/workflow"
 )
 
@@ -44,6 +45,7 @@ func (s *Server) handleApproveReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rev, _ := s.reviews.Get(id)
+	s.recordAudit(r, audit.ActionApprove, audit.ResourceReview, id, req.Comment)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(rev)
 }
@@ -60,6 +62,7 @@ func (s *Server) handleRejectReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rev, _ := s.reviews.Get(id)
+	s.recordAudit(r, audit.ActionReject, audit.ResourceReview, id, req.Comment)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(rev)
 }
@@ -136,4 +139,14 @@ func (s *Server) handleDeleteSuite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleListSuitesByTag(w http.ResponseWriter, r *http.Request) {
+	tag := chi.URLParam(r, "tag")
+	list := s.suites.ByTag(tag)
+	if list == nil {
+		list = []*workflow.Suite{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(list)
 }

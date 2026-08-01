@@ -3,6 +3,7 @@ package drift
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	"github.com/go-go-golems/gotest-agent/internal/ai"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Generated-test statuses.
@@ -36,15 +39,21 @@ type GeneratedTestStore struct {
 	mu      sync.RWMutex
 	items   []GeneratedTest
 	counter int64
+	dbPool  *pgxpool.Pool
 }
 
 func NewGeneratedTestStore() *GeneratedTestStore { return &GeneratedTestStore{} }
+
+// EnableDB enables PostgreSQL persistence for generated drift tests.
+func (s *GeneratedTestStore) EnableDB(pool *pgxpool.Pool) { s.dbPool = pool }
 
 func (s *GeneratedTestStore) Add(t GeneratedTest) *GeneratedTest {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.counter++
-	t.ID = fmt.Sprintf("gentest-%d", s.counter)
+	if t.ID == "" {
+		t.ID = uuid.New().String()
+	}
 	if t.Status == "" {
 		t.Status = GenStatusGenerated
 	}
@@ -52,11 +61,23 @@ func (s *GeneratedTestStore) Add(t GeneratedTest) *GeneratedTest {
 	t.CreatedAt = now
 	t.UpdatedAt = now
 	s.items = append(s.items, t)
+	if s.dbPool != nil {
+		if err := s.persistGeneratedTestDB(&t); err != nil {
+			slog.Warn("generated drift test persistence failed", "generated_test_id", t.ID, "error", err)
+		}
+	}
 	return &t
 }
 
 // ByDrift returns generated tests for a drift, newest first.
 func (s *GeneratedTestStore) ByDrift(driftID string) []GeneratedTest {
+	if s.dbPool != nil {
+		if list, err := s.generatedTestsByDriftDB(driftID); err == nil {
+			return list
+		} else {
+			slog.Warn("generated drift tests DB list failed, falling back to memory", "drift_id", driftID, "error", err)
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	result := []GeneratedTest{}
@@ -74,6 +95,16 @@ func (s *GeneratedTestStore) UpdateStatus(id, status string) (*GeneratedTest, er
 	case GenStatusGenerated, GenStatusReviewed, GenStatusRejected:
 	default:
 		return nil, fmt.Errorf("invalid status: %q", status)
+	}
+	if s.dbPool != nil {
+		if gt, err := s.getGeneratedTestDB(id); err == nil {
+			gt.Status = status
+			gt.UpdatedAt = time.Now()
+			if err := s.persistGeneratedTestDB(gt); err != nil {
+				slog.Warn("generated drift test status persistence failed", "generated_test_id", id, "error", err)
+			}
+			return gt, nil
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

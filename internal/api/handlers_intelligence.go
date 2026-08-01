@@ -100,3 +100,60 @@ func (s *Server) handleSuiteSelection(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(sel)
 }
+
+// handleTestQuality returns test quality analysis for all recorded runs.
+func (s *Server) handleTestQuality(w http.ResponseWriter, r *http.Request) {
+	runs := s.getAllRuns(r)
+	qualities := intelligence.AnalyzeTestQuality(runs)
+	if qualities == nil {
+		qualities = []intelligence.TestQuality{}
+	}
+	writeJSON(w, http.StatusOK, qualities)
+}
+
+// handleTestRedundancy detects redundant/similar tests.
+func (s *Server) handleTestRedundancy(w http.ResponseWriter, r *http.Request) {
+	runs := s.getAllRuns(r)
+	qualities := intelligence.AnalyzeTestQuality(runs)
+	groups := intelligence.DetectRedundancy(qualities)
+	if groups == nil {
+		groups = []intelligence.RedundancyGroup{}
+	}
+	writeJSON(w, http.StatusOK, groups)
+}
+
+// handleReviewTestCode runs the code review assistant on submitted test code.
+func (s *Server) handleReviewTestCode(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		TestCode string `json:"test_code"`
+		TestName string `json:"test_name,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.TestCode == "" {
+		writeJSONError(w, http.StatusBadRequest, "test_code is required")
+		return
+	}
+	review := intelligence.ReviewGeneratedTest(body.TestCode)
+	if body.TestName != "" {
+		review.TestName = body.TestName
+	}
+	writeJSON(w, http.StatusOK, review)
+}
+
+// handleReviewTestRun runs the code review assistant on all tests in a run.
+func (s *Server) handleReviewTestRun(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	run, err := s.store.GetRun(r.Context(), id)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, "run not found")
+		return
+	}
+	reviews := intelligence.ReviewTestRun(run)
+	if reviews == nil {
+		reviews = []intelligence.CodeReview{}
+	}
+	writeJSON(w, http.StatusOK, reviews)
+}

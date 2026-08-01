@@ -83,6 +83,30 @@ func TestDetectLanguage(t *testing.T) {
 			},
 			expected: "python",
 		},
+		{
+			name: "Rust project",
+			files: map[string]string{
+				"Cargo.toml":  "[package]\nname = \"test\"\nversion = \"0.1.0\"",
+				"src/main.rs": "fn main() {}",
+			},
+			expected: "rust",
+		},
+		{
+			name: "Ruby project",
+			files: map[string]string{
+				"Gemfile": "gem 'rails'",
+				"app.rb":  "puts 'hello'",
+			},
+			expected: "ruby",
+		},
+		{
+			name: "C# project",
+			files: map[string]string{
+				"Sample.csproj": "<Project Sdk=\"Microsoft.NET.Sdk.Web\"></Project>",
+				"Program.cs":    "var app = WebApplication.CreateBuilder(args).Build();",
+			},
+			expected: "csharp",
+		},
 	}
 
 	for _, tt := range tests {
@@ -97,6 +121,9 @@ func TestDetectLanguage(t *testing.T) {
 			// Create test files
 			for filename, content := range tt.files {
 				filePath := filepath.Join(tmpDir, filename)
+				if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+					t.Fatalf("Failed to create directory for %s: %v", filename, err)
+				}
 				if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
 					t.Fatalf("Failed to create file %s: %v", filename, err)
 				}
@@ -160,6 +187,15 @@ func TestAllParsers(t *testing.T) {
 				t.Fatalf("%s parser is nil", name)
 			}
 		})
+	}
+}
+
+func TestDefaultRegistryIncludesPhase4Languages(t *testing.T) {
+	registry := parser.NewDefaultRegistry()
+	for _, language := range []string{"javascript", "typescript", "go", "php", "python", "java", "csharp", "ruby", "rust"} {
+		if _, err := registry.GetParser(language); err != nil {
+			t.Fatalf("default registry missing %s parser: %v", language, err)
+		}
 	}
 }
 

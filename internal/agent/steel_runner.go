@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-go-golems/gotest-agent/internal/browser"
 	"github.com/go-go-golems/gotest-agent/internal/steel"
 	"github.com/playwright-community/playwright-go"
 )
@@ -18,11 +19,18 @@ type SteelRunner struct {
 	llm           LLM
 	ScreenshotDir string
 	TestData      map[string]string
+	AllowedHosts  []string
 }
 
 // NewSteelRunner creates a runner that uses Steel Browser cloud for execution.
 func NewSteelRunner(client *steel.Client, llm LLM) *SteelRunner {
 	return &SteelRunner{client: client, llm: llm}
+}
+
+// WithAllowedHosts configures explicit browser egress allowlist entries.
+func (r *SteelRunner) WithAllowedHosts(hosts ...string) *SteelRunner {
+	r.AllowedHosts = append(r.AllowedHosts, hosts...)
+	return r
 }
 
 // Run executes test files using a Steel cloud browser session.
@@ -59,6 +67,10 @@ func (r *SteelRunner) Run(ctx context.Context, testFiles []TestFile, projectURL 
 		}
 	}
 
+	if err := InstallContextEgressGuard(bCtx, r.AllowedHosts...); err != nil {
+		return nil, fmt.Errorf("steel: install browser egress guard: %w", err)
+	}
+
 	page, err := bCtx.NewPage()
 	if err != nil {
 		return nil, fmt.Errorf("steel: create page: %w", err)
@@ -70,6 +82,7 @@ func (r *SteelRunner) Run(ctx context.Context, testFiles []TestFile, projectURL 
 		ScreenshotDir: r.ScreenshotDir,
 		llm:           r.llm,
 		TestData:      r.TestData,
+		AllowedHosts:  r.AllowedHosts,
 	}
 
 	totalActions := 0
@@ -263,7 +276,10 @@ func (r *PlaywrightRunner) RunExploratoryTest(ctx context.Context, page playwrig
 	}`)
 
 	// Navigate to start
-	if !isSafeBrowserURL(startURL) {
+	if err := InstallPageEgressGuard(page, r.AllowedHosts...); err != nil {
+		return nil, fmt.Errorf("exploratory: install browser egress guard: %w", err)
+	}
+	if !IsSafeBrowserURL(startURL, r.AllowedHosts...) {
 		return nil, fmt.Errorf("exploratory: unsafe URL %q", startURL)
 	}
 	_, err := page.Goto(startURL)
@@ -274,57 +290,56 @@ func (r *PlaywrightRunner) RunExploratoryTest(ctx context.Context, page playwrig
 
 	// Discover and interact with elements
 	for depth := 0; depth < maxDepth; depth++ {
-		// Find all clickable elements
-		elements, _ := page.Evaluate(`() => {
-			const els = [];
-			document.querySelectorAll('a[href], button, [role="button"], input[type="submit"]').forEach(el => {
-				if (el.offsetParent !== null) {
-					els.push({
-						tag: el.tagName,
-						text: (el.innerText || el.value || '').trim().substring(0, 50),
-						href: el.href || '',
-						selector: el.id ? '#' + el.id : (el.getAttribute('data-testid') ? '[data-testid="' + el.getAttribute('data-testid') + '"]' : '')
-					});
+		// Use CDP accessibility tree snapshot for richer element discovery
+		snapshot, sErr := browser.GetPageSnapshotFromPlaywright(ctx, page)
+		if sErr != nil {
+			continue
+		}
+		interactive := browser.FindElementsByRoleCDP(snapshot, "link")
+		interactive = append(interactive, browser.FindElementsByRoleCDP(snapshot, "button")...)
+		interactive = append(interactive, browser.FindElementsByRoleCDP(snapshot, "textbox")...)
+
+		limit := len(interactive)
+		if limit > 10 {
+			limit = 10
+		}
+		for i := 0; i < limit; i++ {
+			el := interactive[i]
+			// Skip text inputs for clicking — they need fill, not click
+			if el.Tag == "input" && el.Role == "textbox" {
+				continue
+			}
+			result.ActionsTried++
+
+			// Try clicking using the element's text as locator fallback
+			var clickErr error
+			if el.Text != "" {
+				clickErr = page.GetByText(el.Text).First().Click(playwright.LocatorClickOptions{Timeout: playwright.Float(3000)})
+			} else {
+				clickErr = page.Locator("a[href]").First().Click(playwright.LocatorClickOptions{Timeout: playwright.Float(3000)})
+			}
+			if clickErr != nil {
+				result.ErrorsFound = append(result.ErrorsFound, fmt.Sprintf("click %s [@%s]: %v", el.Role, el.Ref, clickErr))
+			}
+
+			// Check for JS errors after action
+			time.Sleep(500 * time.Millisecond)
+
+			// Screenshot evidence
+			if r.ScreenshotDir != "" {
+				ssName := fmt.Sprintf("explore_%d_%d.png", depth, result.ActionsTried)
+				ssPath := r.ScreenshotDir + "/" + ssName
+				if _, ssErr := page.Screenshot(playwright.PageScreenshotOptions{Path: playwright.String(ssPath)}); ssErr == nil {
+					result.Screenshots = append(result.Screenshots, "/screenshots/"+ssName)
 				}
-			});
-			return els.slice(0, 10); // limit to 10 per depth
-		}`)
+			}
 
-		if items, ok := elements.([]interface{}); ok {
-			for _, item := range items {
-				if m, ok := item.(map[string]interface{}); ok {
-					selector := fmt.Sprintf("%v", m["selector"])
-					if selector == "" || selector == "<nil>" {
-						continue
-					}
-					result.ActionsTried++
-
-					// Try clicking
-					clickErr := page.Locator(selector).First().Click(playwright.LocatorClickOptions{Timeout: playwright.Float(3000)})
-					if clickErr != nil {
-						result.ErrorsFound = append(result.ErrorsFound, fmt.Sprintf("click %s: %v", selector, clickErr))
-					}
-
-					// Check for JS errors after action
-					time.Sleep(500 * time.Millisecond)
-
-					// Screenshot evidence
-					if r.ScreenshotDir != "" {
-						ssName := fmt.Sprintf("explore_%d_%d.png", depth, result.ActionsTried)
-						ssPath := r.ScreenshotDir + "/" + ssName
-						if _, ssErr := page.Screenshot(playwright.PageScreenshotOptions{Path: playwright.String(ssPath)}); ssErr == nil {
-							result.Screenshots = append(result.Screenshots, "/screenshots/"+ssName)
-						}
-					}
-
-					// Navigate back if we left the page
-					currentURL := page.URL()
-					if !strings.HasPrefix(currentURL, startURL) {
-						result.PagesVisited++
-						page.GoBack()
-						time.Sleep(500 * time.Millisecond)
-					}
-				}
+			// Navigate back if we left the page
+			currentURL := page.URL()
+			if !strings.HasPrefix(currentURL, startURL) {
+				result.PagesVisited++
+				page.GoBack()
+				time.Sleep(500 * time.Millisecond)
 			}
 		}
 	}

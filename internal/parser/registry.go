@@ -7,11 +7,16 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/go-go-golems/gotest-agent/internal/parser/csharp"
 	golang "github.com/go-go-golems/gotest-agent/internal/parser/go"
+	java "github.com/go-go-golems/gotest-agent/internal/parser/java"
 	"github.com/go-go-golems/gotest-agent/internal/parser/javascript"
 	"github.com/go-go-golems/gotest-agent/internal/parser/php"
 	"github.com/go-go-golems/gotest-agent/internal/parser/python"
+	"github.com/go-go-golems/gotest-agent/internal/parser/ruby"
+	"github.com/go-go-golems/gotest-agent/internal/parser/rust"
 	"github.com/go-go-golems/gotest-agent/internal/parser/types"
+	"github.com/go-go-golems/gotest-agent/internal/parser/typescript"
 )
 
 // Registry mengelola semua parser yang tersedia
@@ -30,9 +35,14 @@ func NewRegistry() *Registry {
 func NewDefaultRegistry() *Registry {
 	r := NewRegistry()
 	r.Register("javascript", javascript.NewParser())
+	r.Register("typescript", typescript.NewParser())
 	r.Register("go", golang.NewParser())
 	r.Register("php", php.NewParser())
 	r.Register("python", python.NewParser())
+	r.Register("java", java.NewParser())
+	r.Register("csharp", csharp.NewParser())
+	r.Register("ruby", ruby.NewParser())
+	r.Register("rust", rust.NewParser())
 	return r
 }
 
@@ -52,9 +62,49 @@ func (r *Registry) GetParser(language string) (Parser, error) {
 
 // DetectLanguage mendeteksi bahasa pemrograman dari struktur project
 func (r *Registry) DetectLanguage(rootDir string) (string, error) {
+	// Check for tsconfig.json -> TypeScript
+	if _, err := os.Stat(filepath.Join(rootDir, "tsconfig.json")); err == nil {
+		return "typescript", nil
+	}
+
 	// Check package.json -> JavaScript/Node.js
 	if _, err := os.Stat(filepath.Join(rootDir, "package.json")); err == nil {
+		// Check if TypeScript files dominate
+		entries, err := os.ReadDir(rootDir)
+		if err == nil {
+			tsCount := 0
+			jsCount := 0
+			for _, e := range entries {
+				if !e.IsDir() {
+					ext := strings.ToLower(filepath.Ext(e.Name()))
+					if ext == ".ts" || ext == ".tsx" {
+						tsCount++
+					}
+					if ext == ".js" || ext == ".jsx" {
+						jsCount++
+					}
+				}
+			}
+			if tsCount > jsCount {
+				return "typescript", nil
+			}
+		}
 		return "javascript", nil
+	}
+
+	// Check .csproj -> C#
+	entries, err := os.ReadDir(rootDir)
+	if err == nil {
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".csproj") {
+				return "csharp", nil
+			}
+		}
+	}
+
+	// Check Cargo.toml -> Rust
+	if _, err := os.Stat(filepath.Join(rootDir, "Cargo.toml")); err == nil {
+		return "rust", nil
 	}
 
 	// Check go.mod -> Go
@@ -65,6 +115,21 @@ func (r *Registry) DetectLanguage(rootDir string) (string, error) {
 	// Check composer.json -> PHP
 	if _, err := os.Stat(filepath.Join(rootDir, "composer.json")); err == nil {
 		return "php", nil
+	}
+
+	// Check pom.xml -> Java
+	if _, err := os.Stat(filepath.Join(rootDir, "pom.xml")); err == nil {
+		return "java", nil
+	}
+
+	// Check build.gradle -> Java
+	if _, err := os.Stat(filepath.Join(rootDir, "build.gradle")); err == nil {
+		return "java", nil
+	}
+
+	// Check build.gradle.kts -> Java
+	if _, err := os.Stat(filepath.Join(rootDir, "build.gradle.kts")); err == nil {
+		return "java", nil
 	}
 
 	// Check requirements.txt -> Python
@@ -80,6 +145,16 @@ func (r *Registry) DetectLanguage(rootDir string) (string, error) {
 	// Check setup.py -> Python
 	if _, err := os.Stat(filepath.Join(rootDir, "setup.py")); err == nil {
 		return "python", nil
+	}
+
+	// Check Gemfile -> Ruby
+	if _, err := os.Stat(filepath.Join(rootDir, "Gemfile")); err == nil {
+		return "ruby", nil
+	}
+
+	// Check config/routes.rb -> Ruby/Rails
+	if _, err := os.Stat(filepath.Join(rootDir, "config", "routes.rb")); err == nil {
+		return "ruby", nil
 	}
 
 	// Fallback: scan file extensions
@@ -104,6 +179,14 @@ func (r *Registry) DetectLanguage(rootDir string) (string, error) {
 			langCount["php"]++
 		case ".py":
 			langCount["python"]++
+		case ".java":
+			langCount["java"]++
+		case ".cs":
+			langCount["csharp"]++
+		case ".rb":
+			langCount["ruby"]++
+		case ".rs":
+			langCount["rust"]++
 		}
 	}
 

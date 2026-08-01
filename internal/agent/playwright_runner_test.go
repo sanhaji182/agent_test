@@ -11,7 +11,6 @@ func TestIsSafeBrowserURL(t *testing.T) {
 		{"https://example.com", true},
 		{"https://github.com/go-go-golems", true},
 		{"https://api.anthropic.com/v1", true},
-		{"http://myapp.local:3000", true},
 
 		// Loopback
 		{"http://127.0.0.1:8080", false},
@@ -23,18 +22,26 @@ func TestIsSafeBrowserURL(t *testing.T) {
 		{"http://10.0.0.1", false},
 		{"http://172.16.0.1", false},
 
-		// Link-local
+		// Link-local / unspecified / multicast
 		{"http://169.254.1.1", false},
+		{"http://0.0.0.0", false},
+		{"http://[::]", false},
+		{"http://224.0.0.1", false},
 
 		// Cloud metadata
 		{"http://169.254.169.254", false},
 		{"http://metadata.google.internal", false},
 		{"http://metadata", false},
+		{"http://myapp.local:3000", false},
+		{"http://service.internal", false},
 
-		// Invalid
+		// Invalid / disallowed schemes
 		{"", false},
 		{"not-a-url", false},
 		{"://missing-scheme", false},
+		{"ftp://example.com/file", false},
+		{"file:///etc/passwd", false},
+		{"https://user:pass@example.com", false},
 	}
 
 	for _, tt := range tests {
@@ -44,6 +51,36 @@ func TestIsSafeBrowserURL(t *testing.T) {
 				t.Fatalf("isSafeBrowserURL(%q) = %v, want %v", tt.url, got, tt.safe)
 			}
 		})
+	}
+}
+
+func TestIsSafeBrowserURL_WithAllowedHosts(t *testing.T) {
+	cases := []struct {
+		name    string
+		url     string
+		allowed []string
+	}{
+		{name: "localhost exact", url: "http://localhost:3000", allowed: []string{"localhost"}},
+		{name: "private ip exact", url: "http://10.0.0.2", allowed: []string{"10.0.0.2"}},
+		{name: "local hostname from comma list", url: "http://myapp.local:3000", allowed: []string{"localhost,myapp.local"}},
+		{name: "url entry normalized", url: "http://127.0.0.1:8080", allowed: []string{"http://127.0.0.1:8080"}},
+		{name: "wildcard suffix", url: "https://api.example.test", allowed: []string{"*.example.test"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !IsSafeBrowserURL(tc.url, tc.allowed...) {
+				t.Fatalf("IsSafeBrowserURL(%q, %v) = false, want true", tc.url, tc.allowed)
+			}
+		})
+	}
+}
+
+func TestIsSafeBrowserURL_MetadataCannotBeAllowed(t *testing.T) {
+	for _, rawURL := range []string{"http://169.254.169.254/latest/meta-data", "http://metadata.google.internal"} {
+		if IsSafeBrowserURL(rawURL, "*") {
+			t.Fatalf("metadata endpoint %q must remain blocked even with wildcard allowlist", rawURL)
+		}
 	}
 }
 
@@ -172,5 +209,13 @@ func TestWithParallel(t *testing.T) {
 	r.WithParallel(true)
 	if !r.Parallel {
 		t.Error("parallel should be true after WithParallel(true)")
+	}
+}
+
+func TestWithAllowedHosts_AppendsEntries(t *testing.T) {
+	r := NewPlaywrightRunner("/tmp", nil)
+	r.WithAllowedHosts("localhost", "*.example.test")
+	if len(r.AllowedHosts) != 2 || r.AllowedHosts[0] != "localhost" || r.AllowedHosts[1] != "*.example.test" {
+		t.Fatalf("unexpected allowed hosts: %+v", r.AllowedHosts)
 	}
 }
