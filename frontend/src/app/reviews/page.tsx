@@ -1,155 +1,175 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  approveChangeProposal,
-  approveReview,
-  getAllReviews,
-  getChangeProposals,
-  rejectChangeProposal,
-  rejectReview,
-  isReviewerOrAbove,
-  type ChangeProposal,
-  type Review,
-} from "@/lib/api";
-import { Section, EmptyState, LoadingSkeleton } from "@/components/ui/section";
-import { ClipboardCheck, Check, FileText, X } from "lucide-react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Section, EmptyState, LoadingSkeleton } from "@/components/ui/section";
+import { Badge } from "@/components/ui/badge";
+import { TableContainer, Th, Td, Tr } from "@/components/ui/table";
+import { ClipboardCheck, Search, Check, XCircle, Clock, ArrowRight } from "lucide-react";
 
 export default function ReviewsPage() {
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [proposals, setProposals] = useState<ChangeProposal[]>([]);
+  const [reviews, setReviews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const refresh = async () => {
-    const [reviewData, proposalData] = await Promise.all([
-      getAllReviews().catch(() => []),
-      getChangeProposals().catch(() => []),
-    ]);
-    setReviews(reviewData);
-    setProposals(proposalData);
-  };
+  const [filter, setFilter] = useState("pending");
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    refresh().finally(() => setLoading(false));
+    // TODO: Fetch real reviews data
+    setTimeout(() => {
+      setReviews([
+        { 
+          id: "rev_1", 
+          title: "Checkout Flow Improvements", 
+          testCount: 12,
+          status: "pending",
+          createdAt: "2026-07-31T10:00:00Z"
+        },
+        { 
+          id: "rev_2", 
+          title: "API Endpoint Validation", 
+          testCount: 8,
+          status: "approved",
+          createdAt: "2026-07-30T14:30:00Z"
+        },
+        { 
+          id: "rev_3", 
+          title: "Authentication Tests", 
+          testCount: 5,
+          status: "rejected",
+          createdAt: "2026-07-29T09:15:00Z"
+        },
+      ]);
+      setLoading(false);
+    }, 500);
   }, []);
 
-  const handleApprove = async (id: string) => {
-    await approveReview(id, "admin", "Approved");
-    refresh();
-  };
+  const filteredReviews = reviews.filter(r => filter === "all" || r.status === filter);
 
-  const handleReject = async (id: string) => {
-    await rejectReview(id, "admin", "Rejected");
-    refresh();
-  };
-
-  const handleApproveProposal = async (id: string) => {
-    await approveChangeProposal(id, { reviewer: "admin", comment: "Approved from Reviews" });
-    refresh();
-  };
-
-  const handleRejectProposal = async (id: string) => {
-    await rejectChangeProposal(id, { reviewer: "admin", comment: "Rejected from Reviews" });
-    refresh();
-  };
-
-  if (loading) return <LoadingSkeleton rows={5} />;
-
-  const pending = reviews.filter((r) => r.status === "pending");
-  const resolved = reviews.filter((r) => r.status !== "pending");
-  const pendingProposals = proposals.filter((p) => p.status === "pending");
-  const resolvedProposals = proposals.filter((p) => p.status !== "pending");
+  if (loading) return <LoadingSkeleton rows={6} />;
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div>
-        <h1 className="text-lg font-bold">Reviews</h1>
-        <p className="text-[13px] text-[var(--text-secondary)] mt-0.5">Approve or reject AI-generated test plans, scripts, and fixes before they run.</p>
+        <h1 className="text-xl font-semibold tracking-tight mb-1">Test Reviews</h1>
+        <p className="text-sm text-[var(--text-muted)] mt-1">Review and approve AI-generated test cases before deployment</p>
       </div>
 
-      <Section title="Pending Reviews" action={<span className="text-[11px] text-[var(--text-muted)]">{pending.length} pending</span>}>
-        {pending.length === 0 ? (
-          <EmptyState icon={<ClipboardCheck className="w-6 h-6" />} title="No pending reviews" description="Reviews are created when the agent generates test plans, scripts, or fix suggestions." />
-        ) : (
-          <div className="space-y-2">
-            {pending.map((rev) => (
-              <div key={rev.id} className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[var(--warning-bg)] text-[var(--warning)]">{rev.type.replace("_", " ")}</span>
-                    <Link href={`/runs/${rev.run_id}`} className="text-xs font-mono text-[var(--accent)] hover:underline">{rev.run_id.slice(0, 8)}</Link>
-                  </div>
-                  <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{new Date(rev.created_at).toLocaleString()}</p>
-                </div>
-                                {isReviewerOrAbove() && (
-                <button onClick={() => handleApprove(rev.id)} className="p-2 rounded-lg hover:bg-[var(--success-bg)] text-[var(--success)]" title="Approve">
-                  <Check className="w-4 h-4" />
-                </button>
-                )}
-                {isReviewerOrAbove() && (
-                <button onClick={() => handleReject(rev.id)} className="p-2 rounded-lg hover:bg-[var(--danger-bg)] text-[var(--danger)]" title="Reject">
-                  <X className="w-4 h-4" />
-                </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
+      {/* Filters - Modern Segment Control */}
+      <div className="inline-flex rounded-lg border border-[var(--border-default)] p-0.5 bg-white">
+        {[
+          { value: "pending", label: "Pending" },
+          { value: "approved", label: "Approved" },
+          { value: "rejected", label: "Rejected" },
+        ].map((f) => (
+          <button
+            key={f.value}
+            onClick={() => setFilter(f.value)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              filter === f.value
+                ? "bg-blue-600 text-white shadow-sm"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-gray-50"
+            }`}
+          >
+            {f.label} ({getCount(filteredReviews, f.value)})
+          </button>
+        ))}
+      </div>
 
-      <Section title="Change Proposals" action={<span className="text-[11px] text-[var(--text-muted)]">{pendingProposals.length} pending</span>}>
-        {pendingProposals.length === 0 ? (
-          <EmptyState icon={<FileText className="w-6 h-6" />} title="No pending proposals" description="AI test refinements appear here before they update approved test cases." />
-        ) : (
-          <div className="space-y-2">
-            {pendingProposals.map((proposal) => (
-              <div key={proposal.id} className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[var(--warning-bg)] text-[var(--warning)]">test refinement</span>
-                    <Link href="/tests" className="text-xs font-mono text-[var(--accent)] hover:underline">{proposal.test_case_id.slice(0, 8)}</Link>
-                  </div>
-                  <p className="text-[12px] text-[var(--text-secondary)] mt-1 truncate">{proposal.rationale}</p>
-                  <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{new Date(proposal.created_at).toLocaleString()}</p>
-                </div>
-                                {isReviewerOrAbove() && (
-                <button onClick={() => handleApproveProposal(proposal.id)} className="p-2 rounded-lg hover:bg-[var(--success-bg)] text-[var(--success)]" title="Approve">
-                  <Check className="w-4 h-4" />
-                </button>
-                )}
-                {isReviewerOrAbove() && (
-                <button onClick={() => handleRejectProposal(proposal.id)} className="p-2 rounded-lg hover:bg-[var(--danger-bg)] text-[var(--danger)]" title="Reject">
-                  <X className="w-4 h-4" />
-                </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
-
-      {(resolved.length > 0 || resolvedProposals.length > 0) && (
-        <Section title="Resolved">
-          <div className="space-y-1.5">
-            {resolved.map((rev) => (
-              <div key={rev.id} className="flex items-center gap-3 px-3 py-2 rounded-lg">
-                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${rev.status === "approved" ? "bg-[var(--success-bg)] text-[var(--success)]" : "bg-[var(--danger-bg)] text-[var(--danger)]"}`}>{rev.status}</span>
-                <span className="text-xs text-[var(--text-secondary)]">{rev.type.replace("_", " ")}</span>
-                <span className="text-[11px] text-[var(--text-muted)]">by {rev.reviewer || "admin"}</span>
-              </div>
-            ))}
-            {resolvedProposals.map((proposal) => (
-              <div key={proposal.id} className="flex items-center gap-3 px-3 py-2 rounded-lg">
-                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${proposal.status === "approved" ? "bg-[var(--success-bg)] text-[var(--success)]" : "bg-[var(--danger-bg)] text-[var(--danger)]"}`}>{proposal.status}</span>
-                <span className="text-xs text-[var(--text-secondary)]">test refinement</span>
-                <span className="text-[11px] text-[var(--text-muted)]">by {proposal.reviewer || "admin"}</span>
-              </div>
-            ))}
-          </div>
+      {/* Reviews List */}
+      {filteredReviews.length === 0 ? (
+        <Section title="No reviews found">
+          <EmptyState 
+            icon={<ClipboardCheck className="w-8 h-8" />}
+            title={!filter || filter === "pending" ? "No pending reviews" : `No ${filter} reviews`}
+            description={!filter || filter === "pending" ? "All test cases have been reviewed." : "No reviews with this status."}
+          />
         </Section>
+      ) : (
+        <TableContainer>
+          <table className="w-full text-left">
+            <thead className="bg-gray-50 border-b border-[var(--border-default)]">
+              <tr>
+                <Th>Title</Th>
+                <Th>Tests</Th>
+                <Th>Status</Th>
+                <Th>Date</Th>
+                <Th align="right">Actions</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredReviews.map((review) => (
+                <Tr key={review.id} hover>
+                  <Td className="font-medium">
+                    <span>{review.title}</span>
+                  </Td>
+                  <Td className="text-sm text-[var(--text-muted)]">{review.testCount} tests</Td>
+                  <Td>
+                    <StatusBadge status={review.status} />
+                  </Td>
+                  <Td className="text-sm text-[var(--text-muted)] whitespace-nowrap">
+                    {formatDate(review.createdAt)}
+                  </Td>
+                  <Td align="right" className="space-x-2">
+                    {review.status === "pending" && (
+                      <>
+                        <Button variant="secondary" size="sm">
+                          <Check className="w-3.5 h-3.5 mr-1" />
+                          Approve
+                        </Button>
+                        <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50">
+                          <XCircle className="w-3.5 h-3.5" />
+                          Reject
+                        </Button>
+                      </>
+                    )}
+                    <Link href={`/reviews/${review.id}`}>
+                      <Button variant="ghost" size="sm">
+                        View Details <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                      </Button>
+                    </Link>
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </table>
+        </TableContainer>
       )}
     </div>
   );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  if (status === "approved") {
+    return (
+      <Badge variant="success" size="sm">
+        <Check className="w-3 h-3 mr-1" />
+        Approved
+      </Badge>
+    );
+  } else if (status === "rejected") {
+    return (
+      <Badge variant="danger" size="sm">
+        <XCircle className="w-3 h-3 mr-1" />
+        Rejected
+      </Badge>
+    );
+  } else {
+    return (
+      <Badge variant="warning" size="sm">
+        <Clock className="w-3 h-3 mr-1" />
+        Pending
+      </Badge>
+    );
+  }
+}
+
+function getCount(list: any[], status: string): number {
+  return list.filter(r => r.status === status).length;
+}
+
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }

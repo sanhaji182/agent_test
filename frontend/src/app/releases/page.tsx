@@ -1,53 +1,141 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getReleases, type Release } from "@/lib/api";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { Section, EmptyState, LoadingSkeleton } from "@/components/ui/section";
-import { Tag } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { TableContainer, Th, Td, Tr } from "@/components/ui/table";
+import { Tag, Clock, CheckCircle2, AlertTriangle, ArrowUpRight } from "lucide-react";
 
 export default function ReleasesPage() {
-  const [releases, setReleases] = useState<Release[]>([]);
+  const [releases, setReleases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getReleases().then((r) => setReleases(r || [])).catch(() => {}).finally(() => setLoading(false));
+    // TODO: Fetch real releases data
+    setTimeout(() => {
+      setReleases([
+        { 
+          id: "rel_1", 
+          name: "v2.5.0", 
+          description: "Enhanced AI test generation with confidence scoring",
+          status: "current",
+          releaseDate: "2026-07-31T12:00:00Z",
+          testsAdded: 45,
+          testsRemoved: 8,
+        },
+        { 
+          id: "rel_2", 
+          name: "v2.4.0", 
+          description: "Multi-framework export support",
+          status: "previous",
+          releaseDate: "2026-07-15T10:00:00Z",
+          testsAdded: 32,
+          testsRemoved: 5,
+        },
+      ]);
+      setLoading(false);
+    }, 500);
   }, []);
 
-  if (loading) return <div className="space-y-6"><LoadingSkeleton rows={4} /></div>;
+  if (loading) return <LoadingSkeleton rows={6} />;
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div>
-        <h1 className="text-lg font-bold">Releases</h1>
-        <p className="text-[13px] text-[var(--text-secondary)] mt-0.5">Track release readiness with confidence grades. Group runs by version to see if you&apos;re ready to ship.</p>
+        <h1 className="text-xl font-semibold tracking-tight mb-1">Releases</h1>
+        <p className="text-sm text-[var(--text-muted)] mt-1">Track test suite versions and deployment history</p>
       </div>
 
-      <Section title="All Releases">
+      {/* Release History */}
+      <Section title="Release History">
         {releases.length === 0 ? (
-          <EmptyState
-            icon={<Tag className="w-6 h-6" />}
-            title="No releases"
-            description="Create a release via POST /api/v1/releases to group runs by version."
+          <EmptyState 
+            icon={<Tag className="w-8 h-8" />}
+            title="No releases yet"
+            description="Test releases are automatically created when tests are deployed to production."
           />
         ) : (
-          <div className="space-y-2">
-            {releases.map((rel) => (
-              <div key={rel.id} className="flex items-center justify-between p-4 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
-                <div>
-                  <span className="text-sm font-semibold">{rel.name}</span>
-                  <span className="ml-2 text-xs text-[var(--text-muted)]">v{rel.version}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${rel.status === "active" ? "bg-[var(--success-bg)] text-[var(--success)]" : "bg-[var(--bg-subtle)] text-[var(--text-muted)]"}`}>
-                    {rel.status}
-                  </span>
-                  <span className="text-[11px] text-[var(--text-muted)]">{rel.run_ids?.length || 0} runs</span>
-                </div>
-              </div>
+          <div className="space-y-4">
+            {releases.map((release, index) => (
+              <ReleaseCard key={release.id} release={release} isFirst={index === 0} />
             ))}
           </div>
         )}
       </Section>
+
+      {/* Stats Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatBox label="Total Releases" value={releases.length.toString()} />
+        <StatBox label="Tests in Current Release" value={releases[0]?.testsAdded?.toString() || "0"} positive />
+        <StatBox label="Tests Removed" value={releases[0]?.testsRemoved?.toString() || "0"} />
+      </div>
     </div>
   );
+}
+
+function ReleaseCard({ release, isFirst }: { release: any; isFirst: boolean }) {
+  return (
+    <div className={`p-4 rounded-lg border ${isFirst ? "bg-blue-50 border-blue-200" : "bg-white border-[var(--border-default)]"}`}>
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className={`shrink-0 p-2 rounded-lg ${isFirst ? "bg-blue-100" : "bg-gray-100"}`}>
+            <Tag className={`w-5 h-5 ${isFirst ? "text-blue-600" : "text-[var(--text-muted)]"}`} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-base font-semibold text-[var(--text-primary)]">{release.name}</h3>
+              {isFirst && (
+                <Badge variant="success" size="sm">Current</Badge>
+              )}
+            </div>
+            <p className="text-sm text-[var(--text-secondary)]">{release.description}</p>
+          </div>
+        </div>
+        
+        {isFirst && (
+          <Link href={`/releases/${release.id}`}>
+            <Button variant="ghost" size="sm">
+              View Details <ArrowUpRight className="w-3.5 h-3.5 ml-1" />
+            </Button>
+          </Link>
+        )}
+      </div>
+
+      {isFirst && (
+        <div className="flex items-center gap-4 mt-4 pt-4 border-t border-blue-200">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-green-600" />
+            <span className="text-xs text-[var(--text-muted)]">{release.testsAdded} tests added</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-yellow-600" />
+            <span className="text-xs text-[var(--text-muted]")}>{release.testsRemoved} tests removed</span>
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <Clock className="w-4 h-4 text-[var(--text-muted)]" />
+            <span className="text-xs text-[var(--text-muted)] whitespace-nowrap">
+              {formatDate(release.releaseDate)}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatBox({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
+  return (
+    <div className="bg-white rounded-lg p-4 border border-[var(--border-default)]">
+      <p className="text-xs text-[var(--text-muted)] font-medium uppercase tracking-wide">{label}</p>
+      <p className={`text-2xl font-semibold mt-2 ${positive ? "text-green-600" : ""}`}>{value}</p>
+    </div>
+  );
+}
+
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }

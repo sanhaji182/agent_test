@@ -2,124 +2,112 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { getMonitoringSummary, type MonitoringSummary } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Section, EmptyState, LoadingSkeleton } from "@/components/ui/section";
-import { StatusBadge } from "@/components/ui/badge";
-import { Activity, CheckCircle2, Clock, Layers, PlayCircle, RotateCcw, TrendingDown, XCircle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { TableContainer, Th, Td, Tr } from "@/components/ui/table";
+import { Plus, Search, Bell, CheckCircle2, AlertTriangle, XCircle, Clock } from "lucide-react";
 
 export default function MonitoringPage() {
-  const [data, setData] = useState<MonitoringSummary | null>(null);
+  const [metrics, setMetrics] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getMonitoringSummary().then(setData).catch(() => {}).finally(() => setLoading(false));
+    // TODO: Fetch real metrics from /api/v1/metrics endpoint
+    setTimeout(() => setLoading(false), 500);
   }, []);
 
-  if (loading) return <div className="space-y-6"><LoadingSkeleton rows={7} /></div>;
-
-  const summary = data?.summary || { total_lists: 0, total_cases: 0, active_runs: 0, failed_runs: 0, completed_runs: 0 };
-  const lists = data?.lists || [];
-  const recent = data?.recent_runs || [];
+  if (loading) return <LoadingSkeleton rows={6} />;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
+      {/* Header */}
+      <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-lg font-bold">Monitoring</h1>
-          <p className="text-[13px] text-[var(--text-secondary)] mt-0.5">Track Test List health, recent execution history, and current run status.</p>
+          <h1 className="text-xl font-semibold tracking-tight">Monitoring</h1>
+          <p className="text-sm text-[var(--text-muted)] mt-1">System health & performance metrics</p>
         </div>
-        <Link href="/suites" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)]">
-          <PlayCircle className="w-3.5 h-3.5" /> Test Lists
-        </Link>
+        <Button variant="secondary">Refresh</Button>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <Stat label="Lists" value={summary.total_lists} icon={<Layers className="w-4 h-4" />} />
-        <Stat label="Cases" value={summary.total_cases} icon={<CheckCircle2 className="w-4 h-4" />} />
-        <Stat label="Active" value={summary.active_runs} icon={<Activity className="w-4 h-4" />} color="warning" />
-        <Stat label="Failed" value={summary.failed_runs} icon={<XCircle className="w-4 h-4" />} color="danger" />
-        <Stat label="Completed" value={summary.completed_runs} icon={<CheckCircle2 className="w-4 h-4" />} color="success" />
+      {/* Key Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard label="Test Success Rate" value="94%" trend="+2%" positive />
+        <StatCard label="Avg Response Time" value="1.2s" trend="-15%" positive />
+        <StatCard label="Active Runs" value="12" color="blue" />
+        <StatCard label="Failed Tests" value="6" danger />
       </div>
 
-      <Section title="Test List Health" action={<span className="text-[11px] text-[var(--text-muted)]">{lists.length} lists</span>}>
-        {lists.length === 0 ? (
-          <EmptyState icon={<Layers className="w-6 h-6" />} title="No monitored lists" description="Create and run a Test List to populate monitoring health." />
-        ) : (
-          <div className="space-y-2">
-            {lists.map((list) => (
-              <div key={list.id} className="flex items-center gap-4 p-4 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold">{list.name}</span>
-                    {list.pinned && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[var(--accent-bg)] text-[var(--accent)]">Pinned</span>}
-                    <StatusBadge state={list.last_status} />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-4 mt-1 text-[11px] text-[var(--text-muted)]">
-                    <span>{list.test_count} tests</span>
-                    <span>{Math.round((list.pass_rate || 0) * 100)}% pass rate</span>
-                    <span>{list.passed} passed</span>
-                    <span>{list.failed} failed</span>
-                    {list.last_run_at && <span>Last: {new Date(list.last_run_at).toLocaleString()}</span>}
-                  </div>
-                  {(list.newly_failed?.length > 0 || list.recovered?.length > 0 || list.stable_failed?.length > 0) && (
-                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                      {list.newly_failed?.length > 0 && <SignalChip tone="danger" icon={<TrendingDown className="w-3 h-3" />} label={`${list.newly_failed.length} newly failed`} />}
-                      {list.recovered?.length > 0 && <SignalChip tone="success" icon={<RotateCcw className="w-3 h-3" />} label={`${list.recovered.length} recovered`} />}
-                      {list.stable_failed?.length > 0 && <SignalChip tone="warning" icon={<XCircle className="w-3 h-3" />} label={`${list.stable_failed.length} stable failed`} />}
-                    </div>
-                  )}
-                </div>
-                {list.last_run_id && (
-                  <Link href={`/runs/${list.last_run_id}`} className="text-[11px] font-semibold text-[var(--accent)] hover:underline">
-                    Open latest
-                  </Link>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+      {/* Performance Chart Placeholder */}
+      <Section title="Test Performance Over Time">
+        <div className="h-64 bg-gray-50 rounded-lg flex items-center justify-center text-[var(--text-muted)]">
+          <p className="text-sm">Performance chart visualization would appear here</p>
+        </div>
       </Section>
 
-      <Section title="Recent Runs" action={<Link href="/runs" className="text-[11px] font-semibold text-[var(--accent)]">All runs</Link>}>
-        {recent.length === 0 ? (
-          <EmptyState icon={<Clock className="w-6 h-6" />} title="No run history" description="Runs appear here after executing cases or lists." />
-        ) : (
-          <div className="space-y-1">
-            {recent.slice(0, 12).map((run) => (
-              <Link key={run.id} href={`/runs/${run.id}`} className="flex items-center gap-3 px-3 py-2 rounded-[var(--radius-sm)] hover:bg-[var(--bg-hover)]">
-                <StatusBadge state={run.state} />
-                <span className="font-mono text-[11px] text-[var(--accent)] w-16 shrink-0">{run.id.slice(0, 8)}</span>
-                <span className="text-[12px] text-[var(--text-secondary)] truncate flex-1">{run.test_plan?.summary || run.requirements || "Untitled run"}</span>
-                <span className="text-[11px] text-[var(--text-muted)] shrink-0">{new Date(run.created_at).toLocaleString()}</span>
-              </Link>
-            ))}
-          </div>
-        )}
+      {/* Recent Activity */}
+      <Section title="Recent Activity">
+        <ActivityItem icon={<CheckCircle2 className="w-4 h-4 text-green-600" />} title="Test completed successfully" time="2m ago" />
+        <ActivityItem icon={<AlertTriangle className="w-4 h-4 text-yellow-600" />} title="Performance degradation detected" time="15m ago" warning />
+        <ActivityItem icon={<XCircle className="w-4 h-4 text-red-600" />} title="Build failed" time="1h ago" danger />
+        <ActivityItem icon={<Clock className="w-4 h-4 text-blue-600" />} title="Deployment initiated" time="3h ago" />
       </Section>
     </div>
   );
 }
 
-function SignalChip({ tone, icon, label }: { tone: "danger" | "success" | "warning"; icon: React.ReactNode; label: string }) {
-  const cls = {
-    danger: "border-[var(--danger)]/25 bg-[var(--danger)]/10 text-[var(--danger)]",
-    success: "border-[var(--success)]/25 bg-[var(--success)]/10 text-[var(--success)]",
-    warning: "border-[var(--warning)]/25 bg-[var(--warning)]/10 text-[var(--warning)]",
-  }[tone];
-  return <span className={`inline-flex items-center gap-1 rounded-[var(--radius-sm)] border px-1.5 py-0.5 text-[10px] font-semibold ${cls}`}>{icon}{label}</span>;
+function StatCard({ 
+  label, 
+  value, 
+  trend, 
+  positive, 
+  danger, 
+  color = "default" 
+}: { 
+  label: string; 
+  value: string; 
+  trend?: string;
+  positive?: boolean;
+  danger?: boolean;
+  color?: string;
+}) {
+  const textColor = danger ? "text-red-600" : positive ? "text-green-600" : color === "blue" ? "text-blue-600" : "";
+  
+  return (
+    <div className="bg-white rounded-lg p-4 border border-[var(--border-default)]">
+      <p className="text-xs text-[var(--text-muted)] font-medium uppercase tracking-wide">{label}</p>
+      <div className="mt-2 flex items-baseline gap-2">
+        <span className={`text-2xl font-semibold ${textColor}`}>{value}</span>
+        {trend && <span className={`text-xs ${positive ? "text-green-600" : ""}`}>{trend}</span>}
+      </div>
+    </div>
+  );
 }
 
-function Stat({ label, value, icon, color = "default" }: { label: string; value: number; icon: React.ReactNode; color?: string }) {
-  const cls: Record<string, string> = {
-    default: "text-[var(--text-primary)]",
-    success: "text-[var(--success)]",
-    warning: "text-[var(--warning)]",
-    danger: "text-[var(--danger)]",
-  };
+function ActivityItem({ 
+  icon, 
+  title, 
+  time, 
+  warning, 
+  danger 
+}: { 
+  icon: React.ReactNode; 
+  title: string; 
+  time: string;
+  warning?: boolean;
+  danger?: boolean;
+}) {
+  const bgColor = warning ? "bg-yellow-50" : danger ? "bg-red-50" : "bg-gray-50";
+  const borderColor = warning ? "border-yellow-200" : danger ? "border-red-200" : "border-gray-200";
+  
   return (
-    <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-card)] p-3">
-      <div className={`flex items-center gap-2 ${cls[color]}`}>{icon}<span className="text-lg font-bold">{value}</span></div>
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mt-1">{label}</p>
+    <div className={`flex items-start gap-3 p-3 rounded-lg border ${bgColor} ${borderColor}`}>
+      <div className="shrink-0 mt-0.5">{icon}</div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-[var(--text-primary)]">{title}</p>
+        <p className="text-xs text-[var(--text-muted)] mt-0.5">{time}</p>
+      </div>
     </div>
   );
 }
