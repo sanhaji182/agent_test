@@ -13,6 +13,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-go-golems/gotest-agent/internal/agent"
 	"github.com/go-go-golems/gotest-agent/internal/ai"
+	"github.com/go-go-golems/gotest-agent/internal/audit"
+	"github.com/go-go-golems/gotest-agent/internal/runner"
 	"github.com/go-go-golems/gotest-agent/internal/compare"
 	"github.com/go-go-golems/gotest-agent/internal/events"
 	"github.com/go-go-golems/gotest-agent/internal/execution"
@@ -74,6 +76,7 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 	}
 	// Audit: run created
 	s.events.Emit(run.ID, "run_started", "idle", "Run created via API", map[string]string{"project": req.ProjectPath, "mode": mode})
+	s.recordAudit(r, audit.ActionCreate, audit.ResourceRun, run.ID, fmt.Sprintf("mode=%s type=%s", mode, testType))
 
 	// Snapshot response fields BEFORE launching: the run object is mutated by
 	// the execution goroutine after launchRun returns (race otherwise).
@@ -424,28 +427,36 @@ func (s *Server) buildAgentForRun(run *agent.TestRun) *agent.Agent {
 		return nil
 	}
 
-	runner := agent.NewPlaywrightRunner("/tmp/agent_test/videos", llm)
-	runner.ScreenshotDir = "/tmp/agent_test/screenshots"
-	// Apply run-specific execution options
+	pwRunner := agent.NewPlaywrightRunner("/tmp/agent_test/videos", llm)
+	pwRunner.ScreenshotDir = "/tmp/agent_test/screenshots"
+	pwRunner.WithAllowedHosts(s.cfg.BrowserAllowedHosts)
 	if run != nil {
 		if run.Browser != "" {
-			runner.WithBrowser(run.Browser)
+			pwRunner.WithBrowser(run.Browser)
 		}
 		if run.Viewport != "" {
-			runner.WithViewport(run.Viewport)
+			pwRunner.WithViewport(run.Viewport)
 		}
 		if run.Parallel {
-			runner.WithParallel(true)
+			pwRunner.WithParallel(true)
 		}
 		if run.TestData != nil {
-			runner.TestData = run.TestData
+			pwRunner.TestData = run.TestData
 		}
 	}
 	execCtx := execution.NewContext(s.events, s.recordings, s.visuals)
 
-	return agent.NewWithConfig(llm, runner, 3, agent.AgentConfig{
+	return agent.NewWithConfig(llm, pwRunner, 3, agent.AgentConfig{
+
 		Exec:  execCtx,
 		Store: s.store,
+		RunnerFactory: func(testType, viewport string) agent.Runner {
+			appiumRunner := runner.NewAppiumRunner()
+			if profile, ok := runner.DeviceProfiles[viewport]; ok {
+				appiumRunner.WithDevice(profile)
+			}
+			return appiumRunner
+		},
 	})
 }
 
@@ -1111,6 +1122,7 @@ func (s *Server) handleDeleteRun(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
+	s.recordAudit(r, audit.ActionDelete, audit.ResourceRun, id, "deleted via API")
 	w.WriteHeader(http.StatusNoContent)
 }
 

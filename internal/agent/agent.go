@@ -102,20 +102,20 @@ type TestRun struct {
 	SkipHints    string      `json:"skip_hints,omitempty"`
 	FeatureMap   *FeatureMap `json:"feature_map,omitempty"`
 	// Execution options (Phase 1+)
-	Browser      string            `json:"browser,omitempty"`   // "chromium" (default), "firefox", "webkit"
-	Viewport     string            `json:"viewport,omitempty"`  // viewport preset name (e.g. "iphone-14", "desktop-hd")
-	Parallel     bool              `json:"parallel,omitempty"`  // execute test files concurrently
-	TestData     map[string]string `json:"test_data,omitempty"` // parameterized test data ({{key}} expansion)
-	Tags         []string          `json:"tags,omitempty"`      // labels for filtering/grouping (e.g. "regression", "smoke", "release-1.2")
+	Browser      string            `json:"browser,omitempty"`     // "chromium" (default), "firefox", "webkit"
+	Viewport     string            `json:"viewport,omitempty"`    // viewport preset name (e.g. "iphone-14", "desktop-hd")
+	Parallel     bool              `json:"parallel,omitempty"`    // execute test files concurrently
+	TestData     map[string]string `json:"test_data,omitempty"`   // parameterized test data ({{key}} expansion)
+	Tags         []string          `json:"tags,omitempty"`        // labels for filtering/grouping (e.g. "regression", "smoke", "release-1.2")
 	WebhookURL   string            `json:"webhook_url,omitempty"` // outbound webhook fired on run completion
-	State        State      `json:"state"`
-	CodeAnalysis string     `json:"code_analysis,omitempty"`
-	TestPlan     *TestPlan  `json:"test_plan,omitempty"`
-	TestFiles    []TestFile `json:"test_files,omitempty"`
-	RunResult    *RunResult `json:"run_result,omitempty"`
-	Screenshots  []string   `json:"screenshots,omitempty"`
-	FixAttempts  int        `json:"fix_attempts"`
-	Error        string     `json:"error,omitempty"`
+	State        State             `json:"state"`
+	CodeAnalysis string            `json:"code_analysis,omitempty"`
+	TestPlan     *TestPlan         `json:"test_plan,omitempty"`
+	TestFiles    []TestFile        `json:"test_files,omitempty"`
+	RunResult    *RunResult        `json:"run_result,omitempty"`
+	Screenshots  []string          `json:"screenshots,omitempty"`
+	FixAttempts  int               `json:"fix_attempts"`
+	Error        string            `json:"error,omitempty"`
 	// Video recording fields
 	VideoURL             string  `json:"video_url,omitempty"`
 	VideoStatus          string  `json:"video_status,omitempty"` // "recording", "ready", "failed", "none"
@@ -153,7 +153,8 @@ type AgentConfig struct {
 	Sidecar       *SidecarClient
 	Screenshotter ScreenshotCapturer
 	Exec          *execution.Context
-	Store         RunPersistence // Optional: auto-saves state transitions + panic-safe completion
+	Store         RunPersistence                         // Optional: auto-saves state transitions + panic-safe completion
+	RunnerFactory func(testType, viewport string) Runner // Optional: select runner per test type
 }
 
 // Agent adalah orchestrator utama yang menjalankan seluruh alur testing
@@ -165,11 +166,12 @@ type Agent struct {
 	screenshotter  ScreenshotCapturer
 	exec           *execution.Context
 	store          RunPersistence
+	cfg            AgentConfig
 }
 
 // New membuat Agent baru dengan konfigurasi minimal
 func New(llm LLM, runner Runner, maxFixes int) *Agent {
-	return &Agent{llm: llm, runner: runner, maxFixAttempts: maxFixes}
+	return &Agent{llm: llm, runner: runner, maxFixAttempts: maxFixes, cfg: AgentConfig{}}
 }
 
 // NewWithConfig membuat Agent dengan konfigurasi lengkap (sidecar + screenshot + events + store)
@@ -182,6 +184,7 @@ func NewWithConfig(llm LLM, runner Runner, maxFixes int, cfg AgentConfig) *Agent
 		screenshotter:  cfg.Screenshotter,
 		exec:           cfg.Exec,
 		store:          cfg.Store,
+		cfg:            cfg,
 	}
 }
 
@@ -359,6 +362,9 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 		if run.TestType == "api" {
 			apiRunner := NewAPIRunner()
 			result, err = apiRunner.Run(ctx, run.TestFiles, run.ProjectPath)
+		} else if (run.TestType == "mobile" || run.TestType == "desktop") && a.cfg.RunnerFactory != nil {
+			mobileRunner := a.cfg.RunnerFactory(run.TestType, run.Viewport)
+			result, err = mobileRunner.Run(ctx, run.TestFiles, run.ProjectPath)
 		} else {
 			result, err = a.runner.Run(ctx, run.TestFiles, run.ProjectPath)
 		}
