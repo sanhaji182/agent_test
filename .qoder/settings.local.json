@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /Users/sonick/project/agent_test && go build ./... 2>&1 | head -30; echo \"---TEST---\"; go test ./... 2>&1 | tail -40)"
+    ]
+  }
+}

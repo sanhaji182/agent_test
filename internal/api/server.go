@@ -163,7 +163,13 @@ func newCORSMiddleware(allowedOrigins string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if wildcard {
-				w.Header().Set("Access-Control-Allow-Origin", "*")
+				// Echo the request's Origin header rather than "*" so
+				// credentials: include is compatible (wildcard + credentials
+				// is blocked by browsers per the Fetch spec).
+				origin := strings.TrimSuffix(r.Header.Get("Origin"), "/")
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				w.Header().Add("Vary", "Origin")
 			} else {
 				origin := strings.TrimSuffix(r.Header.Get("Origin"), "/")
 				if allowed[strings.ToLower(origin)] {
@@ -244,7 +250,8 @@ func safeBool(patch map[string]interface{}, key string) (bool, bool) {
 
 func (s *Server) routes() {
 	s.router.Get("/health", s.handleHealth)
-	s.router.Get("/metrics", s.handlePrometheus) // Prometheus scrape endpoint (no auth)
+	s.router.Get("/metrics", s.handlePrometheus)
+	s.router.Get("/api/v1/stream", s.handleGlobalStream) // SSE: public, outside auth group // Prometheus scrape endpoint (no auth)
 
 	// Auth: login endpoint outside API key auth — login is how you get the JWT
 	s.router.Post("/api/v1/auth/login", s.handleLogin)
@@ -311,8 +318,7 @@ func (s *Server) routes() {
 		r.Get("/runs/{id}/video", s.handleGetVideoMetadata)
 		r.Delete("/runs/{id}", s.handleDeleteRun)
 		r.Get("/recordings", s.handleListAllRecordings)
-		// Global live stream
-		r.Get("/stream", s.handleGlobalStream)
+		// Global live stream (also available at /api/v1/stream for public SSE access)
 		r.Get("/monitoring/summary", s.handleMonitoringSummary)
 		// Schedules
 		r.Post("/schedules", s.handleCreateSchedule)

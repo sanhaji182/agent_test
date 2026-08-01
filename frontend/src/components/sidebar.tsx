@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { logout, isAdmin, getUserRole } from "@/lib/api";
 import {
@@ -11,7 +12,7 @@ import {
   	LogOut, Video, KeyRound
   } from "lucide-react";
 
-const nav = [
+const baseNav = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/tests", label: "Test Library", icon: FileText },
   { href: "/runs", label: "Runs", icon: PlayCircle },
@@ -25,14 +26,22 @@ const nav = [
   { href: "/exports", label: "Exports", icon: Download },
   { href: "/docs", label: "Docs", icon: BookOpen },
   { href: "/settings", label: "Settings", icon: Settings },
-  ...(typeof window !== "undefined" && isAdmin() ? [
-    { href: "/keys", label: "Keys & Audit", icon: KeyRound },
-  ] : []),
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  const [isAdminUser, setIsAdminUser] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    setIsAdminUser(isAdmin());
+  }, []);
+
+  const nav = mounted && isAdminUser
+    ? [...baseNav, { href: "/keys", label: "Keys & Audit", icon: KeyRound }]
+    : baseNav;
 
   const handleLogout = async () => {
     await logout();
@@ -87,16 +96,18 @@ export function Sidebar() {
 
       <div className="px-2 py-2 border-t border-[var(--border)]">
         <div className="px-2.5 py-2 rounded-[var(--radius-sm)] bg-[var(--bg-subtle)] space-y-1.5">
-          <div className="flex items-center gap-1.5">
-            <span className={cn(
-              "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider",
-              getUserRole() === "admin" ? "bg-[var(--danger-bg)] text-[var(--danger)]" :
-              getUserRole() === "reviewer" ? "bg-[var(--warning-bg)] text-[var(--warning)]" :
-              "bg-[var(--info-bg)] text-[var(--info)]"
-            )}>
-              {getUserRole()}
-            </span>
-          </div>
+          {mounted && (
+            <div className="flex items-center gap-1.5">
+              <span className={cn(
+                "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider",
+                getUserRole() === "admin" ? "bg-[var(--danger-bg)] text-[var(--danger)]" :
+                getUserRole() === "reviewer" ? "bg-[var(--warning-bg)] text-[var(--warning)]" :
+                "bg-[var(--info-bg)] text-[var(--info)]"
+              )}>
+                {getUserRole()}
+              </span>
+            </div>
+          )}
           <p className="text-[9px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">Plan · Self-Hosted</p>
         </div>
       </div>

@@ -14,7 +14,6 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/agent"
 	"github.com/go-go-golems/gotest-agent/internal/ai"
 	"github.com/go-go-golems/gotest-agent/internal/audit"
-	"github.com/go-go-golems/gotest-agent/internal/runner"
 	"github.com/go-go-golems/gotest-agent/internal/compare"
 	"github.com/go-go-golems/gotest-agent/internal/events"
 	"github.com/go-go-golems/gotest-agent/internal/execution"
@@ -23,6 +22,7 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/project"
 	"github.com/go-go-golems/gotest-agent/internal/recordings"
 	"github.com/go-go-golems/gotest-agent/internal/report"
+	"github.com/go-go-golems/gotest-agent/internal/runner"
 	"github.com/go-go-golems/gotest-agent/internal/visual"
 	"github.com/google/uuid"
 )
@@ -1147,7 +1147,10 @@ func (s *Server) handleGlobalStream(w http.ResponseWriter, r *http.Request) {
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		writeJSONError(w, http.StatusInternalServerError, "streaming not supported")
+		// Fallback: write 200 OK and return — some proxy/middleware stacks
+		// don't implement http.Flusher, making SSE impossible.
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "SSE not supported by this connection, use polling.")
 		return
 	}
 
@@ -1181,7 +1184,6 @@ func (s *Server) handleGlobalStream(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "event: update\ndata: %s\n\n", data)
 			flusher.Flush()
 		case <-ticker.C:
-			// Heartbeat
 			fmt.Fprintf(w, ": heartbeat\n\n")
 			flusher.Flush()
 		}

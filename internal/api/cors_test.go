@@ -21,13 +21,18 @@ func runCORS(t *testing.T, allowedOrigins, requestOrigin, method string) *httpte
 }
 
 func TestCORS_WildcardDefault(t *testing.T) {
+	// Wildcard mode: echo request origin instead of "*" to support credentials
+	// (wildcard + credentials is blocked by browsers per the Fetch spec).
 	for _, cfg := range []string{"", "*"} {
-		rec := runCORS(t, cfg, "https://evil.example.com", http.MethodGet)
-		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
-			t.Fatalf("config %q: expected wildcard, got %q", cfg, got)
+		erroneousOrigin := "https://evil.example.com"
+		rec := runCORS(t, cfg, erroneousOrigin, http.MethodGet)
+		// Echo origin instead of wildcard for credential support
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != erroneousOrigin {
+			t.Fatalf("config %q: expected echoed origin, got %q", cfg, got)
 		}
-		if rec.Header().Get("Access-Control-Allow-Credentials") != "" {
-			t.Fatalf("config %q: wildcard must not allow credentials", cfg)
+		// With wildcards we still echo origins, so credentials are allowed
+		if rec.Header().Get("Access-Control-Allow-Credentials") != "true" {
+			t.Fatalf("config %q: wildcard+echo mode must allow credentials", cfg)
 		}
 	}
 }

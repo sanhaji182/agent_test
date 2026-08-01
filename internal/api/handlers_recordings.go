@@ -46,6 +46,9 @@ func (s *Server) handleCreateRecordingSession(w http.ResponseWriter, r *http.Req
 // handleListRecordingSessions returns all recording sessions.
 func (s *Server) handleListRecordingSessions(w http.ResponseWriter, r *http.Request) {
 	sessions := s.recordings.ListSessions()
+	if sessions == nil {
+		sessions = []recordings.Session{}
+	}
 	writeJSON(w, http.StatusOK, sessions)
 }
 
