@@ -8,6 +8,7 @@ import {
   getChangeProposals,
   rejectChangeProposal,
   rejectReview,
+  isReviewerOrAbove,
   type ChangeProposal,
   type Review,
 } from "@/lib/api";
@@ -82,12 +83,16 @@ export default function ReviewsPage() {
                   </div>
                   <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{new Date(rev.created_at).toLocaleString()}</p>
                 </div>
+                                {isReviewerOrAbove() && (
                 <button onClick={() => handleApprove(rev.id)} className="p-2 rounded-lg hover:bg-[var(--success-bg)] text-[var(--success)]" title="Approve">
                   <Check className="w-4 h-4" />
                 </button>
+                )}
+                {isReviewerOrAbove() && (
                 <button onClick={() => handleReject(rev.id)} className="p-2 rounded-lg hover:bg-[var(--danger-bg)] text-[var(--danger)]" title="Reject">
                   <X className="w-4 h-4" />
                 </button>
+                )}
               </div>
             ))}
           </div>
@@ -109,12 +114,16 @@ export default function ReviewsPage() {
                   <p className="text-[12px] text-[var(--text-secondary)] mt-1 truncate">{proposal.rationale}</p>
                   <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{new Date(proposal.created_at).toLocaleString()}</p>
                 </div>
+                                {isReviewerOrAbove() && (
                 <button onClick={() => handleApproveProposal(proposal.id)} className="p-2 rounded-lg hover:bg-[var(--success-bg)] text-[var(--success)]" title="Approve">
                   <Check className="w-4 h-4" />
                 </button>
+                )}
+                {isReviewerOrAbove() && (
                 <button onClick={() => handleRejectProposal(proposal.id)} className="p-2 rounded-lg hover:bg-[var(--danger-bg)] text-[var(--danger)]" title="Reject">
                   <X className="w-4 h-4" />
                 </button>
+                )}
               </div>
             ))}
           </div>

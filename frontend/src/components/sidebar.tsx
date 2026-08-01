@@ -4,17 +4,18 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { logout } from "@/lib/api";
+import { logout, isAdmin, getUserRole } from "@/lib/api";
 import {
-  LayoutDashboard, PlayCircle, Settings, Zap,
-  Calendar, Bell, Tag, Shield, ClipboardCheck, Layers, Download, BookOpen, FileText,
-  LogOut
-} from "lucide-react";
+  	LayoutDashboard, PlayCircle, Settings, Zap,
+  	Calendar, Bell, Tag, Shield, ClipboardCheck, Layers, Download, BookOpen, FileText,
+  	LogOut, Video, KeyRound
+  } from "lucide-react";
 
 const nav = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/tests", label: "Test Library", icon: FileText },
   { href: "/runs", label: "Runs", icon: PlayCircle },
+  { href: "/recordings", label: "Recordings", icon: Video },
   { href: "/risk", label: "Risk", icon: Shield },
   { href: "/monitoring", label: "Monitoring", icon: Calendar },
   { href: "/releases", label: "Releases", icon: Tag },
@@ -24,6 +25,9 @@ const nav = [
   { href: "/exports", label: "Exports", icon: Download },
   { href: "/docs", label: "Docs", icon: BookOpen },
   { href: "/settings", label: "Settings", icon: Settings },
+  ...(typeof window !== "undefined" && isAdmin() ? [
+    { href: "/keys", label: "Keys & Audit", icon: KeyRound },
+  ] : []),
 ];
 
 export function Sidebar() {
@@ -82,9 +86,18 @@ export function Sidebar() {
       </nav>
 
       <div className="px-2 py-2 border-t border-[var(--border)]">
-        <div className="px-2.5 py-2 rounded-[var(--radius-sm)] bg-[var(--bg-subtle)]">
-          <p className="text-[9px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">Plan</p>
-          <p className="text-[11px] font-semibold text-[var(--text-primary)]">Self-Hosted</p>
+        <div className="px-2.5 py-2 rounded-[var(--radius-sm)] bg-[var(--bg-subtle)] space-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className={cn(
+              "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider",
+              getUserRole() === "admin" ? "bg-[var(--danger-bg)] text-[var(--danger)]" :
+              getUserRole() === "reviewer" ? "bg-[var(--warning-bg)] text-[var(--warning)]" :
+              "bg-[var(--info-bg)] text-[var(--info)]"
+            )}>
+              {getUserRole()}
+            </span>
+          </div>
+          <p className="text-[9px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">Plan · Self-Hosted</p>
         </div>
       </div>
     </aside>
