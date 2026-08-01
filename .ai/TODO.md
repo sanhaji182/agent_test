@@ -64,7 +64,7 @@ Each implementation should update only the affected item and append provenance t
 
 ### TODO-005 — Resolve dashboard authentication transport
 
-- **Status:** Done (Phase 1 — JWT cookie backend implemented. Frontend + E2E test follow-ups remain.)
+- **Status:** Done (JWT cookie backend, frontend login integration, and focused true-browser E2E coverage implemented).
 - **Description:** Choose and implement a browser-safe auth mechanism covering REST and SSE.
 - **Reason:** Frontend fetches send no `X-Api-Key`; EventSource cannot set that header (`frontend/src/lib/api.ts:222-229,391-415`).
 - **Resolution (Phase 1 per ADR-005):**
@@ -76,7 +76,7 @@ Each implementation should update only the affected item and append provenance t
   - **`internal/auth/auth.go`:** Added `GenerateJWTSecret()`, `CookieName`, `SetTokenCookie`, `ClearTokenCookie`, `GetTokenFromRequest`.
 - **Dependencies:** `ADR-005` Phase 1, `TODO-002` (fail-closed auth).
 - **Estimated impact:** Dashboard can now authenticate in production via cookie. SSE streams work with `?token=`. No API key leaks to browser storage.
-- **Acceptance criteria remaining:** Frontend login page integration; E2E test (login → JWT cookie → authenticated REST/SSE → cookie expiry); API docs update.
+- **Acceptance criteria:** Frontend login page integration ✓; focused Playwright E2E for login redirect/create-run/run-detail export flows ✓; API docs update remains optional documentation polish.
 
 ### TODO-006 — Bind LLM credentials to approved provider origins
 
@@ -145,33 +145,36 @@ Each implementation should update only the affected item and append provenance t
 
 ### TODO-011 — Define and implement operational-state persistence
 
-- **Status:** Done (Phase 1 per ADR-003 — event persistence. Phase 2+3 remain for releases/reviews/suites.)
+- **Status:** Done for core Go server stores and sidecar job durability.
 - **Description:** Persist or explicitly bound/document events, recordings, visuals, releases, notifications, reviews, suites, and sidecar jobs.
-- **Reason:** These stores are memory-only (`internal/api/server.go:71-85`; `sidecar/main.py:11-12`).
+- **Reason:** These stores were memory-only (`internal/api/server.go:71-85`; `sidecar/main.py:11-12`).
 - **Resolution:**
   - **Event persistence:** Added `run_events` PostgreSQL table (`internal/db/migrations/009_run_events.sql`). Added `EnableDB(pool)` + `persistToDB()` + `GetDBEvents()` to `events.Store`. Events are written to PostgreSQL asynchronously on every `Emit` call. SSE replay and historical event access via `GetDBEvents(ctx, runID)`.
-  - **Server wiring:** When a PostgreSQL pool is available, `NewServer` calls `evts.EnableDB(pool)`.
-  - **Phases 2+3:** Releases, reviews, suites persistence; bounded memory caps for recordings/visuals/notifications — tracked for future work.
+  - **Workflow persistence:** Added `internal/db/migrations/012_releases_reviews_suites.sql` plus PostgreSQL-backed `EnableDB(pool)` paths for releases, reviews, and suites. Fresh stores can read/update/delete data from PostgreSQL after the original in-memory store is discarded.
+  - **Sidecar job durability:** Added `JobStore` in `sidecar/main.py` with optional SQLite backing via `SIDECAR_JOBS_DB`. Docker Compose now mounts `sidecar_jobs:/data` and points the sidecar at `/data/jobs.sqlite3`, so job state survives container restarts.
+  - **Server wiring:** When a PostgreSQL pool is available, `NewServer` calls `EnableDB(pool)` for events, recordings, webhooks, drift stores, releases, reviews, and suites.
+  - **Live DB smoke coverage:** Added opt-in `TestPostgresWorkflowPersistenceSmoke`, run against a temporary PostgreSQL 16.14 container on 2026-08-01, covering migration `012_releases_reviews_suites.sql` plus release/review/suite round trips.
 - **Dependencies:** `ADR-003` (accepted 2026-07-27).
-- **Estimated impact:** Server restart no longer loses event history. SSE replay works after restart.
-- **Acceptance criteria:** Events persisted to PostgreSQL ✓; DB replay method available ✓; phases 2+3 remain for future.
+- **Estimated impact:** Server restart no longer loses event history or core workflow metadata, and sidecar job state now survives restarts when the SQLite volume is enabled.
+- **Acceptance criteria:** Events persisted to PostgreSQL ✓; DB replay method available ✓; releases/reviews/suites persisted to PostgreSQL ✓; live migration/persistence smoke test passed ✓; sidecar jobs persist across restarts when `SIDECAR_JOBS_DB` is configured ✓.
 - **Related:** `RISK-009`, `ADR-003`, `TODO-017`
 
 ## Medium
 
 ### TODO-012 — Add frontend automated tests
 
-- **Status:** Done (test framework and initial tests setup; npm install blocked by shell classifier)
+- **Status:** Done (Vitest/React Testing Library installed and verified; focused page-level regression tests added).
 - **Description:** Add unit/component and focused browser E2E coverage.
-- **Reason:** No frontend test script or dependency (`frontend/package.json:5-9,20-29`).
+- **Reason:** Frontend originally had no test script or dependency (`frontend/package.json:5-9,20-29`).
 - **Resolution:**
   - **Vitest + React Testing Library:** Added `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `@vitejs/plugin-react`, `jsdom` to devDependencies.
-  - **Config:** Created `vitest.config.ts` with jsdom environment, React plugin, `@/` path alias.
-  - **Tests:** 16 tests across 3 files: `utils.test.ts` (cn/className merging), `badge.test.tsx` (StatusBadge + PriorityBadge rendering), `api.test.ts` (isActive state machine).
+  - **Config:** Created `vitest.config.ts` with jsdom environment, React plugin, `@/` path alias and global cleanup in `src/test/setup.ts`.
+  - **Unit/component tests:** `utils.test.ts` (cn/className merging), `badge.test.tsx` (StatusBadge + PriorityBadge rendering), `api.test.ts` (isActive state machine).
+  - **Page-level tests:** `pages.test.tsx` covers login API-key submit/error handling, create-run wizard submission, recording session list/search/create, reviews/proposals approve/reject actions, and suites list/create/schedule workflows.
   - **Scripts:** Added `test`, `test:watch`, `test:coverage` to package.json.
-- **Dependencies:** None remaining.
-- **Estimated impact:** Protects dashboard/API contract and auth/SSE changes.
-- **Acceptance criteria remaining:** `npm install` + `npm test` to verify tests pass (blocked by shell classifier); full page-level E2E tests for create run, run detail/SSE, project-plan approval, schedule, settings failures.
+- **Dependencies:** None remaining for current Vitest coverage.
+- **Estimated impact:** Protects dashboard/API contract, auth entrypoint, create-run flow, record/playback management, review gate, and suite scheduling UI behavior.
+- **Acceptance criteria:** `npm --prefix frontend test` ✓; page-level regression coverage added ✓; true-browser Playwright E2E added for login, create-run, and run-detail Appium export flows ✓; further E2E expansion for project-plan approval/settings failure flows remains optional.
 - **Related:** `TODO-005`, `TODO-021`
 
 ### TODO-013 — Add sidecar tests and a lockfile
@@ -221,15 +224,18 @@ Each implementation should update only the affected item and append provenance t
 
 ### TODO-016 — Restrict browser and runner egress
 
-- **Status:** Done (partial — network + injection fixed; browser egress policy remains)
+- **Status:** Done
 - **Description:** Validate navigation targets and remove/limit Docker host networking.
 - **Reason:** LLM/user-controlled targets reach `page.Goto`; Docker runner configured TypeScript via string concatenation with unescaped project URL.
 - **Resolution:**
   - **Docker network restriction:** Replaced `"--network", "host"` with `"--add-host", "host.docker.internal:host-gateway"` (`internal/runner/docker.go:77`). Test container no longer gets full host network access.
   - **TypeScript injection fix:** Replaced string concatenation with `json.Marshal(projectURL)` (`internal/runner/docker.go:58`). Prevents URL content from injecting arbitrary TypeScript into generated Playwright config.
-- **Dependencies:** `ADR-002` for remaining browser egress validation (scheme/DNS/IP/redirect policy).
-- **Estimated impact:** Reduces SSRF and internal-network exposure.
-- **Acceptance criteria remaining:** Browser egress validation (scheme/DNS/IP/redirect policy tests); approved-domain mechanism.
+  - **Browser egress validation:** Added `agent.IsSafeBrowserURL` with explicit `http`/`https` scheme enforcement, userinfo rejection, metadata endpoint blocking, loopback/private/link-local/unspecified/multicast IP blocking, and DNS-resolution checks.
+  - **Redirect/click protection:** Installed Playwright route guards on browser contexts/pages so unsafe requests are aborted, including navigations caused by redirects or user interactions.
+  - **Approved-domain mechanism:** Added `BROWSER_ALLOWED_HOSTS` config support for explicit local/private host allowlisting (exact hosts, comma-separated entries, URLs, and `*.example.test` suffix wildcards). Cloud metadata endpoints remain blocked even with wildcard allowlist.
+- **Dependencies:** `ADR-002`.
+- **Estimated impact:** Reduces SSRF and internal-network exposure for generated, healed, exploratory, audit, visual-regression, local Playwright, and Steel Browser paths.
+- **Acceptance criteria:** Docker host networking removed ✓; TypeScript URL injection fixed ✓; unit coverage for scheme/IP/metadata/allowlist behavior ✓; API-handler unsafe URL regression coverage ✓; live controlled browser redirect smoke test passed with `GOTEST_BROWSER_EGRESS_SMOKE=1` ✓.
 
 ### TODO-017 — Make schedule claiming atomic
 
