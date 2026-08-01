@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/go-go-golems/gotest-agent/internal/audit"
 	"github.com/go-go-golems/gotest-agent/internal/auth"
 )
 
@@ -41,21 +42,33 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	if s.cfg.APIKey == "" {
-		writeJSONError(w, http.StatusServiceUnavailable, "API key auth not configured")
-		return
-	}
-	if req.APIKey != s.cfg.APIKey {
+
+	userID := "dashboard"
+	email := "dashboard"
+	role := string(auth.RoleAdmin)
+	label := "default"
+
+	// Priority 1: check multi-key store
+	if keyRole, keyLabel, keyID, ok := s.keyStore.Validate(req.APIKey); ok {
+		userID = keyID
+		email = keyLabel
+		role = string(keyRole)
+		label = keyLabel
+	} else if s.cfg.APIKey != "" && req.APIKey == s.cfg.APIKey {
+		// Priority 2: fallback to single global API key (backward compatibility)
+	} else {
 		writeJSONError(w, http.StatusUnauthorized, "invalid api key")
 		return
 	}
-	token, err := s.jwtAuth.GenerateToken("dashboard", "dashboard")
+
+	token, err := s.jwtAuth.GenerateToken(userID, email)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "token generation failed")
 		return
 	}
 	auth.SetTokenCookie(w, token)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	s.recordAudit(r, audit.ActionLogin, audit.ResourceSettings, "auth", label+" login")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "role": role})
 }
 
 // handleLogout clears the JWT cookie session.
