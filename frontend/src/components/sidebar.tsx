@@ -1,116 +1,137 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { logout, isAdmin, getUserRole } from "@/lib/api";
-import {
-  	LayoutDashboard, PlayCircle, Settings, Zap,
-  	Calendar, Bell, Tag, Shield, ClipboardCheck, Layers, Download, BookOpen, FileText,
-  	LogOut, Video, KeyRound
-  } from "lucide-react";
+import { logout, isAdmin } from "@/lib/api";
+import { 
+  LayoutDashboard, PlayCircle, Settings, Zap, Calendar, Bell, Shield, 
+  ClipboardCheck, Layers, Download, BookOpen, KeyRound, FileText, Video,
+  ChevronLeft, Home, AlertTriangle
+} from "lucide-react";
 
-const baseNav = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: React.ElementType;
+  adminOnly?: boolean;
+}
+
+const coreNav: NavItem[] = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
-  { href: "/tests", label: "Test Library", icon: FileText },
+  { href: "/projects", label: "Projects", icon: Home },
+  { href: "/tests", label: "Tests", icon: FileText },
   { href: "/runs", label: "Runs", icon: PlayCircle },
   { href: "/recordings", label: "Recordings", icon: Video },
-  { href: "/risk", label: "Risk", icon: Shield },
+  { href: "/risk", label: "Risk Analysis", icon: Shield },
   { href: "/monitoring", label: "Monitoring", icon: Calendar },
-  { href: "/releases", label: "Releases", icon: Tag },
-  { href: "/suites", label: "Suites", icon: Layers },
+  { href: "/releases", label: "Releases", icon: Layers },
   { href: "/reviews", label: "Reviews", icon: ClipboardCheck },
   { href: "/alerts", label: "Alerts", icon: Bell },
   { href: "/exports", label: "Exports", icon: Download },
-  { href: "/docs", label: "Docs", icon: BookOpen },
+  { href: "/docs", label: "Documentation", icon: BookOpen },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [isAdminUser, setIsAdminUser] = useState(false);
-
+  
   useEffect(() => {
     setMounted(true);
-    setIsAdminUser(isAdmin());
   }, []);
-
-  const nav = mounted && isAdminUser
-    ? [...baseNav, { href: "/keys", label: "Keys & Audit", icon: KeyRound }]
-    : baseNav;
+  
+  const adminItems = coreNav.filter(item => !item.adminOnly);
+  const extraItems = coreNav.filter(item => item.adminOnly);
+  const allItems = [...adminItems, ...extraItems].filter(item => {
+    if (!mounted) return false;
+    return isAdmin() ? true : !item.adminOnly;
+  });
 
   const handleLogout = async () => {
     await logout();
     router.push("/login");
   };
-
+  
+  const isActive = (href: string) => {
+    if (href === "/") return pathname === "/";
+    return pathname.startsWith(href);
+  };
+  
   return (
-    <aside className="w-[220px] min-h-screen border-r border-[var(--border)] bg-[var(--bg-card)] flex flex-col shadow-[var(--shadow-xs)]">
-      <div className="h-[52px] px-4 border-b border-[var(--border)] flex items-center">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-[var(--radius-sm)] bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-sm">
-            <Zap className="w-3.5 h-3.5 text-white" />
+    <aside className={cn(
+      "fixed left-0 top-0 z-40 h-screen bg-white border-r border-[var(--border-default)] transition-all duration-300 ease-in-out",
+      collapsed ? "w-16" : "w-60"
+    )}>
+      {/* Header */}
+      <div className="flex items-center justify-between h-14 px-4 border-b border-[var(--border-default)]">
+        <Link href="/" className="flex items-center gap-3">
+          <div className="w-7 h-7 rounded-md bg-blue-600 flex items-center justify-center flex-shrink-0">
+            <Zap className="w-4 h-4 text-white" />
           </div>
-          <span className="text-[13px] font-bold text-[var(--text-primary)]">GoTest</span>
-        </div>
-      </div>
-
-      <div className="px-3 pt-4 pb-2">
-        <Link
-          href="/create"
-          className="flex items-center justify-center gap-2 w-full py-2 bg-[var(--accent)] text-white text-[13px] font-semibold rounded-[var(--radius-sm)] hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
-        >
-          <PlayCircle className="w-4 h-4" />
-          Create Test
-        </Link>
-      </div>
-
-      <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
-        {nav.map((item) => {
-          const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-2.5 px-2.5 py-[7px] rounded-[var(--radius-sm)] text-[12px] font-medium transition-all duration-100",
-                active
-                  ? "bg-[var(--accent-bg)] text-[var(--accent)] shadow-[var(--shadow-xs)]"
-                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-              )}
-            >
-              <item.icon className="w-[15px] h-[15px]" />
-              {item.label}
-            </Link>
-          );
-        })}
-        <button onClick={handleLogout} className="w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-[var(--radius-sm)] text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-all duration-100 text-left">
-          <LogOut className="w-[15px] h-[15px]" />
-          Sign out
-        </button>
-      </nav>
-
-      <div className="px-2 py-2 border-t border-[var(--border)]">
-        <div className="px-2.5 py-2 rounded-[var(--radius-sm)] bg-[var(--bg-subtle)] space-y-1.5">
-          {mounted && (
-            <div className="flex items-center gap-1.5">
-              <span className={cn(
-                "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider",
-                getUserRole() === "admin" ? "bg-[var(--danger-bg)] text-[var(--danger)]" :
-                getUserRole() === "reviewer" ? "bg-[var(--warning-bg)] text-[var(--warning)]" :
-                "bg-[var(--info-bg)] text-[var(--info)]"
-              )}>
-                {getUserRole()}
-              </span>
-            </div>
+          {!collapsed && (
+            <span className="font-semibold text-sm text-gray-900">GoTest Agent</span>
           )}
-          <p className="text-[9px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">Plan · Self-Hosted</p>
-        </div>
+        </Link>
+        
+        {/* Collapse Toggle */}
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500"
+        >
+          <ChevronLeft className={`w-4 h-4 transition-transform ${collapsed ? "rotate-180" : ""}`} />
+        </button>
       </div>
+      
+      {/* Navigation */}
+      <nav className="py-3 overflow-y-auto scrollbar-thin">
+        <div className="px-2 space-y-0.5">
+          {allItems.map((item) => {
+            const active = isActive(item.href);
+            const Icon = item.icon;
+            
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                  active
+                    ? "bg-blue-50 text-blue-700"
+                    : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                )}
+              >
+                <Icon className={cn("w-4 h-4 flex-shrink-0", collapsed && "mx-auto")} />
+                {!collapsed && <span>{item.label}</span>}
+              </Link>
+            );
+          })}
+        </div>
+        
+        {/* Bottom Actions */}
+        <div className="mt-4 pt-4 border-t border-gray-200 px-2">
+          <button
+            onClick={handleLogout}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 w-full",
+              collapsed && "justify-center px-2"
+            )}
+          >
+            <KeyRound className={cn("w-4 h-4 flex-shrink-0", collapsed && "mx-auto")} />
+            {!collapsed && <span>Sign out</span>}
+          </button>
+        </div>
+      </nav>
+      
+      {/* Collapsed Tooltip */}
+      {collapsed && (
+        <div className="absolute left-16 top-2 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
+          Expand
+        </div>
+      )}
     </aside>
   );
 }

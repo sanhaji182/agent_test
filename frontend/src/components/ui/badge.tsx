@@ -1,5 +1,28 @@
 import { cn } from "@/lib/utils";
 
+export function Badge({ children, variant = "default", size = "sm" }: { 
+  children: React.ReactNode; 
+  variant?: "default" | "success" | "warning" | "danger" | "info";
+  size?: "sm" | "md";
+}) {
+  const colors: Record<string, string> = {
+    default: "bg-gray-100 text-gray-700 border-gray-200",
+    success: "bg-green-100 text-green-700 border-green-200",
+    warning: "bg-yellow-100 text-yellow-700 border-yellow-200",
+    danger: "bg-red-100 text-red-700 border-red-200",
+    info: "bg-blue-100 text-blue-700 border-blue-200",
+  };
+  const sizes: Record<string, string> = {
+    sm: "px-1.5 py-0.5 text-[10px]",
+    md: "px-2 py-1 text-xs",
+  };
+  return (
+    <span className={cn("inline-flex items-center font-medium rounded border", colors[variant], sizes[size])}>
+      {children}
+    </span>
+  );
+}
+
 const variants: Record<string, string> = {
   idle: "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border)]",
   analyzing: "bg-[var(--info-bg)] text-[var(--info)] border-[var(--info)]/15",
@@ -15,7 +38,7 @@ const variants: Record<string, string> = {
   generating: "bg-[var(--accent-bg)] text-[var(--accent)] border-[var(--accent)]/15",
 };
 
-export function StatusBadge({ state }: { state: string }) {
+export function StatusBadge({ state, size = "md" }: { state: string; size?: "sm" | "md" }) {
   const dotColor: Record<string, string> = {
     done: "bg-[var(--success)]",
     failed: "bg-[var(--danger)]",
@@ -25,9 +48,16 @@ export function StatusBadge({ state }: { state: string }) {
     aborted: "bg-[var(--text-muted)]",
     generating: "bg-[var(--accent)] animate-pulse",
   };
+  
+  const isSm = size === "sm";
+  
   return (
-    <span className={cn("inline-flex items-center gap-1.5 px-2 py-[3px] rounded-[var(--radius-sm)] text-[10px] font-semibold capitalize border", variants[state] || variants.idle)}>
-      <span className={cn("w-[5px] h-[5px] rounded-full", dotColor[state] || "bg-current")} />
+    <span className={cn(
+      "inline-flex items-center gap-1.5 font-semibold capitalize border rounded-[var(--radius-sm)]",
+      variants[state] || variants.idle,
+      isSm ? "px-1.5 py-0.5 text-[9px]" : "px-2 py-[3px] text-[10px]"
+    )}>
+      <span className={cn("rounded-full", dotColor[state] || "bg-current", isSm ? "w-[3.5px] h-[3.5px]" : "w-[5px] h-[5px]")} />
       {state.replace("_", " ")}
     </span>
   );

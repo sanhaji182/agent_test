@@ -2,18 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { getRuns, isActive, getMetricsRisk, getRecommendations, type TestRun, type RiskItem, type Recommendation } from "@/lib/api";
-import { StatCard } from "@/components/ui/card";
-import { StatusBadge } from "@/components/ui/badge";
-import { Section, LoadingSkeleton } from "@/components/ui/section";
-import { ExecutionTimeline } from "@/components/console/timeline";
-import { PassRateChart } from "@/components/ui/chart";
+import { Section, EmptyState, LoadingSkeleton } from "@/components/ui/section";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { TableContainer, Th, Td, Tr } from "@/components/ui/table";
 import Link from "next/link";
-import {
+import { 
   Activity, CheckCircle2, XCircle, PlayCircle,
-  Lightbulb, AlertTriangle, Clock, Film,
+  Lightbulb, AlertTriangle, Clock, ArrowUpRight,
+  Shield
 } from "lucide-react";
 
-export default function OverviewPage() {
+export default function DashboardPage() {
   const [runs, setRuns] = useState<TestRun[]>([]);
   const [risks, setRisks] = useState<RiskItem[]>([]);
   const [recs, setRecs] = useState<Recommendation[]>([]);
@@ -21,15 +21,17 @@ export default function OverviewPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
 
-  // Initial load
   useEffect(() => {
     Promise.all([getRuns(), getMetricsRisk().catch(() => []), getRecommendations().catch(() => [])])
-      .then(([r, ri, re]) => { setRuns(r || []); setRisks(ri || []); setRecs(re || []); })
+      .then(([r, ri, re]) => { 
+        setRuns(r || []); 
+        setRisks(ri || []); 
+        setRecs(re || []); 
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  // Live SSE stream with polling fallback
   useEffect(() => {
     const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
     let es: EventSource | null = null;
@@ -39,14 +41,12 @@ export default function OverviewPage() {
       es = new EventSource(`${API}/api/v1/stream`);
       es.addEventListener("update", (e) => {
         const data = JSON.parse(e.data);
-        // Refresh runs on state-changing events
-        if (["run_started", "run_completed", "run_failed", "analysis_completed", "plan_generated", "script_generated", "test_started", "fix_attempt_started"].includes(data.type)) {
+        if (["run_started", "run_completed", "run_failed", "analysis_completed", "plan_generated"].includes(data.type)) {
           getRuns().then((r) => setRuns(r || [])).catch(() => {});
         }
-        // Show failure toast
         if (data.failed) {
           const label = data.metadata?.test || data.message?.slice(0, 60) || data.run_id?.slice(0, 8);
-          setToast(`❌ ${data.type === "assertion_failed" ? "Test failed" : "Run failed"}: ${label}`);
+          setToast(`Test failed: ${label}`);
           setTimeout(() => setToast(null), 5000);
         }
       });
@@ -65,293 +65,333 @@ export default function OverviewPage() {
     return () => { es?.close(); if (fallbackInterval) clearInterval(fallbackInterval); };
   }, []);
 
-  if (loading) return <LoadingSkeleton rows={8} />;
-
   const total = runs.length;
   const passed = runs.filter((r) => r.state === "done").length;
   const failed = runs.filter((r) => r.state === "failed").length;
-  const activeRuns = runs.filter((r) => isActive(r.state));
-  const failedRuns = runs.filter((r) => r.state === "failed").slice(0, 3);
+  const activeCount = runs.filter((r) => isActive(r.state)).length;
   const passRate = total > 0 ? Math.round((passed / total) * 100) : 0;
+  const recentRuns = runs.slice(0, 10);
+  const activeRunsList = runs.filter((r) => isActive(r.state));
+  
+  const hasActive = activeCount > 0;
+  const hasFailed = failed > 0;
 
-  if (total === 0) return <OnboardingView />;
+  if (loading) {
+    return <div className="space-y-6"><LoadingSkeleton rows={6} /></div>;
+  }
+
+  if (total === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+        <h1 className="text-2xl font-semibold tracking-tight mb-2">No tests yet</h1>
+        <p className="text-sm text-[var(--text-muted)] max-w-sm leading-relaxed mb-6">
+          Start testing by creating your first test run. The AI will analyze your codebase and generate comprehensive test coverage.
+        </p>
+        <Link href="/create">
+          <Button>Create First Test</Button>
+        </Link>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-5">
-      {/* Toast notification */}
+    <div className="space-y-6">
+      {/* Toast */}
       {toast && (
-        <div className="fixed top-16 right-6 z-50 px-4 py-3 rounded-[var(--radius)] bg-[var(--danger-bg)] border border-[var(--danger)]/20 shadow-[var(--shadow-md)] animate-[slideIn_0.2s_ease-out]">
-          <p className="text-[12px] font-medium text-[var(--danger)]">{toast}</p>
+        <div className="fixed top-4 right-4 z-50 px-4 py-3 rounded-lg bg-red-50 border border-red-200 shadow-md animate-slide-in">
+          <p className="text-sm font-medium text-red-700">{toast}</p>
         </div>
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-lg font-bold">Control Room</h1>
-          <p className="text-[12px] text-[var(--text-secondary)]">Live test execution status and audit overview</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="text-sm text-[var(--text-muted)] mt-1.5">
+            {hasActive 
+              ? `${activeCount} test${activeCount === 1 ? ' run' : 's'} currently executing`
+              : 'Overview of your test execution history'
+            }
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 mr-2">
-            <span className={`w-2 h-2 rounded-full ${connected ? "bg-[var(--success)] animate-pulse" : "bg-[var(--text-muted)]"}`} />
-            <span className="text-[10px] text-[var(--text-muted)]">{connected ? "Live" : "Polling"}</span>
-          </div>
-          <Link
-            href="/create"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
-          >
-            <PlayCircle className="w-3.5 h-3.5" />
-            Create Test
-          </Link>
-        </div>
+        <Link href="/create">
+          <Button>New Run</Button>
+        </Link>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="Total" value={total} icon={<Activity className="w-4 h-4" />} />
-        <StatCard label="Pass Rate" value={`${passRate}%`} color="success" icon={<CheckCircle2 className="w-4 h-4" />} />
-        <StatCard label="Failed" value={failed} color="danger" icon={<XCircle className="w-4 h-4" />} />
-        <StatCard label="Running" value={activeRuns.length} color="warning" icon={<PlayCircle className="w-4 h-4" />} />
+      {/* Stats Row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatBox value={total.toString()} label="Total Runs" />
+        <StatBox value={`${passRate}%`} label="Pass Rate" success={passRate >= 80} />
+        <StatBox value={failed.toString()} label="Failures" danger={failed > 0} />
+        <StatBox value={activeCount.toString()} label="Active" color={activeCount > 0 ? "blue" : "gray"} />
       </div>
 
-      {/* === SECTION 1: What is running now? === */}
-      {activeRuns.length > 0 && (
-        <Section title="🔴 Running Now" action={<span className="text-[10px] text-[var(--warning)] font-semibold">{activeRuns.length} active</span>}>
+      {/* Active Runs Table */}
+      {hasActive && (
+        <Section title="Active Tests">
+          <TableContainer>
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-[var(--border-default)]">
+                  <Th>Run Name</Th>
+                  <Th>Status</Th>
+                  <Th>Progress</Th>
+                  <Th>Started</Th>
+                  <Th align="right">Actions</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeRunsList.map((r) => (
+                  <Tr key={r.id} onClick={() => window.location.href = `/runs/${r.id}`} hover>
+                    <Td className="font-medium">
+                      <span className="truncate block max-w-[200px]">{r.requirements || "Untitled"}</span>
+                    </Td>
+                    <Td>
+                      <StatusBadge state={r.state} />
+                    </Td>
+                    <Td>
+                      <ProgressBar state={r.state} />
+                    </Td>
+                    <Td className="text-[var(--text-muted)] text-xs">
+                      {formatDate(r.created_at)}
+                    </Td>
+                    <Td align="right">
+                      <Link href={`/runs/${r.id}`} className="text-blue-600 hover:text-blue-700 text-xs font-medium">View</Link>
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </table>
+          </TableContainer>
+        </Section>
+      )}
+
+      {/* Failed Runs */}
+      {hasFailed && (
+        <Section title="Recent Failures" action={<Link href="/runs?filter=failed" className="text-xs text-blue-600 hover:text-blue-700">All failures →</Link>}>
           <div className="space-y-2">
-            {activeRuns.map((r) => (
-              <Link key={r.id} href={`/runs/${r.id}`} className="block p-3 rounded-[var(--radius-sm)] border border-[var(--warning)]/20 bg-[var(--warning-bg)] hover:border-[var(--warning)]/40 transition-all">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <StatusBadge state={r.state} />
-                    <span className="text-[11px] font-medium text-[var(--text-primary)]">{r.requirements || r.id.slice(0, 8)}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-3 h-3 text-[var(--text-muted)]" />
-                    <span className="text-[10px] text-[var(--text-muted)]">{timeAgo(r.created_at)}</span>
-                  </div>
-                </div>
-                <ExecutionTimeline state={r.state} />
-                <StageProgress state={r.state} />
-              </Link>
+            {runs.filter((r) => r.state === "failed").slice(0, 3).map((r) => (
+              <FailedRunCard key={r.id} run={r} />
             ))}
           </div>
         </Section>
       )}
 
-      {/* === SECTION 2: What failed and why? === */}
-      {failedRuns.length > 0 && (
-        <Section title="⚠️ Failed — Needs Attention" action={<Link href="/runs" className="text-[10px] font-medium text-[var(--accent)]">All runs →</Link>}>
-          <div className="space-y-2">
-            {failedRuns.map((r) => (
-              <Link key={r.id} href={`/runs/${r.id}`} className="block p-3 rounded-[var(--radius-sm)] border border-[var(--danger)]/15 bg-[var(--danger-bg)] hover:border-[var(--danger)]/30 transition-all">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-3.5 h-3.5 text-[var(--danger)]" />
-                    <span className="text-[11px] font-semibold text-[var(--text-primary)]">{r.requirements || r.id.slice(0, 8)}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {r.video_url && <Film className="w-3 h-3 text-[var(--text-muted)]" />}
-                    <span className="text-[10px] text-[var(--text-muted)]">{timeAgo(r.created_at)}</span>
-                  </div>
-                </div>
-                {/* Failure reason */}
-                {r.run_result?.failures?.[0] && (
-                  <div className="mt-1 pl-5">
-                    <p className="text-[11px] text-[var(--danger)]/80 truncate">{r.run_result.failures[0].test}: {r.run_result.failures[0].message?.slice(0, 100)}</p>
-                  </div>
-                )}
-                {/* Result summary */}
-                {r.run_result && (
-                  <div className="mt-2 pl-5 flex items-center gap-3 text-[10px]">
-                    <span className="text-[var(--success)]">{r.run_result.passed} passed</span>
-                    <span className="text-[var(--danger)]">{r.run_result.failed} failed</span>
-                    <span className="text-[var(--text-muted)]">{r.fix_attempts} fix attempts</span>
-                  </div>
-                )}
-              </Link>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {/* === SECTION 3: What should I do next? === */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Recommendations */}
-        <Section title="💡 Recommended Actions" action={<Link href="/risk" className="text-[10px] font-medium text-[var(--accent)]">Risk →</Link>}>
+      {/* Two Columns */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Section title="Recommended Actions" action={<Link href="/risk" className="text-xs text-blue-600 hover:text-blue-700">See all →</Link>}>
           {recs.length === 0 ? (
-            <p className="text-[11px] text-[var(--text-muted)]">No actions needed. Your tests are healthy.</p>
+            <p className="text-sm text-[var(--text-muted)]">No actions needed.</p>
           ) : (
-            <div className="space-y-1.5">
-              {recs.slice(0, 5).map((rec, i) => (
-                <div key={i} className="flex items-center gap-2 px-2.5 py-2 rounded-[var(--radius-sm)] bg-[var(--bg-subtle)] hover:bg-[var(--bg-hover)] transition-colors">
-                  <ActionDot action={rec.action} />
-                  <span className="text-[11px] text-[var(--text-secondary)] truncate flex-1">{rec.target}</span>
-                  <span className="text-[9px] font-bold text-[var(--accent)] uppercase">{rec.action.replace("_", " ")}</span>
-                </div>
+            <div className="space-y-2">
+              {recs.slice(0, 4).map((rec, i) => (
+                <RecommendationCard key={i} rec={rec} />
               ))}
             </div>
           )}
         </Section>
 
-        {/* Top risks */}
-        <Section title="🛡️ Highest Risk" action={<Link href="/risk" className="text-[10px] font-medium text-[var(--accent)]">Details →</Link>}>
+        <Section title="Highest Risk Areas" action={<Link href="/risk" className="text-xs text-blue-600 hover:text-blue-700">Analyze →</Link>}>
           {risks.length === 0 ? (
-            <p className="text-[11px] text-[var(--text-muted)]">No elevated risks detected.</p>
+            <p className="text-sm text-[var(--text-muted)]">No elevated risks detected.</p>
           ) : (
-            <div className="space-y-1.5">
-              {risks.slice(0, 5).map((r, i) => (
-                <div key={i} className="flex items-center gap-2 px-2.5 py-2 rounded-[var(--radius-sm)] bg-[var(--bg-subtle)]">
-                  <RiskDot score={r.risk_score} />
-                  <span className="text-[11px] text-[var(--text-secondary)] truncate flex-1">{r.name}</span>
-                  <span className="text-[9px] font-bold text-[var(--text-muted)]">{Math.round(r.risk_score * 100)}%</span>
-                </div>
+            <div className="space-y-2">
+              {risks.slice(0, 4).map((risk, i) => (
+                <RiskCard key={i} risk={risk} />
               ))}
             </div>
           )}
         </Section>
       </div>
 
-      {/* Trend + Recent */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Section title="Trend">
-          {runs.length > 1 ? <PassRateChart trend={buildTrend(runs)} /> : <p className="text-[11px] text-[var(--text-muted)]">More data needed.</p>}
-        </Section>
-
-        <Section title="Recent Completed" action={<Link href="/runs" className="text-[10px] font-medium text-[var(--accent)]">All →</Link>}>
-          <div className="space-y-0.5">
-            {runs.filter((r) => r.state === "done" || r.state === "failed").slice(0, 5).map((r) => (
-              <Link key={r.id} href={`/runs/${r.id}`} className="flex items-center justify-between px-2.5 py-2 rounded-[var(--radius-sm)] hover:bg-[var(--bg-hover)] transition-colors">
-                <div className="flex items-center gap-2 min-w-0">
-                  <StatusBadge state={r.state} />
-                  <span className="text-[11px] text-[var(--text-secondary)] truncate">{r.requirements || r.id.slice(0, 8)}</span>
-                </div>
-                <span className="text-[10px] text-[var(--text-muted)] shrink-0">{timeAgo(r.created_at)}</span>
-              </Link>
-            ))}
-          </div>
-        </Section>
-      </div>
-    </div>
-  );
-}
-
-// --- Helpers ---
-
-function ActionDot({ action }: { action: string }) {
-  const c = action === "run_now" ? "bg-[var(--accent)]" : action === "investigate" ? "bg-[var(--danger)]" : "bg-[var(--warning)]";
-  return <span className={`w-2 h-2 rounded-full ${c} shrink-0`} />;
-}
-
-function RiskDot({ score }: { score: number }) {
-  const c = score >= 0.7 ? "bg-[var(--danger)]" : score >= 0.4 ? "bg-[var(--warning)]" : "bg-[var(--success)]";
-  return <span className={`w-2 h-2 rounded-full ${c} shrink-0`} />;
-}
-
-const STAGE_ORDER = ["analyzing", "plan_generated", "writing_tests", "running", "fixing"];
-
-function stageProgress(state: string): { pct: number; hint: string } {
-  const idx = STAGE_ORDER.indexOf(state);
-  if (idx === -1) return { pct: 5, hint: "starting" };
-  const pct = Math.round(((idx + 1) / STAGE_ORDER.length) * 100);
-  const hint = pct <= 30 ? "early" : pct <= 70 ? "midway" : "near completion";
-  return { pct, hint };
-}
-
-function StageProgress({ state }: { state: string }) {
-  const { pct, hint } = stageProgress(state);
-  return (
-    <div className="mt-2 space-y-1">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] text-[var(--warning)] font-medium">{stageLabel(state)}</span>
-        <span className="text-[10px] text-[var(--text-muted)]">{hint} · {pct}%</span>
-      </div>
-      <div className="h-1 rounded-full bg-[var(--warning)]/15 overflow-hidden">
-        <div
-          className="h-full rounded-full bg-[var(--warning)] transition-all duration-700"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function stageLabel(state: string): string {
-  const labels: Record<string, string> = {
-    analyzing: "Analyzing codebase...",
-    plan_generated: "Generating test plan...",
-    writing_tests: "Writing test scripts...",
-    running: "Executing tests...",
-    fixing: "Auto-fixing failures...",
-  };
-  return labels[state] || "Processing...";
-}
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
-
-function buildTrend(runs: TestRun[]): { date: string; pass_rate: number }[] {
-  const byDate = new Map<string, { passed: number; total: number }>();
-  for (const r of runs) {
-    const d = r.created_at.slice(0, 10);
-    const entry = byDate.get(d) || { passed: 0, total: 0 };
-    entry.total++;
-    if (r.state === "done") entry.passed++;
-    byDate.set(d, entry);
-  }
-  return [...byDate.entries()]
-    .map(([date, { passed, total }]) => ({ date, pass_rate: total > 0 ? passed / total : 0 }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-}
-
-// --- Onboarding ---
-
-function OnboardingView() {
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-lg font-bold">Welcome to GoTest Agent</h1>
-        <p className="text-[13px] text-[var(--text-secondary)] mt-0.5 max-w-lg">
-          An AI-powered testing platform that analyzes your code, generates tests, runs them automatically, and helps you understand what needs attention.
-        </p>
-      </div>
-      <Section title="Get Started">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-          <StepCard num={1} title="Create your first test" desc="Provide a repository path and test requirements to begin." />
-          <StepCard num={2} title="Review test plan" desc="The AI will generate a plan. Review and confirm before execution." />
-          <StepCard num={3} title="Monitor results" desc="Watch tests run live and review AI-generated reports." />
-        </div>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/create"
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
-          >
-            <PlayCircle className="w-3.5 h-3.5" /> Create Test
-          </Link>
-          <button
-            onClick={() => { fetch((process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080") + "/api/v1/demo/seed", { method: "POST" }).then(() => window.location.reload()); }}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text-primary)] text-[12px] font-semibold hover:bg-[var(--bg-hover)] transition-colors shadow-sm"
-          >
-            <Lightbulb className="w-3.5 h-3.5" /> Or seed demo data
-          </button>
-        </div>
+      {/* Recent Runs Table */}
+      <Section title="Recent Runs" action={<Link href="/runs" className="text-xs text-blue-600 hover:text-blue-700">View all →</Link>}>
+        <TableContainer>
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b border-[var(--border-default)]">
+                <Th>Run Name</Th>
+                <Th>Status</Th>
+                <Th>Coverage</Th>
+                <Th>Duration</Th>
+                <Th>Started</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentRuns.map((r) => (
+                <Tr key={r.id} onClick={() => window.location.href = `/runs/${r.id}`} hover>
+                  <Td className="font-medium">
+                    <span className="truncate block max-w-[200px]">{r.requirements || "Untitled"}</span>
+                  </Td>
+                  <Td><StatusBadge state={r.state} /></Td>
+                  <Td>
+                    {r.run_result ? (
+                      <span className="text-xs text-[var(--text-muted)]">
+                        {r.run_result.passed}/{r.run_result.total}
+                      </span>
+                    ) : "-"}
+                  </Td>
+                  <Td className="text-xs text-[var(--text-muted)]">
+                    {r.run_result?.duration_ms ? formatDurationMs(r.run_result.duration_ms) : "-"}
+                  </Td>
+                  <Td className="text-[var(--text-muted)] text-xs">
+                    {formatDate(r.created_at)}
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </table>
+        </TableContainer>
       </Section>
     </div>
   );
 }
 
-function StepCard({ num, title, desc }: { num: number; title: string; desc: string }) {
+// === Components ===
+
+function StatBox({ value, label, success, danger, color = "default" }: { 
+  value: string; 
+  label: string; 
+  success?: boolean;
+  danger?: boolean;
+  color?: string;
+}) {
+  const textColor = danger ? "text-red-600" : success ? "text-green-600" : color === "blue" ? "text-blue-600" : "";
+  const bgColor = danger ? "bg-red-50" : success ? "bg-green-50" : color === "blue" ? "bg-blue-50" : "bg-gray-50";
+  
   return (
-    <div className="p-3 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-subtle)]">
-      <div className="w-5 h-5 rounded-full bg-[var(--accent-bg)] text-[var(--accent)] flex items-center justify-center text-[10px] font-bold mb-2">{num}</div>
-      <p className="text-[12px] font-semibold text-[var(--text-primary)]">{title}</p>
-      <p className="text-[11px] text-[var(--text-muted)] mt-0.5 leading-relaxed">{desc}</p>
+    <div className={`bg-white rounded-lg p-4 border border-[var(--border-default)] ${bgColor}`}>
+      <p className="text-xs text-[var(--text-muted)] font-medium uppercase tracking-wide">{label}</p>
+      <p className={`mt-2 text-2xl font-semibold ${textColor}`}>{value}</p>
     </div>
   );
+}
+
+function StatusBadge({ state, size = "md" }: { state: string; size?: "sm" | "md" }) {
+  const colors: Record<string, string> = {
+    done: "bg-green-100 text-green-700 border-green-200",
+    failed: "bg-red-100 text-red-700 border-red-200",
+    running: "bg-blue-100 text-blue-700 border-blue-200",
+    analyzing: "bg-yellow-100 text-yellow-700 border-yellow-200",
+    writing_tests: "bg-purple-100 text-purple-700 border-purple-200",
+    fixing: "bg-orange-100 text-orange-700 border-orange-200",
+  };
+  const color = colors[state] || "bg-gray-100 text-gray-700 border-gray-200";
+  
+  return (
+    <span className={`inline-flex items-center font-medium rounded ${color} ${size === "sm" ? "px-1.5 py-0.5 text-xs" : "px-2 py-0.5 text-xs"}`}>
+      {state.replace("_", " ").replace(/\b\w/g, l => l.toUpperCase())}
+    </span>
+  );
+}
+
+function ProgressBar({ state }: { state: string }) {
+  const progressMap: Record<string, number> = {
+    idle: 0,
+    analyzing: 15,
+    plan_generated: 25,
+    writing_tests: 45,
+    running: 70,
+    fixing: 85,
+    done: 100,
+    failed: 100,
+  };
+  
+  const progress = progressMap[state] || 0;
+  
+  return (
+    <div className="w-full max-w-[100px]">
+      <div className="flex items-center gap-2">
+        <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-blue-600 rounded-full transition-all duration-300"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <span className="text-xs text-[var(--text-muted)] w-8 text-right">{progress}%</span>
+      </div>
+    </div>
+  );
+}
+
+function FailedRunCard({ run }: { run: TestRun }) {
+  const failure = run.run_result?.failures?.[0];
+  
+  return (
+    <Link href={`/runs/${run.id}`} className="block p-3 rounded-lg border border-red-200 bg-red-50 hover:border-red-300 transition-colors">
+      <div className="flex items-start justify-between">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+            <span className="font-medium text-sm truncate">{run.requirements || "Untitled test"}</span>
+          </div>
+          {failure && (
+            <p className="text-xs text-red-700 truncate ml-6">
+              {failure.test}: {failure.message?.slice(0, 80)}...
+            </p>
+          )}
+        </div>
+        <span className="text-xs text-[var(--text-muted)] whitespace-nowrap ml-2">
+          {formatDate(run.created_at)}
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+function RecommendationCard({ rec }: { rec: Recommendation }) {
+  return (
+    <div className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
+      <Lightbulb className="w-4 h-4 text-yellow-600 shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-[var(--text-primary)]">{rec.target}</p>
+        <p className="text-xs text-[var(--text-muted)] mt-0.5 capitalize">{rec.action.replace("_", " ")}</p>
+      </div>
+      <ArrowUpRight className="w-4 h-4 text-[var(--text-muted)] shrink-0" />
+    </div>
+  );
+}
+
+function RiskCard({ risk }: { risk: RiskItem }) {
+  const score = risk.risk_score * 100;
+  const isHigh = score > 70;
+  
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50">
+      <Shield className={`w-4 h-4 shrink-0 ${isHigh ? "text-red-600" : "text-blue-600"}`} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate">{risk.name}</p>
+        <p className="text-xs text-[var(--text-muted)]">{risk.reason}</p>
+      </div>
+      <span className={`text-xs font-semibold ${isHigh ? "text-red-600" : "text-blue-600"}`}>
+        {Math.round(score)}%
+      </span>
+    </div>
+  );
+}
+
+// === Helpers ===
+
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHour = Math.floor(diffMs / 3600000);
+  const diffDay = Math.floor(diffMs / 86400000);
+  
+  if (diffMin < 1) return "Just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHour < 24) return `${diffHour}h ago`;
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function formatDurationMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const mins = Math.floor(ms / 60000);
+  const secs = ((ms / 1000) % 60).toFixed(0);
+  return `${mins}m ${secs}s`;
 }

@@ -15,8 +15,12 @@ import {
   type TestCase,
 } from "@/lib/api";
 import { EmptyState, LoadingSkeleton } from "@/components/ui/section";
-import { AlertTriangle, CheckCircle2, Clock, FileText, Layers, MonitorPlay, PencilLine, PlayCircle, Plus, Search, Sparkles, TerminalSquare } from "lucide-react";
+import { AlertTriangle, CheckCircle2, PlayCircle, Plus, Search, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { TableContainer, Th, Td, Tr } from "@/components/ui/table";
 
 type Tab = "ui" | "api";
 
@@ -36,8 +40,8 @@ export default function TestLibraryPage() {
   useEffect(() => {
     Promise.all([getTestCases(), getTestCaseMaintenance()])
       .then(([testData, maintenanceData]) => {
-        setTests(testData);
-        setMaintenance(maintenanceData);
+        setTests(testData || []);
+        setMaintenance(maintenanceData || []);
       })
       .catch(() => {
         setTests([]);
@@ -48,8 +52,9 @@ export default function TestLibraryPage() {
 
   const filteredTests = useMemo(() => tests.filter((test) => {
     const type = (test.type || "ui") as Tab;
+    if (type !== activeTab) return false;
     const haystack = `${test.title} ${test.feature} ${test.priority} ${test.tags?.join(" ")}`.toLowerCase();
-    return type === activeTab && haystack.includes(query.toLowerCase());
+    return haystack.includes(query.toLowerCase());
   }), [tests, activeTab, query]);
 
   const handleRun = async (test: TestCase) => {
@@ -97,171 +102,164 @@ export default function TestLibraryPage() {
   if (loading) return <LoadingSkeleton rows={7} />;
 
   return (
-    <div className="space-y-5 pb-10">
-      <div className="flex items-center justify-between gap-4">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-bold">Test Library</h1>
-          <p className="text-[13px] text-[var(--text-secondary)] mt-0.5">Approved UI and API test cases ready for repeatable execution</p>
+          <h1 className="text-xl font-semibold tracking-tight">Test Library</h1>
+          <p className="text-sm text-[var(--text-muted)] mt-1">Approved test cases ready for execution</p>
         </div>
-        <Link
-          href="/projects"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Generate Tests
+        <Link href="/create">
+          <Button>New Test</Button>
         </Link>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-          <input
-            type="text"
-            placeholder="Search test name, feature, priority, or tag..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="input pl-10"
-          />
-        </div>
+      {/* Tab Controls - Modern Segmented Control */}
+      <div className="inline-flex rounded-lg border border-[var(--border-default)] p-0.5 bg-white">
+        {[
+          { value: "ui", label: "UI Tests" },
+          { value: "api", label: "API Tests" },
+        ].map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => setActiveTab(tab.value as Tab)}
+            className={cn(
+              "px-4 py-2 text-sm font-medium rounded-md transition-colors",
+              activeTab === tab.value
+                ? "bg-blue-600 text-white shadow-sm"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-gray-50"
+            )}
+          >
+            {tab.label} ({tests.filter(t => t.type === tab.value).length})
+          </button>
+        ))}
       </div>
 
+      {/* Search */}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+        <Input
+          placeholder="Search by name, feature, priority, or tag..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="pl-9"
+        />
+      </div>
+
+      {/* Maintenance Panel - Collapsible Style */}
       {maintenance.length > 0 && (
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-[var(--shadow-sm)] p-4">
-          <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-[var(--warning)]" />
-              <h2 className="text-sm font-bold">Maintenance Advisor</h2>
+              <AlertTriangle className="w-4 h-4 text-yellow-700" />
+              <h2 className="text-sm font-semibold text-yellow-800">Maintenance Needed</h2>
             </div>
-            <span className="text-[11px] text-[var(--text-muted)]">{maintenance.length} items</span>
+            <Badge variant="warning">{maintenance.length} items</Badge>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {maintenance.slice(0, 4).map((item) => (
-              <div key={`${item.test_case_id}-${item.category}`} className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-subtle)] p-3">
-                <div className="flex items-center gap-2">
-                  <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-semibold", item.severity === "high" ? "bg-[var(--danger-bg)] text-[var(--danger)]" : item.severity === "medium" ? "bg-[var(--warning-bg)] text-[var(--warning)]" : "bg-[var(--bg-card)] text-[var(--text-muted)]")}>{item.category.replace("_", " ")}</span>
-                  <span className="text-[11px] text-[var(--text-muted)] truncate">{item.title}</span>
-                </div>
-                <p className="text-[12px] text-[var(--text-secondary)] mt-2">{item.reason}</p>
-                <p className="text-[11px] text-[var(--text-muted)] mt-1">{item.action}</p>
-              </div>
+              <MaintenanceItemCard key={`${item.test_case_id}-${item.category}`} item={item} />
             ))}
           </div>
         </div>
       )}
 
-      <div className="flex items-center gap-1 border-b border-[var(--border)]">
-        <TabButton active={activeTab === "ui"} onClick={() => setActiveTab("ui")} icon={<MonitorPlay className="w-4 h-4" />} label="UI Testing" />
-        <TabButton active={activeTab === "api"} onClick={() => setActiveTab("api")} icon={<TerminalSquare className="w-4 h-4" />} label="API Testing" />
-      </div>
+      {/* Tests List */}
+      <TableContainer>
+        <table className="w-full text-left">
+          <thead className="bg-gray-50 border-b border-[var(--border-default)]">
+            <tr>
+              <Th>Name</Th>
+              <Th>Priority</Th>
+              <Th align="right">Actions</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredTests.length === 0 ? (
+              <Tr>
+                <Td colSpan={3}>
+                  <EmptyState 
+                    icon={<Sparkles className="w-6 h-6" />}
+                    title={!query ? "No tests yet" : "No matching tests"}
+                    description={!query ? "Generate your first test to populate the library." : "Try adjusting your search criteria."}
+                  />
+                </Td>
+              </Tr>
+            ) : (
+              filteredTests.map((test) => (
+                <Tr key={test.id} hover>
+                  <Td className="font-medium">
+                    <span className="block truncate max-w-[180px]">{test.title}</span>
+                    <span className="text-xs text-[var(--text-muted)]">{test.feature}</span>
+                  </Td>
+                  <Td><PriorityBadge priority={test.priority} /></Td>
+                  <Td className="text-right space-x-2">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      isLoading={runningId === test.id}
+                      onClick={() => handleRun(test)}
+                    >
+                      <PlayCircle className="w-3.5 h-3.5" />
+                      Run
+                    </Button>
+                    <Link href={`/tests/${test.id}/edit`}>
+                      <Button variant="secondary" size="sm">Edit</Button>
+                    </Link>
+                  </Td>
+                </Tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </TableContainer>
 
-      {filteredTests.length === 0 ? (
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)]">
-          <EmptyState
-            icon={activeTab === "ui" ? <MonitorPlay className="w-6 h-6" /> : <TerminalSquare className="w-6 h-6" />}
-            title={`No approved ${activeTab.toUpperCase()} tests`}
-            description="Create a project, generate a plan, and approve cases to populate this library."
-            action={
-              <Link href="/projects" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm">
-                Open Projects
-              </Link>
-            }
-          />
-        </div>
-      ) : (
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-[var(--shadow-sm)] overflow-hidden divide-y divide-[var(--border)]">
-          {filteredTests.map((test) => (
-            <div key={test.id} className="w-full flex items-center justify-between gap-4 px-4 py-3 hover:bg-[var(--bg-hover)] transition-colors group">
-              <div className="flex items-center gap-4 min-w-0">
-                <span className={cn("w-2 h-2 rounded-full shrink-0", test.priority === "high" ? "bg-[var(--danger)]" : test.priority === "medium" ? "bg-[var(--warning)]" : "bg-[var(--success)]")} />
-                <div className="min-w-0">
-                  <h3 className="text-sm font-semibold text-[var(--text-primary)] group-hover:text-[var(--accent)] transition-colors truncate">
-                    {test.title}
-                  </h3>
-                  <div className="flex flex-wrap items-center gap-3 mt-1">
-                    <span className="flex items-center gap-1 text-[11px] text-[var(--text-muted)]">
-                      <Layers className="w-3 h-3" /> {(test.type || "ui").toUpperCase()}
-                    </span>
-                    <span className="flex items-center gap-1 text-[11px] text-[var(--text-muted)] min-w-0">
-                      <FileText className="w-3 h-3" /> <span className="truncate max-w-[280px]">{test.feature || "No feature"}</span>
-                    </span>
-                    <span className="flex items-center gap-1 text-[11px] text-[var(--text-muted)]">
-                      <Clock className="w-3 h-3" /> v{test.version}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => handleRun(test)}
-                disabled={runningId === test.id}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[11px] font-semibold hover:bg-[var(--accent-hover)] disabled:opacity-50 shrink-0"
-              >
-                <PlayCircle className="w-3.5 h-3.5" />
-                {runningId === test.id ? "Starting" : "Run"}
-              </button>
-              <button
-                onClick={() => openRefine(test)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-card)] text-[11px] font-semibold hover:bg-[var(--bg-hover)] shrink-0"
-              >
-                <PencilLine className="w-3.5 h-3.5" />
-                Refine
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
+      {/* Refinement Modal */}
       {selected && (
-        <div className="fixed inset-0 z-40 bg-black/25" onClick={() => setSelected(null)}>
-          <div className="absolute right-0 top-0 h-full w-full max-w-[520px] bg-[var(--bg-card)] border-l border-[var(--border)] shadow-xl p-5 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h2 className="text-base font-bold truncate">{selected.title}</h2>
-                <p className="text-[12px] text-[var(--text-muted)] mt-0.5">v{selected.version} - {(selected.type || "ui").toUpperCase()} - {selected.feature || "No feature"}</p>
-              </div>
-              <button onClick={() => setSelected(null)} className="text-[12px] font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)]">Close</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold mb-4">Refine Test Case</h3>
+            <p className="text-sm text-[var(--text-muted)] mb-4">{selected.title}</p>
+            
+            <Input
+              placeholder="Describe what changes you'd like to make..."
+              value={refinePrompt}
+              onChange={(e) => setRefinePrompt(e.target.value)}
+              autoFocus
+            />
+            
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setSelected(null)}>Cancel</Button>
+              <Button 
+                onClick={submitRefinement} 
+                isLoading={refining}
+                disabled={!refinePrompt.trim()}
+              >
+                Generate Changes
+              </Button>
             </div>
 
-            <div className="mt-5 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Refinement Prompt</label>
-              <textarea
-                value={refinePrompt}
-                onChange={(e) => setRefinePrompt(e.target.value)}
-                className="input mt-2 min-h-24 resize-none"
-                placeholder="Add edge case, improve assertion, cover validation error..."
-              />
-              <button onClick={submitRefinement} disabled={refining || !refinePrompt.trim()} className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)] disabled:opacity-50">
-                <Sparkles className="w-3.5 h-3.5" />
-                {refining ? "Creating proposal" : "Create Proposal"}
-              </button>
-            </div>
-
-            <div className="mt-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold">Change Proposals</h3>
-                <span className="text-[11px] text-[var(--text-muted)]">{proposals.length} total</span>
+            {/* Proposals */}
+            {proposals.length > 0 && (
+              <div className="mt-4 pt-4 border-t">
+                <h4 className="text-sm font-semibold mb-3">Generated Proposals:</h4>
+                {proposals.map((proposal) => (
+                  <div key={proposal.id} className="p-3 rounded-lg bg-gray-50 mb-2">
+                    <p className="text-sm font-medium mb-2">{proposal.rationale}</p>
+                    <div className="flex gap-2">
+                      <Button 
+                        size="sm"
+                        isLoading={approvingId === proposal.id}
+                        onClick={() => approveProposal(proposal)}
+                      >
+                        Approve
+                      </Button>
+                      <Button size="sm" variant="secondary">Decline</Button>
+                    </div>
+                  </div>
+                ))}
               </div>
-              {proposals.length === 0 ? (
-                <p className="text-[12px] text-[var(--text-muted)]">No proposals for this test yet.</p>
-              ) : proposals.map((proposal) => (
-                <div key={proposal.id} className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-semibold", proposal.status === "pending" ? "bg-[var(--warning-bg)] text-[var(--warning)]" : "bg-[var(--success-bg)] text-[var(--success)]")}>{proposal.status}</span>
-                    <span className="text-[10px] text-[var(--text-muted)]">{new Date(proposal.created_at).toLocaleString()}</span>
-                  </div>
-                  <p className="text-[12px] text-[var(--text-secondary)] mt-3">{proposal.rationale}</p>
-                  <div className="grid grid-cols-2 gap-2 mt-3 text-[11px]">
-                    <DiffStat label="Steps" before={proposal.original.steps.length} after={proposal.proposed.steps.length} />
-                    <DiffStat label="Assertions" before={proposal.original.assertions.length} after={proposal.proposed.assertions.length} />
-                  </div>
-                  {proposal.status === "pending" && (
-                    <button onClick={() => approveProposal(proposal)} disabled={approvingId === proposal.id} className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--success)] text-white text-[11px] font-semibold disabled:opacity-50">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      {approvingId === proposal.id ? "Approving" : "Approve"}
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -269,26 +267,56 @@ export default function TestLibraryPage() {
   );
 }
 
-function DiffStat({ label, before, after }: { label: string; before: number; after: number }) {
+// === Components ===
+
+function PriorityBadge({ priority }: { priority: string }) {
+  const colors: Record<string, string> = {
+    high: "bg-red-100 text-red-700",
+    medium: "bg-yellow-100 text-yellow-700",
+    low: "bg-green-100 text-green-700",
+  };
+  
   return (
-    <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-subtle)] px-2 py-1.5">
-      <span className="text-[var(--text-muted)]">{label}</span>
-      <span className="ml-2 font-semibold text-[var(--text-primary)]">{before}{" -> "}{after}</span>
+    <span className={cn("inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize", colors[priority] || "bg-gray-100 text-gray-700")}>
+      {priority}
+    </span>
+  );
+}
+
+function MaintenanceItemCard({ item }: { item: MaintenanceItem }) {
+  const severityColors: Record<string, string> = {
+    high: "text-red-700 border-red-200 bg-red-50",
+    medium: "text-yellow-700 border-yellow-200 bg-yellow-50",
+    low: "text-gray-700 border-gray-200 bg-gray-50",
+  };
+  
+  return (
+    <div className={cn(
+      "p-3 rounded-lg border text-sm",
+      severityColors[item.severity] || severityColors.low
+    )}>
+      <div className="flex items-start justify-between mb-1">
+        <span className="font-medium truncate flex-1">{item.title}</span>
+        <Badge variant={item.severity === "high" ? "danger" : item.severity === "medium" ? "warning" : "default"} size="sm">
+          {item.severity}
+        </Badge>
+      </div>
+      <p className="text-xs opacity-75 mb-1">{item.reason}</p>
+      <p className="text-xs opacity-60">{item.action}</p>
     </div>
   );
 }
 
-function TabButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: ReactNode; label: string }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium border-b-2 -mb-px transition-colors",
-        active ? "border-[var(--accent)] text-[var(--accent)]" : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-      )}
-    >
-      {icon}
-      {label}
-    </button>
-  );
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHour = Math.floor(diffMs / 3600000);
+  const diffDay = Math.floor(diffMs / 86400000);
+  
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHour < 24) return `${diffHour}h ago`;
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }

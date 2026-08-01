@@ -5,11 +5,14 @@ import { getRuns, isActive, type TestRun } from "@/lib/api";
 import { StatusBadge } from "@/components/ui/badge";
 import { EmptyState, LoadingSkeleton } from "@/components/ui/section";
 import { RunInspector } from "@/components/console/inspector";
-import { Search, Inbox, ChevronDown } from "lucide-react";
+import { Search, Inbox } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 type Group = "all" | "active" | "passed" | "failed";
-type Sort = "newest" | "oldest";
+type Sort = "newest" | "oldest" | "status" | "name";
 
 export default function RunsPage() {
   const [runs, setRuns] = useState<TestRun[]>([]);
@@ -22,24 +25,50 @@ export default function RunsPage() {
 
   useEffect(() => {
     getRuns().then((r) => setRuns(r || [])).catch((e) => setError(e.message)).finally(() => setLoading(false));
+    
+    // Poll for updates
+    const interval = setInterval(() => {
+      getRuns().then((r) => setRuns(r || [])).catch(() => {});
+    }, 10000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   const filtered = useMemo(() => {
-    const q = query.toLowerCase();
-    let list = runs.filter(
-      (r) =>
-        r.id.includes(q) ||
-        r.state.includes(q) ||
-        (r.requirements || "").toLowerCase().includes(q) ||
-        (r.project_path || "").toLowerCase().includes(q)
-    );
+    let list = [...runs];
+    
+    // Filter by group
     if (group === "active") list = list.filter((r) => isActive(r.state));
-    if (group === "passed") list = list.filter((r) => r.state === "done");
-    if (group === "failed") list = list.filter((r) => r.state === "failed");
-    list = [...list].sort((a, b) => {
-      const d = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      return sort === "newest" ? -d : d;
+    else if (group === "passed") list = list.filter((r) => r.state === "done");
+    else if (group === "failed") list = list.filter((r) => r.state === "failed");
+    
+    // Search filter
+    if (query.trim()) {
+      const q = query.toLowerCase();
+      list = list.filter(
+        (r) =>
+          r.id.includes(q) ||
+          r.state.toLowerCase().includes(q) ||
+          (r.requirements || "").toLowerCase().includes(q) ||
+          (r.project_path || "").toLowerCase().includes(q)
+      );
+    }
+    
+    // Sorting
+    list.sort((a, b) => {
+      switch (sort) {
+        case "oldest":
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        case "status":
+          return isActive(b.state) ? -1 : 1;
+        case "name":
+          return (b.requirements || "").localeCompare(a.requirements || "");
+        case "newest":
+        default:
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
     });
+    
     return list;
   }, [runs, query, group, sort]);
 
@@ -51,105 +80,212 @@ export default function RunsPage() {
   };
 
   if (loading) {
-    return <div className="space-y-6"><div className="h-8 w-48 rounded-lg bg-[var(--bg-subtle)] animate-pulse" /><LoadingSkeleton rows={8} /></div>;
+    return <div className="space-y-6"><LoadingSkeleton rows={8} /></div>;
   }
+  
   if (error) {
-    return <div className="rounded-xl border border-[var(--danger)]/20 bg-[var(--danger-bg)] p-5 text-sm text-[var(--danger)]">Error: {error}</div>;
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+        <h2 className="text-sm font-semibold text-red-700 mb-2">Error loading runs</h2>
+        <p className="text-sm text-red-600">{error}</p>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold">Test Suites</h1>
-        <p className="text-sm text-[var(--text-secondary)] mt-0.5">Browse, inspect, and rerun your test sessions</p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Test Runs</h1>
+          <p className="text-sm text-[var(--text-muted)] mt-1">Browse and inspect test execution history</p>
+        </div>
       </div>
 
-      {/* Toolbar */}
+      {/* Search & Actions */}
       <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
+        <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-          <input
-            type="text"
-            placeholder="Search by ID, state, requirements, or project..."
+          <Input
+            placeholder="Search by ID, state, or requirements..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]/50 focus:ring-2 focus:ring-[var(--accent)]/10"
+            className="pl-9"
           />
         </div>
-        <div className="relative">
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as Sort)}
-            className="appearance-none pl-3 pr-8 py-2.5 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm focus:outline-none focus:border-[var(--accent)]/50 cursor-pointer"
-          >
-            <option value="newest">Newest first</option>
-            <option value="oldest">Oldest first</option>
-          </select>
-          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)] pointer-events-none" />
+        
+        {/* Status Filters - Modern Segment Control */}
+        <div className="inline-flex rounded-lg border border-[var(--border-default)] p-0.5 bg-white">
+          {(["all", "active", "passed", "failed"] as Group[]).map((g) => (
+            <button
+              key={g}
+              onClick={() => setGroup(g)}
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                group === g 
+                  ? "bg-blue-600 text-white shadow-sm" 
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-gray-50"
+              )}
+            >
+              {g.charAt(0).toUpperCase() + g.slice(1)}
+              <span className={cn("ml-1.5", group === g ? "text-blue-200" : "text-[var(--text-muted)]")}>({counts[g]})</span>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Status filter tabs */}
-      <div className="flex items-center gap-1 border-b border-[var(--border)]">
-        {(["all", "active", "passed", "failed"] as Group[]).map((g) => (
-          <button
-            key={g}
-            onClick={() => setGroup(g)}
-            className={cn(
-              "px-3 py-2 text-[13px] font-medium border-b-2 -mb-px capitalize transition-colors",
-              group === g ? "border-[var(--accent)] text-[var(--accent)]" : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-            )}
-          >
-            {g} <span className="text-[var(--text-muted)]">({counts[g]})</span>
-          </button>
-        ))}
-      </div>
-
-      {/* List */}
+      {/* Results */}
       {filtered.length === 0 ? (
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)]">
+        <div className="rounded-lg border border-[var(--border-default)] bg-white">
           <EmptyState 
             icon={<Inbox className="w-6 h-6" />} 
-            title={query ? "No matching runs" : "No runs in this group"} 
-            description={query ? "Try a different search." : "Runs will appear here. Create your first test to get started."} 
+            title={query ? "No matching runs" : "No runs found"} 
+            description={query ? "Try adjusting your search criteria." : "Create your first test run to start monitoring executions."}
             action={!query && runs.length === 0 ? (
-              <a href="/create" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm">
-                Create First Test
-              </a>
+              <Link href="/create">
+                <Button>Create First Test</Button>
+              </Link>
             ) : undefined}
           />
         </div>
       ) : (
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-[var(--shadow-sm)] overflow-hidden divide-y divide-[var(--border)]">
-          {filtered.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => setSelected(r)}
-              className={cn(
-                "w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-[var(--bg-hover)] transition-colors",
-                selected?.id === r.id && "bg-[var(--accent-bg)]"
-              )}
-            >
-              <StatusBadge state={r.state} />
-              <span className="font-mono text-xs text-[var(--accent)] w-16 shrink-0">{r.id.slice(0, 8)}</span>
-              <span className="text-sm text-[var(--text-secondary)] truncate flex-1">{r.requirements || "—"}</span>
-              {r.run_result && (
-                <span className="text-[11px] shrink-0 flex items-center gap-2">
-                  <span className="text-[var(--success)]">{r.run_result.passed}✓</span>
-                  <span className="text-[var(--danger)]">{r.run_result.failed}✗</span>
-                </span>
-              )}
-              <span className="text-[11px] text-[var(--text-muted)] shrink-0 w-28 text-right">
-                {new Date(r.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-              </span>
-            </button>
-          ))}
+        <div className="rounded-lg border border-[var(--border-default)] bg-white overflow-hidden">
+          <table className="w-full text-left">
+            <thead className="bg-gray-50 border-b border-[var(--border-default)]">
+              <tr>
+                <Th>Status</Th>
+                <Th>Run Name / ID</Th>
+                <Th>Coverage</Th>
+                <Th>Duration</Th>
+                <Th>Started</Th>
+                <Th align="right">Actions</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((r) => (
+                <Tr 
+                  key={r.id} 
+                  onClick={() => setSelected(r)}
+                  hover
+                  className={selected?.id === r.id ? "bg-blue-50" : ""}
+                >
+                  <Td><StatusBadge state={r.state} size="sm" /></Td>
+                  <Td className="font-medium">
+                    <span className="block truncate max-w-[200px]">{r.requirements || "Untitled test"}</span>
+                    <span className="text-xs text-[var(--text-muted)] font-mono">{r.id.slice(0, 8)}</span>
+                  </Td>
+                  <Td>
+                    {r.run_result ? (
+                      <span className="text-sm text-[var(--text-primary)]">
+                        <span className="text-green-600">{r.run_result.passed}✓</span>
+                        <span className="mx-1">·</span>
+                        <span className="text-red-600">{r.run_result.failed}✗</span>
+                      </span>
+                    ) : (
+                      "-"
+                    )}
+                  </Td>
+                  <Td className="text-sm text-[var(--text-muted)]">
+                    {r.run_result?.duration_ms 
+                      ? formatDuration(r.run_result.duration_ms) 
+                      : "-"}
+                  </Td>
+                  <Td className="text-sm text-[var(--text-muted)] whitespace-nowrap">
+                    {formatDate(r.created_at)}
+                  </Td>
+                  <Td>
+                    <Link href={`/runs/${r.id}`} className="text-blue-600 hover:text-blue-700 text-xs font-medium text-right">
+                      View details
+                    </Link>
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {/* Inspector drawer + backdrop */}
-      {selected && <div className="fixed inset-0 z-30 bg-black/20" onClick={() => setSelected(null)} />}
-      <RunInspector run={selected} onClose={() => setSelected(null)} />
+      {/* Inspector Drawer */}
+      {selected && <RunInspector run={selected} onClose={() => setSelected(null)} />}
+      
+      {/* Backdrop */}
+      {selected && (
+        <div 
+          className="fixed inset-0 z-30 bg-black/20 cursor-pointer" 
+          onClick={() => setSelected(null)}
+        />
+      )}
     </div>
   );
+}
+
+// === Components ===
+
+function Th({ children, align = "left" }: { children: React.ReactNode; align?: string }) {
+  return (
+    <th className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] ${align === "right" ? "text-right" : ""}`}>
+      {children}
+    </th>
+  );
+}
+
+function Tr({ children, onClick, hover, className }: { 
+  children: React.ReactNode; 
+  onClick?: () => void; 
+  hover?: boolean;
+  className?: string;
+}) {
+  return (
+    <tr 
+      className={`border-b border-[var(--border-default)] ${onClick ? "cursor-pointer" : ""} ${hover && !onClick ? "hover:bg-gray-50 transition-colors" : ""} ${className || ""}`}
+      onClick={onClick}
+    >
+      {children}
+    </tr>
+  );
+}
+
+function Td({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <td className={`px-4 py-3 text-sm ${className || ""}`}>
+      {children}
+    </td>
+  );
+}
+
+function Button({ children, variant = "primary" }: { children: React.ReactNode; variant?: "primary" }) {
+  const baseStyles = "inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
+  const variants: Record<string, string> = {
+    primary: "bg-blue-600 text-white hover:bg-blue-700 shadow-xs",
+  };
+  
+  return (
+    <button className={`${baseStyles} ${variants[variant]}`}>
+      {children}
+    </button>
+  );
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const mins = Math.floor(ms / 60000);
+  const secs = ((ms / 1000) % 60).toFixed(0);
+  return `${mins}m ${secs}s`;
+}
+
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHour = Math.floor(diffMs / 3600000);
+  const diffDay = Math.floor(diffMs / 86400000);
+  
+  if (diffMin < 1) return "Just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHour < 24) return `${diffHour}h ago`;
+  if (diffDay < 7) return `${diffDay}d ago`;
+  
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
