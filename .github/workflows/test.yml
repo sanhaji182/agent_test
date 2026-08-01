@@ -1,0 +1,98 @@
+name: Test & Build
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Go Backend
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: gotest_agent
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Unit Tests (short)
+        run: go test ./internal/... -count=1 -short -timeout 120s
+
+      - name: PostgreSQL Smoke Test
+        env:
+          GOTEST_POSTGRES_SMOKE_URL: postgres://postgres:password@localhost:5432/gotest_agent?sslmode=disable
+        run: go test ./internal/db -run TestPostgresWorkflowPersistenceSmoke -count=1 -v
+
+      - name: Chrome Extension Tests
+        run: go test ./chrome-extension -count=1 -v
+
+      - name: Go Vet
+        run: go vet ./...
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+        working-directory: frontend
+
+      - name: Unit Tests
+        run: npm test
+        working-directory: frontend
+
+      - name: Build
+        run: npm run build
+        working-directory: frontend
+
+      - name: Install Playwright
+        run: npx playwright install chromium
+        working-directory: frontend
+
+      - name: E2E Tests
+        run: npm run test:e2e
+        working-directory: frontend
+
+  sidecar:
+    name: Python Sidecar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install
+        run: pip install -r requirements.txt
+        working-directory: sidecar
+
+      - name: Tests
+        run: python -m pytest tests/ -v
+        working-directory: sidecar
