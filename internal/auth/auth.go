@@ -19,9 +19,11 @@ import (
 var ErrUnauthorized = errors.New("unauthorized")
 
 // Claims adalah payload JWT yang berisi info user
+
 type Claims struct {
 	UserID string `json:"user_id"`
 	Email  string `json:"email"`
+	Role   string `json:"role,omitempty"`
 	jwt.RegisteredClaims
 }
 
