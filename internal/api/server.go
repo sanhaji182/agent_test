@@ -11,7 +11,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-go-golems/gotest-agent/internal/agent"
+	"github.com/go-go-golems/gotest-agent/internal/ai"
 	"github.com/go-go-golems/gotest-agent/internal/appmetrics"
+	"github.com/go-go-golems/gotest-agent/internal/audit"
 	"github.com/go-go-golems/gotest-agent/internal/auth"
 	"github.com/go-go-golems/gotest-agent/internal/config"
 	"github.com/go-go-golems/gotest-agent/internal/db"
@@ -46,14 +48,19 @@ type Server struct {
 	drifts        *drift.Store
 	driftTests    *drift.GeneratedTestStore
 	driftDetector *drift.Detector
+	webhooks      *webhook.RegistrationStore
 	reviews       *workflow.ReviewStore
 	suites        *workflow.SuiteStore
+	auditLog      *audit.Store
+	keyStore      *auth.KeyStore
+	oidcManager   *auth.OIDCManager
 	jwtAuth       *auth.Auth
 	runSem        chan struct{}                 // concurrency cap for run goroutines (AUDIT S-01)
 	enqueueRun    func(runID string) error      // optional durable-queue enqueuer (Redis/Asynq); nil = in-process execution
 	runCancels    map[string]context.CancelFunc // active run cancellation functions
 	cancelsMu     sync.RWMutex
-	metrics       *appmetrics.Metrics // Prometheus-format application metrics
+	metrics       *appmetrics.Metrics                 // Prometheus-format application metrics
+	aiClientFn    func(ctx context.Context) ai.Client // test hook for drift generation; nil uses aiClient
 }
 
 func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.SettingsStore) *Server {
@@ -89,28 +96,44 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 	jwtAuth := auth.New(jwtSecret)
 
 	s := &Server{
-		router:     r,
-		cfg:        cfg,
-		store:      store,
-		settings:   settingsStore,
-		projects:   projectStore,
-		planning:   planningStore,
-		events:     evtStore,
-		recordings: recordings.NewStore(),
-		visuals:    visual.NewStore(),
-		schedules:  scheduleStore,
-		releases:   release.NewStore(),
-		notifs:     notify.NewStore(),
-		drifts:     drift.NewStore(),
-		driftTests: drift.NewGeneratedTestStore(),
-		reviews:    workflow.NewReviewStore(),
-		suites:     workflow.NewSuiteStore(),
-		jwtAuth:    jwtAuth,
-		runSem:     make(chan struct{}, cfg.MaxConcurrentRuns),
-		runCancels: make(map[string]context.CancelFunc),
-		metrics:    appm,
+		router:      r,
+		cfg:         cfg,
+		store:       store,
+		settings:    settingsStore,
+		projects:    projectStore,
+		planning:    planningStore,
+		events:      evtStore,
+		recordings:  recordings.NewStore(),
+		visuals:     visual.NewStore(),
+		schedules:   scheduleStore,
+		releases:    release.NewStore(),
+		notifs:      notify.NewStore(),
+		drifts:      drift.NewStore(),
+		driftTests:  drift.NewGeneratedTestStore(),
+		webhooks:    webhook.NewRegistrationStore(),
+		reviews:     workflow.NewReviewStore(),
+		suites:      workflow.NewSuiteStore(),
+		auditLog:    audit.NewStore(),
+		keyStore:    auth.NewKeyStore(),
+		oidcManager: auth.NewOIDCManager(),
+		jwtAuth:     jwtAuth,
+		runSem:      make(chan struct{}, cfg.MaxConcurrentRuns),
+		runCancels:  make(map[string]context.CancelFunc),
+		metrics:     appm,
+	}
+	if pgStore, ok := store.(*db.Store); ok {
+		pool := pgStore.Pool()
+		s.recordings.EnableDB(pool)
+		s.webhooks.EnableDB(pool)
+		s.drifts.EnableDB(pool)
+		s.driftTests.EnableDB(pool)
+		s.releases.EnableDB(pool)
+		s.reviews.EnableDB(pool)
+		s.suites.EnableDB(pool)
+		s.auditLog.EnableDB(pool)
 	}
 	s.driftDetector = drift.NewDetector(s.drifts)
+	s.keyStore.SeedDefaultKey()
 	s.routes()
 	return s
 }
@@ -227,6 +250,11 @@ func (s *Server) routes() {
 	s.router.Post("/api/v1/auth/login", s.handleLogin)
 	s.router.Post("/api/v1/auth/logout", s.handleLogout)
 
+	// OIDC/SSO: public endpoints for OAuth2 flow (no auth required)
+	s.router.Get("/auth/oidc/providers", s.handleOIDCProviders)
+	s.router.Get("/auth/oidc/login", s.handleOIDCLogin)
+	s.router.Get("/auth/oidc/callback", s.handleOIDCCallback)
+
 	s.router.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.apiKeyAuth)
 		r.Use(bodyLimitMiddleware(1 << 20)) // 1 MiB body limit
@@ -270,6 +298,15 @@ func (s *Server) routes() {
 		r.Post("/runs/{id}/analyze-failure", s.handleAnalyzeFailure)
 		r.Get("/runs/{id}/compare/{otherId}", s.handleCompare)
 		r.Get("/runs/{id}/recordings", s.handleGetRecordings)
+		// New record/playback sessions (Phase 2). /recordings remains backward-compatible screenshot metadata.
+		r.Post("/recording-sessions", s.handleCreateRecordingSession)
+		r.Get("/recording-sessions", s.handleListRecordingSessions)
+		r.Get("/recording-sessions/{id}", s.handleGetRecordingSession)
+		r.Post("/recording-sessions/{id}/events", s.handleAddRecordingEvent)
+		r.Get("/recording-sessions/{id}/events", s.handleListRecordingEvents)
+		r.Post("/recording-sessions/{id}/generate", s.handleGenerateTestFromRecording)
+		r.Delete("/recording-sessions/{id}", s.handleDeleteRecordingSession)
+		r.Patch("/recording-sessions/{id}", s.handleUpdateRecordingSession)
 		r.Get("/runs/{id}/visual", s.handleGetVisualArtifacts)
 		r.Get("/runs/{id}/video", s.handleGetVideoMetadata)
 		r.Delete("/runs/{id}", s.handleDeleteRun)
@@ -292,12 +329,21 @@ func (s *Server) routes() {
 		r.Get("/releases/{id}/summary", s.handleReleaseSummary)
 		// Notifications
 		r.Get("/notifications", s.handleListNotifications)
+		r.Get("/notifications/types", s.handleListNotificationTypes)
 		// Drift detection (Phase 3)
 		r.Get("/drifts", s.handleListDrifts)
 		r.Patch("/drifts/{id}", s.handleUpdateDriftStatus)
 		r.Post("/drifts/{id}/generate-test", s.handleGenerateDriftTest)
+		r.Get("/drifts/{id}/auto-generate", s.handleAutoGenerateDriftTest)
 		r.Get("/drifts/{id}/generated-tests", s.handleListDriftTests)
 		r.Patch("/generated-tests/{id}", s.handleUpdateDriftTestStatus)
+		// Webhook registration (Phase 3 continuous sync)
+		r.Post("/webhooks/register", s.handleRegisterWebhook)
+		r.Get("/webhooks", s.handleListWebhooks)
+		r.Get("/webhooks/{id}", s.handleGetWebhook)
+		r.Patch("/webhooks/{id}/status", s.handleUpdateWebhookStatus)
+		r.Delete("/webhooks/{id}", s.handleDeleteWebhook)
+		r.Post("/webhooks/{id}/sync", s.handleSyncWebhook)
 		// Metrics
 		r.Get("/metrics/summary", s.handleMetricsSummary)
 		r.Get("/metrics/hotspots", s.handleMetricsHotspots)
@@ -310,6 +356,10 @@ func (s *Server) routes() {
 		r.Get("/releases/{id}/risk", s.handleReleaseRisk)
 		r.Get("/releases/{id}/explanation", s.handleReleaseExplanation)
 		r.Post("/suite-selection", s.handleSuiteSelection)
+		r.Get("/intelligence/quality", s.handleTestQuality)
+		r.Get("/intelligence/redundancy", s.handleTestRedundancy)
+		r.Post("/intelligence/review", s.handleReviewTestCode)
+		r.Get("/runs/{id}/review", s.handleReviewTestRun)
 		// Reviews
 		r.Post("/reviews", s.handleCreateReview)
 		r.Get("/runs/{id}/reviews", s.handleGetRunReviews)
@@ -324,11 +374,23 @@ func (s *Server) routes() {
 		r.Delete("/suites/{id}", s.handleDeleteSuite)
 		// Alert rules
 		r.Post("/alert-rules/evaluate", s.handleEvaluateAlertRules)
-		// Settings
+		// Settings (admin-only for modification, all roles for view outside this group)
 		r.Get("/settings", s.handleGetSettings)
-		r.Put("/settings", s.handleUpdateSettings)
-		r.Get("/ai/providers", s.handleListAIProviders)
-		r.Post("/ai/test-provider", s.handleTestAIProvider)
+		r.Group(func(r chi.Router) {
+			r.Use(auth.RequireRole(auth.RoleAdmin))
+			r.Put("/settings", s.handleUpdateSettings)
+			r.Get("/ai/providers", s.handleListAIProviders)
+			r.Post("/ai/test-provider", s.handleTestAIProvider)
+			// Audit log (admin-only)
+			r.Get("/audit-log", s.handleListAuditLog)
+			r.Get("/audit-log/users/{actorID}", s.handleListAuditLogByActor)
+			r.Get("/audit-log/{resource}/{resourceID}", s.handleListAuditLogByResource)
+			// API Key management (admin-only)
+			r.Post("/keys", s.handleCreateAPIKey)
+			r.Get("/keys", s.handleListAPIKeys)
+			r.Post("/keys/{id}/revoke", s.handleRevokeAPIKey)
+			r.Delete("/keys/{id}", s.handleDeleteAPIKey)
+		})
 		// Demo
 		r.Post("/demo/seed", s.handleDemoSeed)
 		// Advanced testing (Phase 2+3)
