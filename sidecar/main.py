@@ -5,8 +5,13 @@
 # To wire: add sidecar URL config and construct agent.SidecarClient in NewServer.
 #
 import asyncio
+import json
 import os
+import sqlite3
+import threading
 import uuid
+from collections.abc import Iterator, MutableMapping
+from pathlib import Path
 from fastapi import FastAPI, BackgroundTasks, Depends, Header, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -15,8 +20,121 @@ from graph import build_graph
 app = FastAPI(title="GoTest Agent LangGraph Sidecar")
 graph = build_graph()
 
-# In-memory job store (Phase 1 — will be moved to Redis per ADR-003)
-jobs: dict[str, dict] = {}
+class JobStore(MutableMapping[str, dict]):
+    """Dict-like sidecar job store.
+
+    The default is in-memory storage for local development and existing tests.
+    Set SIDECAR_JOBS_DB to a SQLite file path to persist job state across
+    sidecar restarts without introducing another runtime dependency.
+    """
+
+    def __init__(self):
+        self._memory: dict[str, dict] = {}
+        self._lock = threading.RLock()
+        self._initialized_paths: set[str] = set()
+
+    def _db_path(self) -> str:
+        return os.getenv("SIDECAR_JOBS_DB", "").strip()
+
+    def _connect(self, path: str) -> sqlite3.Connection:
+        db_path = Path(path)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_path), timeout=5)
+        conn.row_factory = sqlite3.Row
+        with self._lock:
+            if path not in self._initialized_paths:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS jobs (
+                        id TEXT PRIMARY KEY,
+                        payload TEXT NOT NULL,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+                conn.commit()
+                self._initialized_paths.add(path)
+        return conn
+
+    @staticmethod
+    def _decode(payload: str) -> dict:
+        data = json.loads(payload)
+        return data if isinstance(data, dict) else {"status": "failed", "result": None, "error": "invalid persisted payload"}
+
+    def __getitem__(self, key: str) -> dict:
+        path = self._db_path()
+        if path:
+            with self._connect(path) as conn:
+                row = conn.execute("SELECT payload FROM jobs WHERE id = ?", (key,)).fetchone()
+                if row is None:
+                    raise KeyError(key)
+                return self._decode(row["payload"])
+        with self._lock:
+            return self._memory[key]
+
+    def __setitem__(self, key: str, value: dict) -> None:
+        path = self._db_path()
+        if path:
+            payload = json.dumps(value, default=str, sort_keys=True)
+            with self._connect(path) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO jobs (id, payload, created_at, updated_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON CONFLICT(id) DO UPDATE SET
+                        payload = excluded.payload,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (key, payload),
+                )
+                conn.commit()
+            return
+        with self._lock:
+            self._memory[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        path = self._db_path()
+        if path:
+            with self._connect(path) as conn:
+                result = conn.execute("DELETE FROM jobs WHERE id = ?", (key,))
+                conn.commit()
+                if result.rowcount == 0:
+                    raise KeyError(key)
+            return
+        with self._lock:
+            del self._memory[key]
+
+    def __iter__(self) -> Iterator[str]:
+        path = self._db_path()
+        if path:
+            with self._connect(path) as conn:
+                rows = conn.execute("SELECT id FROM jobs ORDER BY created_at ASC").fetchall()
+                return iter([row["id"] for row in rows])
+        with self._lock:
+            return iter(list(self._memory.keys()))
+
+    def __len__(self) -> int:
+        path = self._db_path()
+        if path:
+            with self._connect(path) as conn:
+                row = conn.execute("SELECT COUNT(*) AS count FROM jobs").fetchone()
+                return int(row["count"])
+        with self._lock:
+            return len(self._memory)
+
+    def clear(self) -> None:
+        path = self._db_path()
+        if path:
+            with self._connect(path) as conn:
+                conn.execute("DELETE FROM jobs")
+                conn.commit()
+            return
+        with self._lock:
+            self._memory.clear()
+
+
+jobs = JobStore()
 
 # Internal service auth — shared token between backend and sidecar.
 # This replaces the previous GOTEST_API_KEY pattern which passed the

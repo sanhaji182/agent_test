@@ -143,6 +143,9 @@ services:
       GOTEST_API_URL: "http://backend:8080"
       API_KEY: "${API_KEY:-}"
       SIDECAR_AUTH_TOKEN: "${SIDECAR_AUTH_TOKEN:-}"
+      SIDECAR_JOBS_DB: "/data/jobs.sqlite3"
+    volumes:
+      - sidecar_jobs:/data
     depends_on:
       backend:
         condition: service_healthy
@@ -157,3 +160,4 @@ services:
 volumes:
   pgdata:
   app_data:
+  sidecar_jobs:

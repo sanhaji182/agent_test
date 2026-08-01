@@ -13,12 +13,12 @@ from unittest.mock import patch, MagicMock
 os.environ["SIDECAR_AUTH_TOKEN"] = ""
 
 from fastapi.testclient import TestClient
-from main import app, jobs, RunRequest, RunResponse
+from main import app, jobs, JobStore, RunRequest, RunResponse
 
 
 @pytest.fixture(autouse=True)
 def clear_jobs():
-    """Reset the in-memory job store between tests."""
+    """Reset the job store between tests."""
     jobs.clear()
     yield
     jobs.clear()
@@ -120,6 +120,22 @@ class TestRunEndpoint:
         data = response.json()
         job = jobs.get(data["job_id"])
         assert job is not None
+
+
+class TestJobStorePersistence:
+    def test_sqlite_store_persists_jobs_across_store_instances(self, tmp_path):
+        db_path = tmp_path / "jobs.sqlite3"
+        with patch.dict(os.environ, {"SIDECAR_JOBS_DB": str(db_path)}):
+            writer = JobStore()
+            writer["job-1"] = {"status": "running", "result": None}
+            writer["job-1"] = {"status": "completed", "result": {"test_files": []}}
+
+            reader = JobStore()
+            assert len(reader) == 1
+            assert reader.get("job-1") == {"status": "completed", "result": {"test_files": []}}
+
+            del reader["job-1"]
+            assert reader.get("job-1") is None
 
 
 class TestStatusEndpoint:
