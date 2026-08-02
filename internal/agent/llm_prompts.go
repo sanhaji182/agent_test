@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -20,20 +21,26 @@ Return a structured summary.`, path)
 }
 
 func promptGenerateTestPlan(analysis, requirements string) string {
-	return fmt.Sprintf(`Based on this codebase analysis:
+	return fmt.Sprintf(`You are a test-plan generation API. You have NO tools available. Do NOT run commands, do NOT use bash or any shell, do NOT explore any codebase, do NOT write explanations, thinking, or prose. Respond with a single JSON object ONLY.
+
+Codebase analysis context:
 %s
 
-And these requirements: %s
+Requirements: %s
 
-Generate a test plan as JSON with this structure:
+Output a test plan as a single JSON object with EXACTLY this structure:
 {"summary": "...", "scenarios": [{"name": "...", "priority": "high|medium|low", "steps": ["..."]}]}
 
-Return ONLY valid JSON, no markdown.`, analysis, requirements)
+CRITICAL OUTPUT RULES:
+- Your ENTIRE response must be valid JSON only.
+- It must start with { and end with }.
+- No markdown fences, no prose, no tool calls, no <bash> tags, no thinking, no commentary.
+- Do not attempt to inspect or list files; use only the context provided above.`, analysis, requirements)
 }
 
 func promptGenerateTestScripts(plan *TestPlan, analysis string) string {
 	planJSON, _ := json.Marshal(plan)
-	return fmt.Sprintf(`You are an expert test automation engineer generating Playwright tests.
+	return fmt.Sprintf(`You are a Playwright test-generation API. You have NO tools available. Do NOT run commands, do NOT use bash or any shell, do NOT explore any codebase, do NOT write prose, thinking, or explanations. Respond with a JSON array ONLY.
 
 TEST PLAN:
 %s
@@ -93,7 +100,11 @@ Generate tests that are:
 
 IMPORTANT: Every test should end with at least one assert action to verify the expected outcome.
 
-Return ONLY valid JSON array, no markdown, no explanation.`, string(planJSON), analysis)
+CRITICAL OUTPUT RULES:
+- Your ENTIRE response must be a valid JSON array only.
+- It must start with [ and end with ].
+- No markdown fences, no prose, no tool calls, no <bash> tags, no thinking, no commentary.
+- Do not attempt to inspect or list files; use only the context provided above.`, string(planJSON), analysis)
 }
 
 func promptSuggestFixes(failures []Failure, files []TestFile) string {
@@ -158,13 +169,69 @@ func stripJSONMarkers(s string) string {
 	s = strings.TrimPrefix(s, "```\n")
 	s = strings.TrimSuffix(s, "\n```")
 	s = strings.TrimSuffix(s, "```")
-	return strings.TrimSpace(s)
+	s = strings.TrimSpace(s)
+	// Some OpenAI-compatible gateways append an SSE terminator even on
+	// non-streamed responses; drop it so JSON decoding succeeds.
+	if i := strings.Index(s, "data: [DONE]"); i >= 0 {
+		s = strings.TrimSpace(s[:i])
+	}
+	return extractJSONValue(s)
+}
+
+// extractJSONValue mengisolasi JSON object/array pertama di s, melewati
+// prose/HTML di awal dan garbage di akhir yang mungkin dihasilkan model.
+func extractJSONValue(s string) string {
+	start := strings.IndexAny(s, "{[")
+	if start < 0 {
+		return s
+	}
+	open := s[start]
+	closing := byte('}')
+	if open == '[' {
+		closing = ']'
+	}
+	depth := 0
+	inStr := false
+	esc := false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if esc {
+			esc = false
+			continue
+		}
+		if inStr {
+			switch c {
+			case '\\':
+				esc = true
+			case '"':
+				inStr = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inStr = true
+		case open:
+			depth++
+		case closing:
+			depth--
+			if depth == 0 {
+				return s[start : i+1]
+			}
+		}
+	}
+	return s[start:]
 }
 
 func parseTestPlan(raw string) (*TestPlan, error) {
 	raw = stripJSONMarkers(raw)
 	var plan TestPlan
 	if err := json.Unmarshal([]byte(raw), &plan); err != nil {
+		preview := raw
+		if len(preview) > 500 {
+			preview = preview[:500]
+		}
+		slog.Warn("parse test plan failed", "error", err, "raw_preview", preview)
 		return nil, fmt.Errorf("parse test plan: %w", err)
 	}
 	return &plan, nil
