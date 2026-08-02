@@ -12,7 +12,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -25,9 +27,9 @@ type Client struct {
 
 // Session merepresentasikan satu sesi browser di Steel
 type Session struct {
-	ID          string `json:"sessionId"`   // ID unik sesi
-	CDPURL      string `json:"cdpUrl"`      // WebSocket URL untuk Chrome DevTools Protocol
-	SeleniumURL string `json:"seleniumUrl"` // URL Selenium (alternatif)
+	ID          string `json:"id"`           // ID unik sesi
+	CDPURL      string `json:"websocketUrl"` // WebSocket URL untuk Chrome DevTools Protocol
+	SeleniumURL string `json:"seleniumUrl"`  // URL Selenium (alternatif)
 	CreatedAt   string `json:"createdAt"`
 }
 
@@ -65,7 +67,53 @@ func (c *Client) CreateSession(ctx context.Context) (*Session, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&session); err != nil {
 		return nil, fmt.Errorf("decode session: %w", err)
 	}
+	c.rewriteSessionHost(&session)
 	return &session, nil
+}
+
+// rewriteSessionHost mengganti host internal Steel (mis. 0.0.0.0) di CDPURL
+// dengan host baseURL. Server WebSocket Steel menolak Host header yang bukan
+// IP atau localhost (proteksi DNS-rebinding), jadi kita resolve hostname ke IP
+// agar Host header koneksi CDP lolos validasi.
+func (c *Client) rewriteSessionHost(session *Session) {
+	if session.CDPURL == "" {
+		return
+	}
+	u, err := url.Parse(session.CDPURL)
+	if err != nil {
+		return
+	}
+	base, err := url.Parse(c.baseURL)
+	if err != nil || base.Host == "" {
+		return
+	}
+	host := base.Hostname()
+	port := base.Port()
+	if port == "" {
+		port = u.Port()
+	}
+	if ip := lookupFirstIP(host); ip != "" {
+		host = ip
+	}
+	if port != "" {
+		u.Host = net.JoinHostPort(host, port)
+	} else {
+		u.Host = host
+	}
+	session.CDPURL = u.String()
+}
+
+// lookupFirstIP mengembalikan IP pertama hasil resolve host. Jika host sudah
+// berupa IP, dikembalikan apa adanya. Kembali "" jika resolve gagal.
+func lookupFirstIP(host string) string {
+	if net.ParseIP(host) != nil {
+		return host
+	}
+	addrs, err := net.LookupHost(host)
+	if err != nil || len(addrs) == 0 {
+		return ""
+	}
+	return addrs[0]
 }
 
 // GetSession mengambil detail sesi berdasarkan ID

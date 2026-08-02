@@ -446,7 +446,20 @@ func (s *Server) buildAgentForRun(run *agent.TestRun) *agent.Agent {
 	}
 	execCtx := execution.NewContext(s.events, s.recordings, s.visuals)
 
-	return agent.NewWithConfig(llm, pwRunner, 3, agent.AgentConfig{
+	// Pilih runner utama: Steel Browser (remote via CDP) jika tersedia,
+	// selain itu fallback ke Playwright lokal.
+	var mainRunner agent.Runner = pwRunner
+	if s.steel != nil {
+		steelRunner := agent.NewSteelRunner(s.steel, llm)
+		steelRunner.ScreenshotDir = "/tmp/agent_test/screenshots"
+		steelRunner.WithAllowedHosts(s.cfg.BrowserAllowedHosts)
+		if run != nil && run.TestData != nil {
+			steelRunner.TestData = run.TestData
+		}
+		mainRunner = steelRunner
+	}
+
+	return agent.NewWithConfig(llm, mainRunner, 3, agent.AgentConfig{
 
 		Exec:  execCtx,
 		Store: s.store,

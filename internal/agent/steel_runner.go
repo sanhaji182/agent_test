@@ -5,12 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-go-golems/gotest-agent/internal/browser"
 	"github.com/go-go-golems/gotest-agent/internal/steel"
 	"github.com/playwright-community/playwright-go"
 )
+
+// steelDriverOnce memastikan driver Playwright di-install sekali saja untuk
+// seluruh SteelRunner (driver saja, tanpa browser — Steel sediakan browser remote).
+var steelDriverOnce sync.Once
+var steelDriverErr error
 
 // SteelRunner executes tests using Steel Browser cloud sessions (ADR-002).
 // It connects Playwright to a remote browser via CDP URL provided by Steel.
@@ -35,12 +41,29 @@ func (r *SteelRunner) WithAllowedHosts(hosts ...string) *SteelRunner {
 
 // Run executes test files using a Steel cloud browser session.
 func (r *SteelRunner) Run(ctx context.Context, testFiles []TestFile, projectURL string) (*RunResult, error) {
+	// Install Playwright driver saja (skip browser — Steel sediakan browser remote).
+	steelDriverOnce.Do(func() {
+		steelDriverErr = playwright.Install(&playwright.RunOptions{SkipInstallBrowsers: true})
+	})
+	if steelDriverErr != nil {
+		return nil, fmt.Errorf("steel: install driver: %w", steelDriverErr)
+	}
+
 	// Create a Steel browser session
 	session, err := r.client.CreateSession(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("steel: create session: %w", err)
 	}
 	defer r.client.DestroySession(ctx, session.ID)
+
+	// Install driver Playwright saja (tanpa browser) sebelum memulai — Steel
+	// menyediakan browser remote via CDP, jadi browser lokal tidak diperlukan.
+	steelDriverOnce.Do(func() {
+		steelDriverErr = playwright.Install(&playwright.RunOptions{SkipInstallBrowsers: true})
+	})
+	if steelDriverErr != nil {
+		return nil, fmt.Errorf("steel: install driver: %w", steelDriverErr)
+	}
 
 	// Connect Playwright to the remote browser via CDP
 	pw, err := playwright.Run()

@@ -25,6 +25,7 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/recordings"
 	"github.com/go-go-golems/gotest-agent/internal/release"
 	"github.com/go-go-golems/gotest-agent/internal/schedule"
+	"github.com/go-go-golems/gotest-agent/internal/steel"
 	"github.com/go-go-golems/gotest-agent/internal/tracing"
 	"github.com/go-go-golems/gotest-agent/internal/visual"
 	"github.com/go-go-golems/gotest-agent/internal/webhook"
@@ -55,6 +56,7 @@ type Server struct {
 	keyStore      *auth.KeyStore
 	oidcManager   *auth.OIDCManager
 	jwtAuth       *auth.Auth
+	steel         *steel.Client                 // Steel Browser client (remote headless browser via CDP); nil if not configured
 	runSem        chan struct{}                 // concurrency cap for run goroutines (AUDIT S-01)
 	enqueueRun    func(runID string) error      // optional durable-queue enqueuer (Redis/Asynq); nil = in-process execution
 	runCancels    map[string]context.CancelFunc // active run cancellation functions
@@ -95,6 +97,13 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 	}
 	jwtAuth := auth.New(jwtSecret)
 
+	// Init Steel Browser client (remote headless browser) when configured.
+	// Used by SteelRunner to execute UI tests via CDP without a local browser.
+	var steelClient *steel.Client
+	if cfg.SteelAPIURL != "" {
+		steelClient = steel.NewClient(cfg.SteelAPIURL, cfg.SteelAPIKey)
+	}
+
 	s := &Server{
 		router:      r,
 		cfg:         cfg,
@@ -117,6 +126,7 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 		keyStore:    auth.NewKeyStore(),
 		oidcManager: auth.NewOIDCManager(),
 		jwtAuth:     jwtAuth,
+		steel:       steelClient,
 		runSem:      make(chan struct{}, cfg.MaxConcurrentRuns),
 		runCancels:  make(map[string]context.CancelFunc),
 		metrics:     appm,
