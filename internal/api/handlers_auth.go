@@ -16,8 +16,11 @@ func (s *Server) apiKeyAuth(next http.Handler) http.Handler {
 		}
 		// Try JWT token via cookie (dashboard), header, or query param (SSE)
 		if token := auth.GetTokenFromRequest(r); token != "" {
-			if _, err := s.jwtAuth.ValidateToken(token); err == nil {
-				next.ServeHTTP(w, r)
+			if claims, err := s.jwtAuth.ValidateToken(token); err == nil {
+				// Simpan claims di context agar RequireRole di downstream bisa
+				// membaca role user (fix: admin routes sebelumnya selalu 401).
+				ctx := auth.WithClaims(r.Context(), claims)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 		}
@@ -61,7 +64,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := s.jwtAuth.GenerateToken(userID, email)
+	token, err := s.jwtAuth.GenerateToken(userID, email, role)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "token generation failed")
 		return

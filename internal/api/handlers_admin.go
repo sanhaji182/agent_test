@@ -1,13 +1,17 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-go-golems/gotest-agent/internal/agent"
+	"github.com/go-go-golems/gotest-agent/internal/ai"
 	"github.com/go-go-golems/gotest-agent/internal/compare"
 	"github.com/go-go-golems/gotest-agent/internal/intelligence"
 	"github.com/go-go-golems/gotest-agent/internal/junit"
@@ -341,6 +345,79 @@ func (s *Server) handleTestAIProvider(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 	})
+}
+
+// handleListProviderModels mengambil daftar model yang tersedia dari endpoint
+// /models provider (format OpenAI-compatible). Memungkinkan dashboard mengisi
+// dropdown model secara dinamis untuk provider custom.
+func (s *Server) handleListProviderModels(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		Provider string `json:"provider"`
+		APIKey   string `json:"api_key"`
+		BaseURL  string `json:"base_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	provider := strings.ToLower(strings.TrimSpace(payload.Provider))
+	baseURL := strings.TrimRight(strings.TrimSpace(payload.BaseURL), "/")
+	if baseURL == "" {
+		baseURL = ai.DefaultOpenAICompatibleBaseURL(provider)
+	}
+
+	models, err := fetchProviderModels(r.Context(), baseURL, payload.APIKey)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"models": []string{},
+			"error":  err.Error(),
+		})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"models": models,
+	})
+}
+
+// fetchProviderModels memanggil endpoint GET {baseURL}/models (OpenAI-compatible)
+// dan mengembalikan daftar model ID.
+func fetchProviderModels(ctx context.Context, baseURL, apiKey string) ([]string, error) {
+	url := baseURL + "/models"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch models: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("fetch models: status %d: %s", resp.StatusCode, truncate(string(body), 200))
+	}
+	var parsed struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("fetch models: parse: %w", err)
+	}
+	models := make([]string, 0, len(parsed.Data))
+	for _, m := range parsed.Data {
+		if m.ID != "" {
+			models = append(models, m.ID)
+		}
+	}
+	return models, nil
 }
 
 // handleExportJUnit exports a run's results as JUnit XML for CI/CD integration.

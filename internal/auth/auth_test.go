@@ -9,7 +9,7 @@ import (
 func TestGenerateAndValidateToken(t *testing.T) {
 	a := auth.New("test-secret-key")
 
-	token, err := a.GenerateToken("user-1", "test@example.com")
+	token, err := a.GenerateToken("user-1", "test@example.com", "admin")
 	if err != nil {
 		t.Fatalf("generate token: %v", err)
 	}

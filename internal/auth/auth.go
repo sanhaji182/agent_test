@@ -38,10 +38,11 @@ func New(secret string) *Auth {
 }
 
 // GenerateToken membuat JWT token baru untuk user (berlaku 24 jam)
-func (a *Auth) GenerateToken(userID, email string) (string, error) {
+func (a *Auth) GenerateToken(userID, email, role string) (string, error) {
 	claims := Claims{
 		UserID: userID,
 		Email:  email,
+		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -94,6 +95,12 @@ type claimsKey struct{}
 func GetClaims(ctx context.Context) *Claims {
 	c, _ := ctx.Value(claimsKey{}).(*Claims)
 	return c
+}
+
+// WithClaims mengembalikan context yang membawa claims, agar middleware
+// RequireRole di downstream dapat membaca role user dari context.
+func WithClaims(ctx context.Context, claims *Claims) context.Context {
+	return context.WithValue(ctx, claimsKey{}, claims)
 }
 
 // --- Manajemen API Key ---

@@ -397,6 +397,7 @@ func (s *Server) routes() {
 			r.Put("/settings", s.handleUpdateSettings)
 			r.Get("/ai/providers", s.handleListAIProviders)
 			r.Post("/ai/test-provider", s.handleTestAIProvider)
+			r.Post("/ai/models", s.handleListProviderModels)
 			// Audit log (admin-only)
 			r.Get("/audit-log", s.handleListAuditLog)
 			r.Get("/audit-log/users/{actorID}", s.handleListAuditLogByActor)

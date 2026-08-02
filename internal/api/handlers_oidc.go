@@ -56,7 +56,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate JWT session for the authenticated user
-	token, err := s.jwtAuth.GenerateToken(email, name)
+	token, err := s.jwtAuth.GenerateToken(email, name, role)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "token generation failed")
 		return
