@@ -421,6 +421,24 @@ func (s *Server) buildAgentForRun(run *agent.TestRun) *agent.Agent {
 		}
 	}
 
+	// Active LLM profile (jika ada) override settings/env.
+	if s.llmProfiles != nil {
+		if p, ok := s.llmProfiles.ActiveRaw(); ok {
+			if p.Provider != "" {
+				llmProvider = p.Provider
+			}
+			if p.Model != "" {
+				llmModel = p.Model
+			}
+			if p.APIKey != "" {
+				apiKey = p.APIKey
+			}
+			if p.BaseURL != "" {
+				baseURL = p.BaseURL
+			}
+		}
+	}
+
 	llm := agent.NewLLM(llmProvider, llmModel, apiKey, baseURL)
 	if llm == nil {
 		slog.Error("unsupported LLM provider", "provider", llmProvider)

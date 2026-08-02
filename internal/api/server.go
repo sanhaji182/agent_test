@@ -19,6 +19,7 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/db"
 	"github.com/go-go-golems/gotest-agent/internal/drift"
 	"github.com/go-go-golems/gotest-agent/internal/events"
+	"github.com/go-go-golems/gotest-agent/internal/llmprofile"
 	"github.com/go-go-golems/gotest-agent/internal/notify"
 	"github.com/go-go-golems/gotest-agent/internal/planning"
 	"github.com/go-go-golems/gotest-agent/internal/project"
@@ -57,6 +58,7 @@ type Server struct {
 	oidcManager   *auth.OIDCManager
 	jwtAuth       *auth.Auth
 	steel         *steel.Client                 // Steel Browser client (remote headless browser via CDP); nil if not configured
+	llmProfiles   *llmprofile.Store             // LLM provider profiles (multi-provider)
 	runSem        chan struct{}                 // concurrency cap for run goroutines (AUDIT S-01)
 	enqueueRun    func(runID string) error      // optional durable-queue enqueuer (Redis/Asynq); nil = in-process execution
 	runCancels    map[string]context.CancelFunc // active run cancellation functions
@@ -127,6 +129,7 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 		oidcManager: auth.NewOIDCManager(),
 		jwtAuth:     jwtAuth,
 		steel:       steelClient,
+		llmProfiles: llmprofile.NewStore(),
 		runSem:      make(chan struct{}, cfg.MaxConcurrentRuns),
 		runCancels:  make(map[string]context.CancelFunc),
 		metrics:     appm,
@@ -141,6 +144,7 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 		s.reviews.EnableDB(pool)
 		s.suites.EnableDB(pool)
 		s.auditLog.EnableDB(pool)
+		s.llmProfiles.EnableDB(pool)
 	}
 	s.driftDetector = drift.NewDetector(s.drifts)
 	s.keyStore.SeedDefaultKey()
@@ -398,6 +402,13 @@ func (s *Server) routes() {
 			r.Get("/ai/providers", s.handleListAIProviders)
 			r.Post("/ai/test-provider", s.handleTestAIProvider)
 			r.Post("/ai/models", s.handleListProviderModels)
+			// LLM provider profiles (multi-provider)
+			r.Get("/ai/profiles", s.handleListLLMProfiles)
+			r.Post("/ai/profiles", s.handleCreateLLMProfile)
+			r.Put("/ai/profiles/{id}", s.handleUpdateLLMProfile)
+			r.Delete("/ai/profiles/{id}", s.handleDeleteLLMProfile)
+			r.Post("/ai/profiles/{id}/activate", s.handleActivateLLMProfile)
+			r.Post("/ai/profiles/{id}/test", s.handleTestLLMProfile)
 			// Audit log (admin-only)
 			r.Get("/audit-log", s.handleListAuditLog)
 			r.Get("/audit-log/users/{actorID}", s.handleListAuditLogByActor)

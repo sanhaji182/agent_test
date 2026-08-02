@@ -831,6 +831,44 @@ export async function saveSettings(data: Record<string, string>): Promise<Record
   return apiFetch<Record<string, string>>("/api/v1/settings", { method: "PUT", body: JSON.stringify(data) });
 }
 
+export interface LLMProfile {
+  id: string;
+  name: string;
+  provider: string;
+  base_url: string;
+  api_key: string;
+  model: string;
+  temperature: string;
+  max_tokens: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getLLMProfiles(): Promise<LLMProfile[]> {
+  return apiFetch<LLMProfile[]>("/api/v1/ai/profiles");
+}
+
+export async function createLLMProfile(data: Partial<LLMProfile>): Promise<LLMProfile> {
+  return apiFetch<LLMProfile>("/api/v1/ai/profiles", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function updateLLMProfile(id: string, data: Partial<LLMProfile>): Promise<LLMProfile> {
+  return apiFetch<LLMProfile>(`/api/v1/ai/profiles/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export async function deleteLLMProfile(id: string): Promise<void> {
+  await apiFetch<unknown>(`/api/v1/ai/profiles/${id}`, { method: "DELETE" });
+}
+
+export async function activateLLMProfile(id: string): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>(`/api/v1/ai/profiles/${id}/activate`, { method: "POST" });
+}
+
+export async function testLLMProfile(id: string): Promise<{ success: boolean; error?: string }> {
+  return apiFetch<{ success: boolean; error?: string }>(`/api/v1/ai/profiles/${id}/test`, { method: "POST" });
+}
+
 // --- Recording Sessions ---
 export interface RecordingSession {
   id: string;

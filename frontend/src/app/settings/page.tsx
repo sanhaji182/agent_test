@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Section } from "@/components/ui/section";
+import { ProfilesManager } from "@/components/settings/profiles-manager";
 import {
   getAIProviders,
   getAIModels,
@@ -291,6 +292,13 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+        </Section>
+      )}
+
+      {/* ── Provider Profiles (multi-provider) ── */}
+      {activeTab === "ai" && (
+        <Section title="Provider Profiles">
+          <ProfilesManager />
         </Section>
       )}
 
