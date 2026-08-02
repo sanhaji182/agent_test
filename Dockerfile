@@ -19,7 +19,7 @@ LABEL org.opencontainers.image.title="GoTest Agent"
 LABEL org.opencontainers.image.description="AI-powered testing platform"
 
 # Install only runtime system dependencies
-RUN apk add --no-cache ca-certificates curl libc6-compat
+RUN apk add --no-cache ca-certificates curl libc6-compat gcompat nodejs npm
 
 # Create non-root user
 RUN addgroup -S gotest && adduser -S -G gotest -h /app -s /sbin/nologin gotest
