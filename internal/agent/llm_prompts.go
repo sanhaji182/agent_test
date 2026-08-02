@@ -110,12 +110,20 @@ CRITICAL OUTPUT RULES:
 func promptSuggestFixes(failures []Failure, files []TestFile) string {
 	failJSON, _ := json.Marshal(failures)
 	filesJSON, _ := json.Marshal(files)
-	return fmt.Sprintf(`These Playwright tests failed:
+	return fmt.Sprintf(`You are a test-fixing API. You have NO tools available. Do NOT run commands, do NOT use bash or any shell, do NOT explore any codebase, do NOT write prose, thinking, or explanations. Respond with a JSON array ONLY.
+
+These Playwright tests failed:
 Failures: %s
 Original files: %s
 
-Fix the test files. Return JSON array: [{"name": "...", "content": "..."}]
-Return ONLY valid JSON, no markdown.`, string(failJSON), string(filesJSON))
+Fix the test files. Output a JSON array with EXACTLY this structure:
+[{"name": "...", "content": "..."}]
+
+CRITICAL OUTPUT RULES:
+- Your ENTIRE response must be a valid JSON array only.
+- It must start with [ and end with ].
+- No markdown fences, no prose, no tool calls, no <bash> tags, no thinking, no commentary.
+- Inside "content", escape newlines as \n (never use literal newlines).`, string(failJSON), string(filesJSON))
 }
 
 func promptHealAction(action, domSnapshot, errorMsg string) string {
@@ -135,7 +143,8 @@ Supported actions format:
 - {"action": "wait", "ms": 2000}
 
 Analyze the DOM to find the correct selector if the old one failed.
-Return ONLY valid JSON for the single corrected action, no markdown, no explanation.`, action, errorMsg, domSnapshot)
+
+CRITICAL: You have NO tools. Do NOT run commands, do NOT use bash, do NOT explore, do NOT write prose or thinking. Your ENTIRE response must be a single valid JSON object only (start with { and end with }). No markdown, no tool calls, no <bash> tags, no explanation.`, action, errorMsg, domSnapshot)
 }
 
 func promptHealActionWithVision(action, domSnapshot, errorMsg string) string {
@@ -157,7 +166,7 @@ Supported actions format:
 - {"action": "scroll", "y": 500}
 - {"action": "wait", "ms": 2000}
 
-Return ONLY valid JSON for the single corrected action, no markdown, no explanation.`, action, errorMsg, domSnapshot)
+CRITICAL: You have NO tools. Do NOT run commands, do NOT use bash, do NOT explore, do NOT write prose or thinking. Your ENTIRE response must be a single valid JSON object only (start with { and end with }). No markdown, no tool calls, no <bash> tags, no explanation.`, action, errorMsg, domSnapshot)
 }
 
 // --- Response parsers ---
@@ -175,7 +184,51 @@ func stripJSONMarkers(s string) string {
 	if i := strings.Index(s, "data: [DONE]"); i >= 0 {
 		s = strings.TrimSpace(s[:i])
 	}
-	return extractJSONValue(s)
+	return sanitizeJSONControlChars(extractJSONValue(s))
+}
+
+// sanitizeJSONControlChars meng-escape karakter kontrol literal (newline, tab,
+// carriage return) yang muncul DI DALAM nilai string JSON. Beberapa LLM
+// menghasilkan field "content" berisi file test dengan newline asli (bukan \n),
+// yang membuat JSON tidak valid; fungsi ini membuatnya bisa di-parse tanpa
+// mengubah whitespace struktural di luar string.
+func sanitizeJSONControlChars(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	inStr := false
+	escaped := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inStr {
+			if escaped {
+				b.WriteByte(c)
+				escaped = false
+				continue
+			}
+			switch c {
+			case '\\':
+				b.WriteByte(c)
+				escaped = true
+			case '"':
+				b.WriteByte(c)
+				inStr = false
+			case '\n':
+				b.WriteString(`\n`)
+			case '\r':
+				b.WriteString(`\r`)
+			case '\t':
+				b.WriteString(`\t`)
+			default:
+				b.WriteByte(c)
+			}
+			continue
+		}
+		if c == '"' {
+			inStr = true
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
 
 // extractJSONValue mengisolasi JSON object/array pertama di s, melewati
