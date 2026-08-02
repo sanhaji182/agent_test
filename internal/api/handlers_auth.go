@@ -39,7 +39,9 @@ func (s *Server) apiKeyAuth(next http.Handler) http.Handler {
 // exchange its API key for a cookie-capable session.
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		APIKey string `json:"api_key"`
+		APIKey   string `json:"api_key"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid body")
@@ -51,16 +53,33 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	role := string(auth.RoleAdmin)
 	label := "default"
 
-	// Priority 1: check multi-key store
-	if keyRole, keyLabel, keyID, ok := s.keyStore.Validate(req.APIKey); ok {
-		userID = keyID
-		email = keyLabel
-		role = string(keyRole)
-		label = keyLabel
-	} else if s.cfg.APIKey != "" && req.APIKey == s.cfg.APIKey {
-		// Priority 2: fallback to single global API key (backward compatibility)
-	} else {
-		writeJSONError(w, http.StatusUnauthorized, "invalid api key")
+	switch {
+	// Priority 1: email+password (user dashboard)
+	case req.Email != "" && req.Password != "":
+		user, err := s.userStore.Authenticate(req.Email, req.Password)
+		if err != nil {
+			writeJSONError(w, http.StatusUnauthorized, "invalid email or password")
+			return
+		}
+		userID = user.ID
+		email = user.Email
+		role = string(user.Role)
+		label = user.Name
+	// Priority 2: API key (key store atau global API_KEY)
+	case req.APIKey != "":
+		if keyRole, keyLabel, keyID, ok := s.keyStore.Validate(req.APIKey); ok {
+			userID = keyID
+			email = keyLabel
+			role = string(keyRole)
+			label = keyLabel
+		} else if s.cfg.APIKey != "" && req.APIKey == s.cfg.APIKey {
+			// fallback ke global API key (admin) — backward compatibility
+		} else {
+			writeJSONError(w, http.StatusUnauthorized, "invalid api key")
+			return
+		}
+	default:
+		writeJSONError(w, http.StatusBadRequest, "provide email+password or api_key")
 		return
 	}
 

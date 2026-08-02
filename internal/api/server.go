@@ -59,6 +59,7 @@ type Server struct {
 	jwtAuth       *auth.Auth
 	steel         *steel.Client                 // Steel Browser client (remote headless browser via CDP); nil if not configured
 	llmProfiles   *llmprofile.Store             // LLM provider profiles (multi-provider)
+	userStore     *auth.UserStore               // dashboard users (email+password login)
 	runSem        chan struct{}                 // concurrency cap for run goroutines (AUDIT S-01)
 	enqueueRun    func(runID string) error      // optional durable-queue enqueuer (Redis/Asynq); nil = in-process execution
 	runCancels    map[string]context.CancelFunc // active run cancellation functions
@@ -130,6 +131,7 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 		jwtAuth:     jwtAuth,
 		steel:       steelClient,
 		llmProfiles: llmprofile.NewStore(),
+		userStore:   auth.NewUserStore(),
 		runSem:      make(chan struct{}, cfg.MaxConcurrentRuns),
 		runCancels:  make(map[string]context.CancelFunc),
 		metrics:     appm,
@@ -146,8 +148,13 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 		s.auditLog.EnableDB(pool)
 		s.llmProfiles.EnableDB(pool)
 		s.keyStore.EnableDB(pool)
+		s.userStore.EnableDB(pool)
 	}
 	s.driftDetector = drift.NewDetector(s.drifts)
+
+	// Bootstrap admin default untuk login email+password (first-run setup).
+	// Password default memakai API_KEY; bisa diganti lewat manajemen user.
+	s.userStore.SeedDefaultAdmin("admin@gotest.local", cfg.APIKey, "Administrator")
 	s.keyStore.SeedDefaultKey()
 	s.routes()
 	return s
@@ -410,6 +417,11 @@ func (s *Server) routes() {
 			r.Delete("/ai/profiles/{id}", s.handleDeleteLLMProfile)
 			r.Post("/ai/profiles/{id}/activate", s.handleActivateLLMProfile)
 			r.Post("/ai/profiles/{id}/test", s.handleTestLLMProfile)
+			// User management (admin-only)
+			r.Get("/users", s.handleListUsers)
+			r.Post("/users", s.handleCreateUser)
+			r.Put("/users/{id}", s.handleUpdateUser)
+			r.Delete("/users/{id}", s.handleDeleteUser)
 			// Audit log (admin-only)
 			r.Get("/audit-log", s.handleListAuditLog)
 			r.Get("/audit-log/users/{actorID}", s.handleListAuditLogByActor)
