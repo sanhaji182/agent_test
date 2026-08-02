@@ -112,7 +112,7 @@ function ReleaseCard({ release, isFirst }: { release: any; isFirst: boolean }) {
           </div>
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-yellow-600" />
-            <span className="text-xs text-[var(--text-muted]")}>{release.testsRemoved} tests removed</span>
+            <span className="text-xs text-[var(--text-muted)]">{release.testsRemoved} tests removed</span>
           </div>
           <div className="flex items-center gap-2 ml-auto">
             <Clock className="w-4 h-4 text-[var(--text-muted)]" />

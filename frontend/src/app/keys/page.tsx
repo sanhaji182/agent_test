@@ -9,6 +9,8 @@ import { TableContainer, Th, Td, Tr } from "@/components/ui/table";
 import { KeyRound, Plus, Trash2, Copy, Shield, Clock, CheckCircle2, AlertTriangle } from "lucide-react";
 
 export default function KeysPage() {
+  // Placeholder masked — nilai asli dikelola via environment/backend, tidak di-hardcode di frontend.
+  const [apiKey] = useState("\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022");
   const [keys, setKeys] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);

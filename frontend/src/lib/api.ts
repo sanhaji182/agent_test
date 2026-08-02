@@ -503,9 +503,17 @@ export const PHASES = [
   "done",
 ] as const;
 
-// isActive: run masih berjalan (belum done/failed/simulated)
+// isActive: run belum mencapai terminal state (belum done/failed/simulated).
+// Dipakai untuk filter "belum selesai" dan SSE subscription.
 export function isActive(state: string): boolean {
   return !["done", "failed", "simulated"].includes(state);
+}
+
+// isExecuting: run BENAR-BENAR sedang dieksekusi oleh engine.
+// State "idle" (dibuat tapi belum/tidak pernah jalan) TIDAK termasuk.
+// Dipakai untuk label "Running Now" di dashboard agar tidak menyesatkan.
+export function isExecuting(state: string): boolean {
+  return ["analyzing", "plan_generated", "writing_tests", "running", "fixing"].includes(state);
 }
 
 export function subscribeToRun(

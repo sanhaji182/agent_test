@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getRuns, isActive, getMetricsRisk, getRecommendations, type TestRun, type RiskItem, type Recommendation } from "@/lib/api";
+import { getRuns, isExecuting, getMetricsRisk, getRecommendations, type TestRun, type RiskItem, type Recommendation } from "@/lib/api";
 import { Section, EmptyState, LoadingSkeleton } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,10 +68,10 @@ export default function DashboardPage() {
   const total = runs.length;
   const passed = runs.filter((r) => r.state === "done").length;
   const failed = runs.filter((r) => r.state === "failed").length;
-  const activeCount = runs.filter((r) => isActive(r.state)).length;
+  const activeCount = runs.filter((r) => isExecuting(r.state)).length;
   const passRate = total > 0 ? Math.round((passed / total) * 100) : 0;
   const recentRuns = runs.slice(0, 10);
-  const activeRunsList = runs.filter((r) => isActive(r.state));
+  const activeRunsList = runs.filter((r) => isExecuting(r.state));
   
   const hasActive = activeCount > 0;
   const hasFailed = failed > 0;
@@ -124,12 +124,12 @@ export default function DashboardPage() {
         <StatBox value={total.toString()} label="Total Runs" />
         <StatBox value={`${passRate}%`} label="Pass Rate" success={passRate >= 80} />
         <StatBox value={failed.toString()} label="Failures" danger={failed > 0} />
-        <StatBox value={activeCount.toString()} label="Active" color={activeCount > 0 ? "blue" : "gray"} />
+        <StatBox value={activeCount.toString()} label="Running" color={activeCount > 0 ? "blue" : "gray"} />
       </div>
 
       {/* Active Runs Table */}
       {hasActive && (
-        <Section title="Active Tests">
+        <Section title="Running Tests">
           <TableContainer>
             <table className="w-full text-left">
               <thead>
