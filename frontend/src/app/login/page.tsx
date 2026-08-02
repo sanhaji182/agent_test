@@ -19,7 +19,11 @@ export default function LoginPage() {
     try {
       const result = await login(apiKey.trim());
       if (result.status === "ok") {
-        window.location.href = result.redirect || "/";
+        // Kembali ke halaman yang dituju sebelum redirect ke login
+        // (disimpan apiFetch di sessionStorage), fallback ke dashboard.
+        const target = sessionStorage.getItem("redirect_after_login") || result.redirect || "/";
+        sessionStorage.removeItem("redirect_after_login");
+        window.location.href = target;
       } else {
         setError("Invalid API key. Please try again.");
       }
