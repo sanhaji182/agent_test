@@ -293,12 +293,19 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 // login exchanges an API key for a JWT httpOnly cookie session.
 // The cookie is automatically sent on subsequent requests via credentials: "include".
-export async function login(apiKey: string): Promise<{ status: string; redirect?: string }> {
+export async function login(credentials: { email?: string; password?: string; apiKey?: string }): Promise<{ status: string; redirect?: string }> {
+  const body: Record<string, string> = {};
+  if (credentials.email && credentials.password) {
+    body.email = credentials.email;
+    body.password = credentials.password;
+  } else if (credentials.apiKey) {
+    body.api_key = credentials.apiKey;
+  }
   const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ api_key: apiKey }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     return res.json().catch(() => ({ status: "error" }));
@@ -314,6 +321,33 @@ export async function login(apiKey: string): Promise<{ status: string; redirect?
     }
   }
   return { status: "ok", redirect: "/" };
+}
+
+// ─── User management (multi-user, admin-only) ─────────────────────────
+
+export interface UserEntry {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export async function listUsers(): Promise<UserEntry[]> {
+  return apiFetch<UserEntry[]>("/api/v1/users");
+}
+
+export async function createUser(data: { email: string; password: string; name: string; role: string }): Promise<UserEntry> {
+  return apiFetch<UserEntry>("/api/v1/users", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function updateUser(id: string, data: { name?: string; role?: string; is_active?: boolean; new_password?: string }): Promise<UserEntry> {
+  return apiFetch<UserEntry>(`/api/v1/users/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export async function deleteUser(id: string): Promise<void> {
+  await apiFetch<unknown>(`/api/v1/users/${id}`, { method: "DELETE" });
 }
 
 // logout clears the httpOnly cookie session
