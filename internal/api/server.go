@@ -145,6 +145,7 @@ func NewServer(cfg *config.Config, store db.RunStore, settingsStore *db.Settings
 		s.suites.EnableDB(pool)
 		s.auditLog.EnableDB(pool)
 		s.llmProfiles.EnableDB(pool)
+		s.keyStore.EnableDB(pool)
 	}
 	s.driftDetector = drift.NewDetector(s.drifts)
 	s.keyStore.SeedDefaultKey()

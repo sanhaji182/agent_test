@@ -1,13 +1,16 @@
 package auth
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // APIKeyEntry represents a single API key with its associated role and metadata.
@@ -24,9 +27,10 @@ type APIKeyEntry struct {
 
 // KeyStore manages multiple API keys with role assignments.
 type KeyStore struct {
-	mu   sync.RWMutex
-	keys map[string]*APIKeyEntry // keyed by key hash
-	byID map[string]*APIKeyEntry // keyed by entry ID
+	mu     sync.RWMutex
+	keys   map[string]*APIKeyEntry // keyed by key hash
+	byID   map[string]*APIKeyEntry // keyed by entry ID
+	dbPool *pgxpool.Pool           // optional PostgreSQL persistence
 }
 
 // NewKeyStore creates a new in-memory key store.
@@ -34,6 +38,15 @@ func NewKeyStore() *KeyStore {
 	return &KeyStore{
 		keys: make(map[string]*APIKeyEntry),
 		byID: make(map[string]*APIKeyEntry),
+	}
+}
+
+// EnableDB mengaktifkan persistence PostgreSQL dan memuat key yang tersimpan,
+// supaya API key tidak hilang saat backend restart.
+func (ks *KeyStore) EnableDB(pool *pgxpool.Pool) {
+	ks.dbPool = pool
+	if err := ks.loadDB(); err != nil {
+		slog.Warn("keystore: gagal memuat API key dari DB", "error", err)
 	}
 }
 
@@ -84,6 +97,12 @@ func (ks *KeyStore) Create(label string, role Role, createdBy string) (*APIKeyEn
 	ks.byID[entry.ID] = entry
 	ks.mu.Unlock()
 
+	if ks.dbPool != nil {
+		if err := ks.persistDB(entry); err != nil {
+			slog.Warn("keystore: gagal persist create", "error", err)
+		}
+	}
+
 	return entry, nil
 }
 
@@ -119,27 +138,39 @@ func (ks *KeyStore) Get(id string) (*APIKeyEntry, bool) {
 // Revoke disables (or enables) a key by ID.
 func (ks *KeyStore) Revoke(id string, active bool) bool {
 	ks.mu.Lock()
-	defer ks.mu.Unlock()
-
 	entry, ok := ks.byID[id]
 	if !ok {
+		ks.mu.Unlock()
 		return false
 	}
 	entry.Active = active
+	ks.mu.Unlock()
+
+	if ks.dbPool != nil {
+		if err := ks.setActiveDB(id, active); err != nil {
+			slog.Warn("keystore: gagal persist revoke", "error", err)
+		}
+	}
 	return true
 }
 
 // Delete removes a key permanently.
 func (ks *KeyStore) Delete(id string) bool {
 	ks.mu.Lock()
-	defer ks.mu.Unlock()
-
 	entry, ok := ks.byID[id]
 	if !ok {
+		ks.mu.Unlock()
 		return false
 	}
 	delete(ks.keys, entry.KeyHash)
 	delete(ks.byID, id)
+	ks.mu.Unlock()
+
+	if ks.dbPool != nil {
+		if err := ks.deleteDB(id); err != nil {
+			slog.Warn("keystore: gagal persist delete", "error", err)
+		}
+	}
 	return true
 }
 
@@ -166,4 +197,60 @@ func (ks *KeyStore) SeedDefaultKey() *APIKeyEntry {
 func hashKey(key string) string {
 	h := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(h[:])
+}
+
+// ─── PostgreSQL persistence ─────────────────────────────────────────────
+
+func (ks *KeyStore) persistDB(e *APIKeyEntry) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := ks.dbPool.Exec(ctx, `
+		INSERT INTO api_keys (id, key_hash, name, role, active, created_by, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)
+		ON CONFLICT (id) DO UPDATE SET
+			name = EXCLUDED.name,
+			role = EXCLUDED.role,
+			active = EXCLUDED.active,
+			created_by = EXCLUDED.created_by`,
+		e.ID, e.KeyHash, e.Label, string(e.Role), e.Active, e.CreatedBy, e.CreatedAt)
+	return err
+}
+
+func (ks *KeyStore) setActiveDB(id string, active bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := ks.dbPool.Exec(ctx, `UPDATE api_keys SET active = $2 WHERE id = $1`, id, active)
+	return err
+}
+
+func (ks *KeyStore) deleteDB(id string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := ks.dbPool.Exec(ctx, `DELETE FROM api_keys WHERE id = $1`, id)
+	return err
+}
+
+func (ks *KeyStore) loadDB() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	rows, err := ks.dbPool.Query(ctx, `
+		SELECT id::text, key_hash, COALESCE(name,''), role, active, COALESCE(created_by,''), created_at
+		FROM api_keys`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
+	for rows.Next() {
+		var e APIKeyEntry
+		var role string
+		if err := rows.Scan(&e.ID, &e.KeyHash, &e.Label, &role, &e.Active, &e.CreatedBy, &e.CreatedAt); err != nil {
+			return err
+		}
+		e.Role = Role(role)
+		ks.keys[e.KeyHash] = &e
+		ks.byID[e.ID] = &e
+	}
+	return rows.Err()
 }
