@@ -19,9 +19,15 @@ export default function LoginPage() {
     try {
       const result = await login(apiKey.trim());
       if (result.status === "ok") {
-        // Kembali ke halaman yang dituju sebelum redirect ke login
-        // (disimpan apiFetch di sessionStorage), fallback ke dashboard.
-        const target = sessionStorage.getItem("redirect_after_login") || result.redirect || "/";
+        // Kembali ke halaman yang dituju: prioritas dari query param `redirect`
+        // (dibawa middleware global), fallback ke sessionStorage (apiFetch),
+        // lalu field redirect backend, terakhir dashboard.
+        const params = new URLSearchParams(window.location.search);
+        const target =
+          params.get("redirect") ||
+          sessionStorage.getItem("redirect_after_login") ||
+          result.redirect ||
+          "/";
         sessionStorage.removeItem("redirect_after_login");
         window.location.href = target;
       } else {
