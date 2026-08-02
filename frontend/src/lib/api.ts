@@ -819,6 +819,18 @@ export async function testAIProvider(data: { provider: string; model: string; ap
   return apiFetch<{ success: boolean; error?: string }>("/api/v1/ai/test-provider", { method: "POST", body: JSON.stringify(data) });
 }
 
+export async function getAIModels(data: { provider: string; api_key: string; base_url: string }): Promise<{ models: string[]; error?: string }> {
+  return apiFetch<{ models: string[]; error?: string }>("/api/v1/ai/models", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function getSettings(): Promise<Record<string, string>> {
+  return apiFetch<Record<string, string>>("/api/v1/settings");
+}
+
+export async function saveSettings(data: Record<string, string>): Promise<Record<string, string>> {
+  return apiFetch<Record<string, string>>("/api/v1/settings", { method: "PUT", body: JSON.stringify(data) });
+}
+
 // --- Recording Sessions ---
 export interface RecordingSession {
   id: string;
