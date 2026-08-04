@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -86,8 +87,10 @@ func NewOpenAICompatibleClient(cfg Config) *OpenAICompatibleClient {
 	if cfg.MaxTokens == 0 {
 		cfg.MaxTokens = 4096
 	}
-	// Bounded client: a hung LLM endpoint must not pin callers forever.
-	return &OpenAICompatibleClient{cfg: cfg, http: &http.Client{Timeout: 2 * time.Minute}}
+	// Bounded client: a hung LLM endpoint must not pin callers forever. Code
+	// generation calls (multiple full test files) can legitimately take several
+	// minutes, so the bound is generous rather than aggressive.
+	return &OpenAICompatibleClient{cfg: cfg, http: &http.Client{Timeout: 5 * time.Minute}}
 }
 
 // DefaultOpenAICompatibleBaseURL maps a provider name to its OpenAI-compatible
@@ -163,7 +166,7 @@ func (c *AnthropicClient) generate(ctx context.Context, messages []anthropic.Mes
 		Messages:  messages,
 	})
 	if err != nil {
-		return "", fmt.Errorf("anthropic: %w", err)
+		return "", fmt.Errorf("anthropic: %s", cleanAnthropicError(err))
 	}
 	for _, block := range msg.Content {
 		if block.Type == "text" {
@@ -226,7 +229,7 @@ func (c *OpenAICompatibleClient) generate(ctx context.Context, prompt, imageBase
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("openai-compatible: status %d: %s", resp.StatusCode, string(respBody))
+		return "", fmt.Errorf("openai-compatible: status %d: %s", resp.StatusCode, extractProviderError(respBody))
 	}
 	var parsed struct {
 		Choices []struct {
@@ -242,6 +245,104 @@ func (c *OpenAICompatibleClient) generate(ctx context.Context, prompt, imageBase
 		return "", fmt.Errorf("openai-compatible: no choices")
 	}
 	return parsed.Choices[0].Message.Content, nil
+}
+
+// anthropicStatusRe captures the HTTP status code from the anthropic-sdk-go error
+// string, which has the form: POST "https://...": 402 Payment Required {...}.
+var anthropicStatusRe = regexp.MustCompile(`":\s+(\d{3})\s`)
+
+// cleanAnthropicError converts an anthropic-sdk-go error into a concise message
+// that surfaces the provider's actual error text (from the response body's
+// error.message), consistent with the OpenAI-compatible path. The SDK's internal
+// apierror type is not importable, so we parse its well-defined Error() string.
+func cleanAnthropicError(err error) string {
+	s := err.Error()
+	// The response body (raw JSON) trails the first '{'; reuse the shared
+	// extractor since Anthropic's body also uses {"error":{"message":"..."}}.
+	msg := ""
+	if idx := strings.Index(s, "{"); idx >= 0 {
+		msg = extractProviderError([]byte(s[idx:]))
+	}
+	status := ""
+	if m := anthropicStatusRe.FindStringSubmatch(s); m != nil {
+		status = m[1]
+	}
+	switch {
+	case status != "" && msg != "":
+		return "status " + status + ": " + msg
+	case msg != "":
+		return msg
+	default:
+		return s
+	}
+}
+
+// extractProviderError extracts the most useful error message from an
+// OpenAI-compatible provider's error response body. Providers return
+// {"error":{"message":"..."}}; some proxies further nest the upstream error as a
+// JSON string inside that message, so we make a best-effort pass to surface the
+// innermost human-readable message (e.g. "Insufficient balance...") instead of
+// dumping the raw nested blob.
+func extractProviderError(body []byte) string {
+	raw := strings.TrimSpace(string(body))
+	if raw == "" {
+		return "empty response body"
+	}
+	// HTML error page (not JSON) — the endpoint is likely down or misconfigured.
+	if strings.HasPrefix(raw, "<") {
+		return "endpoint returned HTML instead of JSON (likely an error page): " + truncateForError(raw, 200)
+	}
+	// Standard OpenAI error envelope: {"error": {"message": "..."}}.
+	var envelope struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(raw), &envelope); err == nil && envelope.Error.Message != "" {
+		if inner := extractNestedErrorMessage(envelope.Error.Message); inner != "" {
+			return inner
+		}
+		return envelope.Error.Message
+	}
+	// Unrecognized shape — return the truncated raw body.
+	return truncateForError(raw, 300)
+}
+
+// extractNestedErrorMessage finds the first JSON object embedded in s and returns
+// its "message" field, if any. Some proxies embed the upstream provider's error as a
+// stringified JSON inside the message; this surfaces the actual provider text.
+// Best-effort: returns "" when no nested message is found.
+func extractNestedErrorMessage(s string) string {
+	start := strings.Index(s, "{")
+	if start < 0 {
+		return ""
+	}
+	depth := 0
+	for i := start; i < len(s); i++ {
+		switch s[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				var nested struct {
+					Message string `json:"message"`
+				}
+				if err := json.Unmarshal([]byte(s[start:i+1]), &nested); err == nil && nested.Message != "" {
+					return nested.Message
+				}
+				return ""
+			}
+		}
+	}
+	return ""
+}
+
+func truncateForError(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 func StripJSONMarkers(s string) string {

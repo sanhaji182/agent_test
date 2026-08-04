@@ -21,21 +21,22 @@ Return a structured summary.`, path)
 }
 
 func promptGenerateTestPlan(analysis, requirements string) string {
-	return fmt.Sprintf(`You are a test-plan generation API. You have NO tools available. Do NOT run commands, do NOT use bash or any shell, do NOT explore any codebase, do NOT write explanations, thinking, or prose. Respond with a single JSON object ONLY.
+	return fmt.Sprintf(`Anda adalah API generasi rencana tes. Anda TIDAK memiliki alat apa pun. JANGAN jalankan perintah, JANGAN gunakan bash atau shell, JANGAN eksplorasi codebase, JANGAN tulis penjelasan, pemikiran, atau prosa. Balas dengan SATU objek JSON SAJA.
 
-Codebase analysis context:
+Konteks analisis codebase:
 %s
 
-Requirements: %s
+Persyaratan: %s
 
-Output a test plan as a single JSON object with EXACTLY this structure:
+INGAT: SEMUA output teks (summary, nama skenario, langkah-langkah) HARUS dalam BAHASA INDONESIA. Struktur JSON harus persis seperti ini:
 {"summary": "...", "scenarios": [{"name": "...", "priority": "high|medium|low", "steps": ["..."]}]}
 
 CRITICAL OUTPUT RULES:
 - Your ENTIRE response must be valid JSON only.
 - It must start with { and end with }.
 - No markdown fences, no prose, no tool calls, no <bash> tags, no thinking, no commentary.
-- Do not attempt to inspect or list files; use only the context provided above.`, analysis, requirements)
+- Do not attempt to inspect or list files; use only the context provided above.
+- Return ONLY valid JSON.`, analysis, requirements)
 }
 
 func promptGenerateTestScripts(plan *TestPlan, analysis string) string {
@@ -51,10 +52,13 @@ CODEBASE CONTEXT:
 INSTRUCTIONS:
 Generate comprehensive Playwright test scripts as JSON array. Each test must:
 
-1. **Use robust selectors** (prefer data-testid, aria-label, role > class > id):
-   - ✅ "button[data-testid='submit']" or "[role='button'][aria-label='Submit']"
-   - ✅ "input[type='email']" or "input[name='email']"
+1. **Use robust, semantic selectors** (prefer: data-testid > tag semantik (h1,h2,button,nav,input,form) > aria-label > class):
+   - ✅ "h1" atau "h2" untuk heading (situses biasanya pakai tag <h1> standar, BUKAN atribut role/aria-level)
+   - ✅ "button[data-testid='submit']" atau "button:has-text('Submit')"
+   - ✅ "input[type='email']" atau "input[name='email']"
    - ❌ ".btn.btn-primary.submit" (fragile)
+   - ❌ "[role='heading'][aria-level='1']" (JANGAN dipakai untuk heading; atribut role/aria-level hampir tidak pernah ditulis eksplisit di HTML modern)
+   - Use robust selectors: semantic tags and data-testid beat fragile class chains.
 
 2. **Add strategic waits** after navigation/actions:
    - {"action": "wait", "ms": 1000} after page loads
@@ -97,6 +101,10 @@ Generate tests that are:
 - ✅ Fast (minimal unnecessary waits)
 - ✅ Verifiable (use assert actions to check outcomes, not just perform actions)
 - ✅ Self-documenting (clear action sequences)
+
+HEADING & ASSERTIONS: untuk memverifikasi heading utama, gunakan selector "h1" (atau "h1:has-text('...')" jika tahu teksnya). Jangan gunakan atribut role/aria-level untuk heading.
+
+Return ONLY valid JSON.
 
 IMPORTANT: Every test should end with at least one assert action to verify the expected outcome.
 
