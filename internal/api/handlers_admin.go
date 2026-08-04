@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,8 +16,10 @@ import (
 	"github.com/go-go-golems/gotest-agent/internal/compare"
 	"github.com/go-go-golems/gotest-agent/internal/intelligence"
 	"github.com/go-go-golems/gotest-agent/internal/junit"
+	"github.com/go-go-golems/gotest-agent/internal/notify"
 	"github.com/go-go-golems/gotest-agent/internal/release"
 	"github.com/go-go-golems/gotest-agent/internal/schedule"
+	"github.com/go-go-golems/gotest-agent/internal/workflow"
 	"github.com/google/uuid"
 )
 
@@ -119,11 +122,50 @@ func (s *Server) handleDemoSeed(w http.ResponseWriter, r *http.Request) {
 		Enabled: true, NextRunAt: now.Add(12 * time.Hour),
 	})
 
-	// Create a sample release
+	// Create sample releases (history: completed & cancelled + active)
 	s.releases.Create(&release.Release{
 		Name: "v2.1.0", Version: "2.1.0", ProjectID: "demo",
 		Status: "active", RunIDs: ids[:3],
 	})
+	s.releases.Create(&release.Release{
+		Name: "v2.0.3", Version: "2.0.3", ProjectID: "demo",
+		Status: "completed", RunIDs: ids[3:],
+	})
+	s.releases.Create(&release.Release{
+		Name: "v2.0.2", Version: "2.0.2", ProjectID: "demo",
+		Status: "cancelled", RunIDs: ids[3:4],
+	})
+
+	// Create sample test suites so the Suites page isn't empty
+	s.suites.Create(&workflow.Suite{
+		Name: "Smoke: Login & Registration", ProjectID: "demo",
+		Environment: "staging", Tags: []string{"smoke", "critical", "auth"},
+		Pinned: true, RunIDs: ids[:2],
+	})
+	s.suites.Create(&workflow.Suite{
+		Name: "E2E Checkout Flow", ProjectID: "demo",
+		Environment: "staging", Tags: []string{"e2e", "checkout", "payment"},
+		Pinned: true, RunIDs: ids[1:3],
+	})
+	s.suites.Create(&workflow.Suite{
+		Name: "API Regression", ProjectID: "demo",
+		Environment: "production", Tags: []string{"api", "regression"},
+		Pinned: false, RunIDs: ids[3:],
+	})
+
+	// Create sample reviews so the Reviews page isn't empty
+	pendingRev := s.reviews.Create(&workflow.Review{RunID: ids[2], Type: "test_plan"})
+	s.reviews.Create(&workflow.Review{RunID: ids[0], Type: "test_scripts"})
+	approvedRev := s.reviews.Create(&workflow.Review{RunID: ids[3], Type: "test_plan"})
+	s.reviews.Approve(approvedRev.ID, "QA Lead", "Plan looks solid, approved for execution.")
+	rejectedRev := s.reviews.Create(&workflow.Review{RunID: ids[4], Type: "fix_suggestion"})
+	s.reviews.Reject(rejectedRev.ID, "QA Lead", "Fix suggestion misses the coupon discount case.")
+	_ = pendingRev
+
+	// Create sample notifications so the Alerts page isn't empty
+	s.notifs.Add(notify.Notification{RunID: ids[1], Type: "failure", Message: "Coupon PROMO50 failed to apply: expected $25, found $50."})
+	s.notifs.Add(notify.Notification{RunID: ids[4], Type: "flake", Message: "Flaky test detected: API check timed out on /api/users in 2 of last 5 runs."})
+	s.notifs.Add(notify.Notification{RunID: ids[3], Type: "degradation", Message: "Homepage load time increased from 1.2s to 3.8s (p95)."})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -214,6 +256,9 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	if apiKey, ok := settings["llm_api_key"]; ok && len(apiKey) > 8 {
 		settings["llm_api_key"] = apiKey[:4] + "..." + apiKey[len(apiKey)-4:]
 	}
+	if fbKey, ok := settings["llm_fallback_api_key"]; ok && len(fbKey) > 8 {
+		settings["llm_fallback_api_key"] = fbKey[:4] + "..." + fbKey[len(fbKey)-4:]
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(settings)
 }
@@ -233,6 +278,8 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		"llm_provider": true, "llm_model": true, "llm_api_key": true,
 		"llm_base_url":    true,
 		"llm_temperature": true, "llm_max_tokens": true,
+		"llm_fallback_provider": true, "llm_fallback_model": true,
+		"llm_fallback_api_key": true, "llm_fallback_base_url": true,
 		"browser_headless": true, "browser_timeout": true,
 		"max_fix_attempts": true,
 	}
@@ -323,6 +370,37 @@ func (s *Server) handleTestAIProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fall back to stored settings for any field not provided. The UI masks the
+	// saved API key, so it sends an empty key to mean "use the saved one".
+	if s.settings != nil {
+		ctx := r.Context()
+		if payload.APIKey == "" {
+			if v, err := s.settings.Get(ctx, "llm_api_key"); err == nil {
+				payload.APIKey = v
+			}
+		}
+		if payload.Provider == "" {
+			if v, err := s.settings.Get(ctx, "llm_provider"); err == nil {
+				payload.Provider = v
+			}
+		}
+		if payload.Model == "" {
+			if v, err := s.settings.Get(ctx, "llm_model"); err == nil {
+				payload.Model = v
+			}
+		}
+		if payload.BaseURL == "" {
+			if v, err := s.settings.Get(ctx, "llm_base_url"); err == nil {
+				payload.BaseURL = v
+			}
+		}
+	}
+
+	// Bound the test so a slow/hanging provider can't pin the request (and the
+	// UI's Test button) indefinitely.
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+
 	// Create a temporary client just for the test
 	client := agent.NewLLM(payload.Provider, payload.Model, payload.APIKey, payload.BaseURL)
 	if client == nil {
@@ -331,12 +409,16 @@ func (s *Server) handleTestAIProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Just a simple health check or analyze call to see if it responds
-	_, err := client.AnalyzeCodebase(r.Context(), "ping")
+	_, err := client.AnalyzeCodebase(ctx, "ping")
 	if err != nil {
+		errMsg := err.Error()
+		if errors.Is(err, context.DeadlineExceeded) {
+			errMsg = "connection timed out — provider did not respond within 25 seconds"
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
-			"error":   err.Error(),
+			"error":   errMsg,
 		})
 		return
 	}

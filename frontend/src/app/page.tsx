@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getRuns, isExecuting, getMetricsRisk, getRecommendations, type TestRun, type RiskItem, type Recommendation } from "@/lib/api";
-import { Section, EmptyState, LoadingSkeleton } from "@/components/ui/section";
-import { Badge } from "@/components/ui/badge";
+import { getRuns, isExecuting, getMetricsRisk, getRecommendations, seedDemoData, type TestRun, type RiskItem, type Recommendation } from "@/lib/api";
+import { Section, LoadingSkeleton } from "@/components/ui/section";
 import { Button } from "@/components/ui/button";
 import { TableContainer, Th, Td, Tr } from "@/components/ui/table";
+import { PageLayout } from "@/components/layout/page-layout";
 import Link from "next/link";
 import { 
-  Activity, CheckCircle2, XCircle, PlayCircle,
-  Lightbulb, AlertTriangle, Clock, ArrowUpRight,
-  Shield
+  PlayCircle,
+  Lightbulb, AlertTriangle, ArrowUpRight,
+  Shield, Sparkles
 } from "lucide-react";
 
 export default function DashboardPage() {
@@ -75,6 +75,24 @@ export default function DashboardPage() {
   
   const hasActive = activeCount > 0;
   const hasFailed = failed > 0;
+  const [seeding, setSeeding] = useState(false);
+
+  const handleSeedDemo = async () => {
+    setSeeding(true);
+    try {
+      await seedDemoData();
+      const r = await getRuns();
+      setRuns(r || []);
+      setToast("Demo data loaded");
+      setTimeout(() => setToast(null), 4000);
+    } catch (e) {
+      console.error(e);
+      setToast("Failed to load demo data");
+      setTimeout(() => setToast(null), 4000);
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   if (loading) {
     return <div className="space-y-6"><LoadingSkeleton rows={6} /></div>;
@@ -87,37 +105,45 @@ export default function DashboardPage() {
         <p className="text-sm text-[var(--text-muted)] max-w-sm leading-relaxed mb-6">
           Start testing by creating your first test run. The AI will analyze your codebase and generate comprehensive test coverage.
         </p>
-        <Link href="/create">
-          <Button>Create First Test</Button>
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link href="/create">
+            <Button>Create First Test</Button>
+          </Link>
+          <Button variant="secondary" onClick={handleSeedDemo} disabled={seeding}>
+            <Sparkles className="w-4 h-4 mr-2" />
+            {seeding ? "Loading…" : "Load Demo Data"}
+          </Button>
+        </div>
       </div>
     );
-  }
+	  }
 
-  return (
-    <div className="space-y-6">
+	  return (
+	    <PageLayout
+	      title="Dashboard"
+      description={
+        hasActive 
+          ? `${activeCount} test${activeCount === 1 ? ' run' : 's'} currently executing`
+          : 'Overview of your test execution history'
+      }
+      action={
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={handleSeedDemo} disabled={seeding}>
+            <Sparkles className="w-4 h-4 mr-2" />
+            {seeding ? "Loading…" : "Load Demo Data"}
+          </Button>
+          <Link href="/create">
+            <Button><PlayCircle className="w-4 h-4" /> New Run</Button>
+          </Link>
+        </div>
+      }
+    >
       {/* Toast */}
       {toast && (
         <div className="fixed top-4 right-4 z-50 px-4 py-3 rounded-lg bg-red-50 border border-red-200 shadow-md animate-slide-in">
           <p className="text-sm font-medium text-red-700">{toast}</p>
         </div>
       )}
-
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-[var(--text-muted)] mt-1.5">
-            {hasActive 
-              ? `${activeCount} test${activeCount === 1 ? ' run' : 's'} currently executing`
-              : 'Overview of your test execution history'
-            }
-          </p>
-        </div>
-        <Link href="/create">
-          <Button>New Run</Button>
-        </Link>
-      </div>
 
       {/* Stats Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -157,7 +183,7 @@ export default function DashboardPage() {
                       {formatDate(r.created_at)}
                     </Td>
                     <Td align="right">
-                      <Link href={`/runs/${r.id}`} className="text-blue-600 hover:text-blue-700 text-xs font-medium">View</Link>
+                      <Link href={`/runs/${r.id}`} className="text-[var(--accent)] hover:text-[var(--accent-hover)] text-xs font-medium">View</Link>
                     </Td>
                   </Tr>
                 ))}
@@ -169,7 +195,7 @@ export default function DashboardPage() {
 
       {/* Failed Runs */}
       {hasFailed && (
-        <Section title="Recent Failures" action={<Link href="/runs?filter=failed" className="text-xs text-blue-600 hover:text-blue-700">All failures →</Link>}>
+        <Section title="Recent Failures" action={<Link href="/runs?filter=failed" className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)]">All failures →</Link>}>
           <div className="space-y-2">
             {runs.filter((r) => r.state === "failed").slice(0, 3).map((r) => (
               <FailedRunCard key={r.id} run={r} />
@@ -180,7 +206,7 @@ export default function DashboardPage() {
 
       {/* Two Columns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section title="Recommended Actions" action={<Link href="/risk" className="text-xs text-blue-600 hover:text-blue-700">See all →</Link>}>
+        <Section title="Recommended Actions" action={<Link href="/risk" className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)]">See all →</Link>}>
           {recs.length === 0 ? (
             <p className="text-sm text-[var(--text-muted)]">No actions needed.</p>
           ) : (
@@ -192,7 +218,7 @@ export default function DashboardPage() {
           )}
         </Section>
 
-        <Section title="Highest Risk Areas" action={<Link href="/risk" className="text-xs text-blue-600 hover:text-blue-700">Analyze →</Link>}>
+        <Section title="Highest Risk Areas" action={<Link href="/risk" className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)]">Analyze →</Link>}>
           {risks.length === 0 ? (
             <p className="text-sm text-[var(--text-muted)]">No elevated risks detected.</p>
           ) : (
@@ -206,7 +232,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Recent Runs Table */}
-      <Section title="Recent Runs" action={<Link href="/runs" className="text-xs text-blue-600 hover:text-blue-700">View all →</Link>}>
+      <Section title="Recent Runs" action={<Link href="/runs" className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)]">View all →</Link>}>
         <TableContainer>
           <table className="w-full text-left">
             <thead>
@@ -244,7 +270,7 @@ export default function DashboardPage() {
           </table>
         </TableContainer>
       </Section>
-    </div>
+    </PageLayout>
   );
 }
 
@@ -257,13 +283,12 @@ function StatBox({ value, label, success, danger, color = "default" }: {
   danger?: boolean;
   color?: string;
 }) {
-  const textColor = danger ? "text-red-600" : success ? "text-green-600" : color === "blue" ? "text-blue-600" : "";
-  const bgColor = danger ? "bg-red-50" : success ? "bg-green-50" : color === "blue" ? "bg-blue-50" : "bg-gray-50";
+  const textColor = danger ? "text-[var(--danger)]" : success ? "text-[var(--success)]" : color === "blue" ? "text-[var(--accent)]" : "text-[var(--text-primary)]";
   
   return (
-    <div className={`bg-white rounded-lg p-4 border border-[var(--border-default)] ${bgColor}`}>
-      <p className="text-xs text-[var(--text-muted)] font-medium uppercase tracking-wide">{label}</p>
-      <p className={`mt-2 text-2xl font-semibold ${textColor}`}>{value}</p>
+    <div className="bg-[var(--bg-card)] rounded-[var(--radius)] p-5 border border-[var(--border)] shadow-[var(--shadow-xs)] transition-shadow hover:shadow-[var(--shadow-sm)]">
+      <p className="text-[11px] text-[var(--text-muted)] font-semibold uppercase tracking-wider">{label}</p>
+      <p className={`mt-2.5 text-3xl font-bold tracking-tight ${textColor}`}>{value}</p>
     </div>
   );
 }
@@ -305,7 +330,7 @@ function ProgressBar({ state }: { state: string }) {
       <div className="flex items-center gap-2">
         <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
           <div 
-            className="h-full bg-blue-600 rounded-full transition-all duration-300"
+            className="h-full bg-[var(--accent)] rounded-full transition-all duration-300"
             style={{ width: `${progress}%` }}
           />
         </div>
