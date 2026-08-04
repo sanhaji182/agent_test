@@ -83,6 +83,23 @@ func TestCreateRun_WithTestSpriteMetadata(t *testing.T) {
 	}
 }
 
+func TestCreateRun_ModelOverrideStored(t *testing.T) {
+	srv := newTestServer()
+	w := post(srv, "/api/v1/runs", `{"project_path":"/tmp/test","requirements":"login","model":"qoder"}`)
+	assertStatus(t, w, 202)
+
+	var resp map[string]string
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	w = get(srv, "/api/v1/runs/"+resp["run_id"])
+	assertStatus(t, w, 200)
+	var run map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&run)
+	if run["model_override"] != "qoder" {
+		t.Fatalf("expected model_override=qoder, got %v", run["model_override"])
+	}
+}
+
 func TestListRuns(t *testing.T) {
 	srv := newTestServer()
 	post(srv, "/api/v1/runs", `{"project_path":"/tmp/a"}`)

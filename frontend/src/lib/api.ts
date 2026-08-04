@@ -27,6 +27,7 @@ export interface TestRun {
 	  llm_model?: string;
 	  llm_fallback_provider?: string;
 	  llm_fallback_model?: string;
+	  model_override?: string;
 	  video_url?: string;
   video_status?: string;
   video_duration?: number;
@@ -381,11 +382,18 @@ export async function createRun(data: {
   credentials?: string;
   focus_hints?: string;
   skip_hints?: string;
+  model?: string;
 }): Promise<{ run_id: string; state: string }> {
   return apiFetch("/api/v1/runs", {
     method: "POST",
     body: JSON.stringify(data),
   });
+}
+
+// getAvailableModels mengambil daftar model dari provider yang sedang
+// dikonfigurasi di Settings (dipakai oleh form Create Test).
+export async function getAvailableModels(): Promise<{ models: string[]; error?: string }> {
+  return apiFetch("/api/v1/ai/available-models");
 }
 
 // --- Projects ---

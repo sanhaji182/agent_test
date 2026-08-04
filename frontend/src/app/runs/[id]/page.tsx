@@ -187,6 +187,11 @@ export default function RunConsolePage() {
 	              <Sparkles className="w-3 h-3" /> {run.llm_model}
 	              {run.llm_provider && <span className="text-[var(--text-muted)] font-normal">({run.llm_provider})</span>}
 	            </span>
+	            {run.model_override && (
+	              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--success-bg)] border border-[var(--success)]/20 text-[11px] font-semibold text-[var(--success)]" title="Model dipaksa khusus untuk run ini lewat form Create Test — bukan model default dari Settings">
+	                <Sparkles className="w-3 h-3" /> override: {run.model_override}
+	              </span>
+	            )}
 	            {run.llm_fallback_model && (
 	              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border)] text-[11px] font-medium text-[var(--text-muted)]" title="Fallback provider — dipakai otomatis jika model utama gagal">
 	                <LifeBuoy className="w-3 h-3" /> Fallback: {run.llm_fallback_model}

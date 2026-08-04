@@ -487,6 +487,46 @@ func (s *Server) handleListProviderModels(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// handleListAvailableModels mengembalikan daftar model dari provider yang SEDANG
+// dikonfigurasi (env → DB settings), supaya form Create Test bisa menampilkan
+// pilihan model tanpa pengguna harus mengisi ulang API key. Berbeda dengan
+// /ai/models (admin, butuh payload eksplisit), endpoint ini memakai kredensial
+// server-side dari konfigurasi aktif.
+func (s *Server) handleListAvailableModels(w http.ResponseWriter, r *http.Request) {
+	cfg := ai.ConfigFromEnv() // resolved env (provider/model/key/base_url)
+	baseURL := cfg.BaseURL
+	apiKey := cfg.APIKey
+	provider := cfg.Provider
+	if s.settings != nil {
+		ctx := r.Context()
+		if v, err := s.settings.Get(ctx, "llm_base_url"); err == nil && v != "" {
+			baseURL = v
+		}
+		if v, err := s.settings.Get(ctx, "llm_api_key"); err == nil && v != "" && !strings.Contains(v, "...") {
+			apiKey = v
+		}
+		if v, err := s.settings.Get(ctx, "llm_provider"); err == nil && v != "" {
+			provider = v
+		}
+	}
+	if baseURL == "" {
+		baseURL = ai.DefaultOpenAICompatibleBaseURL(provider)
+	}
+	models, err := fetchProviderModels(r.Context(), strings.TrimRight(baseURL, "/"), apiKey)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"models": []string{},
+			"error":  err.Error(),
+		})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"models": models,
+	})
+}
+
 // fetchProviderModels memanggil endpoint GET {baseURL}/models (OpenAI-compatible)
 // dan mengembalikan daftar model ID.
 func fetchProviderModels(ctx context.Context, baseURL, apiKey string) ([]string, error) {

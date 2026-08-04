@@ -46,6 +46,8 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 		TestData     map[string]string `json:"test_data"`
 		Tags         []string          `json:"tags"`
 		WebhookURL   string            `json:"webhook_url"`
+		// Model memaksa model LLM tertentu untuk run ini (override profile/settings).
+		Model string `json:"model"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid body")
@@ -66,10 +68,11 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 		Credentials: req.Credentials, FocusHints: req.FocusHints,
 		SkipHints: req.SkipHints, FeatureMap: s.deriveFeatureMapBounded(r.Context(), req.PRD, req.Requirements),
 		Browser: req.Browser, Viewport: req.Viewport, Parallel: req.Parallel, TestData: req.TestData,
-		Tags:       req.Tags,
-		WebhookURL: req.WebhookURL,
-		State:      agent.StateIdle,
-		CreatedAt:  time.Now(), UpdatedAt: time.Now(),
+		Tags:          req.Tags,
+		WebhookURL:    req.WebhookURL,
+		ModelOverride: strings.TrimSpace(req.Model),
+		State:         agent.StateIdle,
+		CreatedAt:     time.Now(), UpdatedAt: time.Now(),
 	}
 	if err := s.store.CreateRun(r.Context(), run); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
@@ -469,6 +472,16 @@ func (s *Server) buildAgentForRun(run *agent.TestRun) *agent.Agent {
 				}
 			}
 		}
+	}
+
+	// Per-run model override: bila pengguna memaksa model tertentu lewat form
+	// Create Test, ia menimpa profile/settings/env. Provider tetap sama (model
+	// ada di provider yang sama); khusus override model.
+	if run != nil && run.ModelOverride != "" {
+		if run.ModelOverride != llmModel {
+			slog.Info("run model override applied", "run_id", run.ID, "from", llmModel, "to", run.ModelOverride)
+		}
+		llmModel = run.ModelOverride
 	}
 
 	// Fallback provider (opsional): DB settings override env. Memberi redundansi

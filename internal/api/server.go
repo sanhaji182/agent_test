@@ -407,6 +407,8 @@ func (s *Server) routes() {
 		r.Delete("/suites/{id}", s.handleDeleteSuite)
 		// Alert rules
 		r.Post("/alert-rules/evaluate", s.handleEvaluateAlertRules)
+		// Daftar model dari provider yang sedang dikonfigurasi (untuk form Create Test)
+		r.Get("/ai/available-models", s.handleListAvailableModels)
 		// Settings (admin-only for modification, all roles for view outside this group)
 		r.Get("/settings", s.handleGetSettings)
 		r.Group(func(r chi.Router) {

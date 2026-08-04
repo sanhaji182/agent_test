@@ -62,13 +62,14 @@ func (s *Store) CreateRun(ctx context.Context, run *agent.TestRun) error {
 		INSERT INTO test_runs (
 			id, project_id, state, mode, project_path, requirements,
 			test_type, test_case_id, test_list_id, prd, api_docs, auth_type,
-			credentials, focus_hints, skip_hints, feature_map, created_at, updated_at
+			credentials, focus_hints, skip_hints, feature_map, created_at, updated_at,
+			model_override
 		)
-		VALUES ($1, NULL, $2, $3, $4, $5, $6, nullif($7, '')::uuid, nullif($8, '')::uuid, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+		VALUES ($1, NULL, $2, $3, $4, $5, $6, nullif($7, '')::uuid, nullif($8, '')::uuid, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
 		run.ID, string(run.State), run.Mode, run.ProjectPath, run.Requirements,
 		run.TestType, run.TestCaseID, run.TestListID, run.PRD, run.APIDocs,
 		run.AuthType, run.Credentials, run.FocusHints, run.SkipHints,
-		featureMap, run.CreatedAt, run.UpdatedAt)
+		featureMap, run.CreatedAt, run.UpdatedAt, run.ModelOverride)
 	return err
 }
 
@@ -117,7 +118,8 @@ func (s *Store) GetRun(ctx context.Context, id string) (*agent.TestRun, error) {
 			run_result, fix_attempts, error_msg, created_at, updated_at, finished_at,
 			video_url, video_status, video_duration, video_size, video_failure_marker_at,
 			screenshots,
-			llm_provider, llm_model, llm_fallback_provider, llm_fallback_model
+			llm_provider, llm_model, llm_fallback_provider, llm_fallback_model,
+			model_override
 		FROM test_runs WHERE id = $1`, id)
 
 	var run agent.TestRun
@@ -126,6 +128,7 @@ func (s *Store) GetRun(ctx context.Context, id string) (*agent.TestRun, error) {
 	var codeAnalysis, errorMsg, videoURL, videoStatus *string
 	var mode, projectPath, testType, prd, apiDocs, authType, credentials, focusHints, skipHints *string
 	var llmProvider, llmModel, llmFallbackProvider, llmFallbackModel *string
+	var modelOverride *string
 	var testCaseID, testListID string
 	var videoDuration, videoFailureMarkerAt *float64
 	var videoSize *int64
@@ -137,7 +140,8 @@ func (s *Store) GetRun(ctx context.Context, id string) (*agent.TestRun, error) {
 		&runResult, &run.FixAttempts,
 		&errorMsg, &run.CreatedAt, &run.UpdatedAt, &finishedAt,
 		&videoURL, &videoStatus, &videoDuration, &videoSize, &videoFailureMarkerAt,
-		&screenshots, &llmProvider, &llmModel, &llmFallbackProvider, &llmFallbackModel)
+		&screenshots, &llmProvider, &llmModel, &llmFallbackProvider, &llmFallbackModel,
+		&modelOverride)
 	if err != nil {
 		return nil, err
 	}
@@ -205,6 +209,9 @@ func (s *Store) GetRun(ctx context.Context, id string) (*agent.TestRun, error) {
 	if llmFallbackModel != nil {
 		run.LLMFallbackModel = *llmFallbackModel
 	}
+	if modelOverride != nil {
+		run.ModelOverride = *modelOverride
+	}
 	run.FinishedAt = finishedAt
 
 	// Unmarshal JSONB fields
@@ -234,7 +241,8 @@ func (s *Store) ListRuns(ctx context.Context, limit, offset int) ([]*agent.TestR
 			COALESCE(test_case_id::text, ''), COALESCE(test_list_id::text, ''), run_result,
 			fix_attempts, video_url, video_status, video_duration,
 			created_at, updated_at, finished_at,
-			llm_provider, llm_model, llm_fallback_provider, llm_fallback_model
+			llm_provider, llm_model, llm_fallback_provider, llm_fallback_model,
+			model_override
 		FROM test_runs ORDER BY created_at DESC LIMIT $1 OFFSET $2`, limit, offset)
 	if err != nil {
 		return nil, err
@@ -248,13 +256,14 @@ func (s *Store) ListRuns(ctx context.Context, limit, offset int) ([]*agent.TestR
 		var finishedAt *time.Time
 		var mode, projectPath, testType, videoURL, videoStatus *string
 		var llmProvider, llmModel, llmFallbackProvider, llmFallbackModel *string
+		var modelOverride *string
 		var testCaseID, testListID string
 		var runResult []byte
 		var videoDuration *float64
 		if err := rows.Scan(&run.ID, &state, &mode, &projectPath, &run.Requirements,
 			&testType, &testCaseID, &testListID, &runResult, &run.FixAttempts, &videoURL, &videoStatus,
 			&videoDuration, &run.CreatedAt, &run.UpdatedAt, &finishedAt,
-			&llmProvider, &llmModel, &llmFallbackProvider, &llmFallbackModel); err != nil {
+			&llmProvider, &llmModel, &llmFallbackProvider, &llmFallbackModel, &modelOverride); err != nil {
 			return nil, err
 		}
 		run.State = agent.State(state)
@@ -292,6 +301,9 @@ func (s *Store) ListRuns(ctx context.Context, limit, offset int) ([]*agent.TestR
 		}
 		if llmFallbackModel != nil {
 			run.LLMFallbackModel = *llmFallbackModel
+		}
+		if modelOverride != nil {
+			run.ModelOverride = *modelOverride
 		}
 		run.FinishedAt = finishedAt
 		runs = append(runs, &run)

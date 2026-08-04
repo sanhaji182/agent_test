@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createRun } from "@/lib/api";
+import { createRun, getAvailableModels, getSettings } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LoadingSkeleton } from "@/components/ui/section";
+import { RefreshCw, Sparkles } from "lucide-react";
 
 export default function CreatePage() {
   const router = useRouter();
@@ -14,9 +15,40 @@ export default function CreatePage() {
     requirements: "",
     base_url: "",
     name: "",
+    model: "",
   });
+  const [defaultModel, setDefaultModel] = useState("");
+  const [models, setModels] = useState<string[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Load the current default model from Settings so we can hint it in the field.
+  useEffect(() => {
+    getSettings()
+      .then((s) => { if (s.llm_model) setDefaultModel(s.llm_model); })
+      .catch(() => {});
+  }, []);
+
+  const handleFetchModels = async () => {
+    setFetchingModels(true);
+    setModelsError(null);
+    try {
+      const res = await getAvailableModels();
+      if (res.error) {
+        setModelsError(res.error);
+        setModels([]);
+      } else {
+        setModels(res.models || []);
+      }
+    } catch (e) {
+      setModelsError(e instanceof Error ? e.message : "failed to fetch models");
+      setModels([]);
+    } finally {
+      setFetchingModels(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,10 +58,12 @@ export default function CreatePage() {
     setError(null);
     
     try {
-      const result = await createRun({
+      const payload: Parameters<typeof createRun>[0] = {
         ...formData,
         mode: "simple", // Use simple mode for now
-      });
+      };
+      if (!payload.model?.trim()) delete payload.model; // kosong = pakai default dari Settings
+      const result = await createRun(payload);
       
       if (result && result.run_id) {
         router.push(`/runs/${result.run_id}`);
@@ -93,14 +127,48 @@ export default function CreatePage() {
             helperText="The base URL where the application is running"
           />
 
-          {/* Test Name (Optional) */}
-          <Input
-            label="Test Name (Optional)"
-            placeholder="My Login Test"
-            value={formData.name}
-            onChange={(e) => handleChange("name", e.target.value)}
-            helperText="Give your test a meaningful name"
-          />
+	          {/* Test Name (Optional) */}
+	          <Input
+	            label="Test Name (Optional)"
+	            placeholder="My Login Test"
+	            value={formData.name}
+	            onChange={(e) => handleChange("name", e.target.value)}
+	            helperText="Give your test a meaningful name"
+	          />
+
+	          {/* AI Model (Optional) — paksa model khusus untuk run ini */}
+	          <div>
+	            <div className="flex items-center justify-between mb-1.5">
+	              <label htmlFor="model" className="block text-sm font-medium text-[var(--text-primary)]">
+	                AI Model <span className="text-[var(--text-muted)] font-normal">(opsional)</span>
+	              </label>
+	              <Button
+	                type="button"
+	                variant="secondary"
+	                size="sm"
+	                onClick={handleFetchModels}
+	                disabled={fetchingModels}
+	              >
+	                <RefreshCw className={`w-3.5 h-3.5 ${fetchingModels ? "animate-spin" : ""}`} />
+	                {fetchingModels ? "Mengambil…" : "Ambil Model"}
+	              </Button>
+	            </div>
+	            <Input
+	              id="model"
+	              list="available-models"
+	              placeholder={defaultModel ? `Default: ${defaultModel}` : "Kosongkan untuk pakai model dari Settings"}
+	              value={formData.model}
+	              onChange={(e) => handleChange("model", e.target.value)}
+	              leftIcon={<Sparkles className="w-4 h-4" />}
+	              helperText={modelsError ? undefined : "Pilih model khusus untuk run ini. Kosongkan agar pakai model dari Settings."}
+	              error={modelsError || undefined}
+	            />
+	            <datalist id="available-models">
+	              {models.map((m) => (
+	                <option key={m} value={m} />
+	              ))}
+	            </datalist>
+	          </div>
 
           {/* Error Message */}
           {error && (

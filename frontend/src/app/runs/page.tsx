@@ -180,6 +180,7 @@ export default function RunsPage() {
 	                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--accent-light)] border border-[var(--accent)]/15 text-[11px] font-medium text-[var(--accent)] whitespace-nowrap" title={r.llm_provider ? `Provider: ${r.llm_provider}` : undefined}>
 	                        <Sparkles className="w-3 h-3" />
 	                        {r.llm_model}
+	                        {r.model_override && <span className="text-[var(--success)] font-semibold">*</span>}
 	                        {r.llm_fallback_model && <span className="text-[var(--text-muted)] font-normal">+fb</span>}
 	                      </span>
 	                    ) : (

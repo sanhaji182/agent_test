@@ -127,6 +127,9 @@ type TestRun struct {
 	LLMModel            string `json:"llm_model,omitempty"`
 	LLMFallbackProvider string `json:"llm_fallback_provider,omitempty"`
 	LLMFallbackModel    string `json:"llm_fallback_model,omitempty"`
+	// ModelOverride adalah model yang dipaksa pengguna khusus untuk run ini
+	// (dari form Create Test). Bila diisi, ia menimpa profile/settings/env.
+	ModelOverride string `json:"model_override,omitempty"`
 	// Video recording fields
 	VideoURL             string  `json:"video_url,omitempty"`
 	VideoStatus          string  `json:"video_status,omitempty"` // "recording", "ready", "failed", "none"
