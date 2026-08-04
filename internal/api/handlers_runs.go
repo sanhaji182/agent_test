@@ -504,6 +504,15 @@ func (s *Server) buildAgentForRun(run *agent.TestRun) *agent.Agent {
 		slog.Info("LLM fallback configured", "primary", llmProvider, "fallback", fbProvider)
 	}
 
+	// Catat metadata LLM pada run supaya UI & laporan bisa menampilkan
+	// model yang dipakai. Di-persist oleh UpdateRun saat run berjalan/selesai.
+	if run != nil {
+		run.LLMProvider = llmProvider
+		run.LLMModel = llmModel
+		run.LLMFallbackProvider = fbProvider
+		run.LLMFallbackModel = fbModel
+	}
+
 	llm := agent.NewFallbackLLM(providers...)
 	if llm == nil {
 		slog.Error("unsupported LLM provider", "provider", llmProvider)
@@ -747,7 +756,7 @@ func (s *Server) ExecuteRunByID(ctx context.Context, runID string) error {
 	if run.State == agent.StateDone || run.State == agent.StateFailed || run.State == agent.StateSimulated {
 		return nil
 	}
-	a := s.buildAgent()
+	a := s.buildAgentForRun(run)
 	if a == nil {
 		return errUnsupportedProvider
 	}

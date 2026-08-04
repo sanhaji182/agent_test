@@ -91,7 +91,9 @@ func (s *Store) UpdateRun(ctx context.Context, run *agent.TestRun) error {
 			test_type = $19, test_case_id = nullif($20, '')::uuid,
 			test_list_id = nullif($21, '')::uuid, prd = $22, api_docs = $23,
 			auth_type = $24, credentials = $25, focus_hints = $26,
-			skip_hints = $27, feature_map = $28, screenshots = $29
+			skip_hints = $27, feature_map = $28, screenshots = $29,
+			llm_provider = $30, llm_model = $31,
+			llm_fallback_provider = $32, llm_fallback_model = $33
 		WHERE id = $1`,
 		run.ID, string(run.State), run.CodeAnalysis,
 		testPlan, testFiles, runResult,
@@ -100,7 +102,8 @@ func (s *Store) UpdateRun(ctx context.Context, run *agent.TestRun) error {
 		run.VideoSize, run.VideoFailureMarkerAt,
 		run.Mode, run.ProjectPath, run.Requirements, run.TestType,
 		run.TestCaseID, run.TestListID, run.PRD, run.APIDocs, run.AuthType,
-		run.Credentials, run.FocusHints, run.SkipHints, featureMap, screenshots)
+		run.Credentials, run.FocusHints, run.SkipHints, featureMap, screenshots,
+		run.LLMProvider, run.LLMModel, run.LLMFallbackProvider, run.LLMFallbackModel)
 	return err
 }
 
@@ -113,7 +116,8 @@ func (s *Store) GetRun(ctx context.Context, id string) (*agent.TestRun, error) {
 			code_analysis, test_plan, test_files,
 			run_result, fix_attempts, error_msg, created_at, updated_at, finished_at,
 			video_url, video_status, video_duration, video_size, video_failure_marker_at,
-			screenshots
+			screenshots,
+			llm_provider, llm_model, llm_fallback_provider, llm_fallback_model
 		FROM test_runs WHERE id = $1`, id)
 
 	var run agent.TestRun
@@ -121,6 +125,7 @@ func (s *Store) GetRun(ctx context.Context, id string) (*agent.TestRun, error) {
 	var testPlan, testFiles, runResult, featureMap, screenshots []byte
 	var codeAnalysis, errorMsg, videoURL, videoStatus *string
 	var mode, projectPath, testType, prd, apiDocs, authType, credentials, focusHints, skipHints *string
+	var llmProvider, llmModel, llmFallbackProvider, llmFallbackModel *string
 	var testCaseID, testListID string
 	var videoDuration, videoFailureMarkerAt *float64
 	var videoSize *int64
@@ -132,7 +137,7 @@ func (s *Store) GetRun(ctx context.Context, id string) (*agent.TestRun, error) {
 		&runResult, &run.FixAttempts,
 		&errorMsg, &run.CreatedAt, &run.UpdatedAt, &finishedAt,
 		&videoURL, &videoStatus, &videoDuration, &videoSize, &videoFailureMarkerAt,
-		&screenshots)
+		&screenshots, &llmProvider, &llmModel, &llmFallbackProvider, &llmFallbackModel)
 	if err != nil {
 		return nil, err
 	}
@@ -188,6 +193,18 @@ func (s *Store) GetRun(ctx context.Context, id string) (*agent.TestRun, error) {
 	if videoFailureMarkerAt != nil {
 		run.VideoFailureMarkerAt = *videoFailureMarkerAt
 	}
+	if llmProvider != nil {
+		run.LLMProvider = *llmProvider
+	}
+	if llmModel != nil {
+		run.LLMModel = *llmModel
+	}
+	if llmFallbackProvider != nil {
+		run.LLMFallbackProvider = *llmFallbackProvider
+	}
+	if llmFallbackModel != nil {
+		run.LLMFallbackModel = *llmFallbackModel
+	}
 	run.FinishedAt = finishedAt
 
 	// Unmarshal JSONB fields
@@ -216,7 +233,8 @@ func (s *Store) ListRuns(ctx context.Context, limit, offset int) ([]*agent.TestR
 		SELECT id, state, mode, project_path, requirements, test_type,
 			COALESCE(test_case_id::text, ''), COALESCE(test_list_id::text, ''), run_result,
 			fix_attempts, video_url, video_status, video_duration,
-			created_at, updated_at, finished_at
+			created_at, updated_at, finished_at,
+			llm_provider, llm_model, llm_fallback_provider, llm_fallback_model
 		FROM test_runs ORDER BY created_at DESC LIMIT $1 OFFSET $2`, limit, offset)
 	if err != nil {
 		return nil, err
@@ -229,12 +247,14 @@ func (s *Store) ListRuns(ctx context.Context, limit, offset int) ([]*agent.TestR
 		var state string
 		var finishedAt *time.Time
 		var mode, projectPath, testType, videoURL, videoStatus *string
+		var llmProvider, llmModel, llmFallbackProvider, llmFallbackModel *string
 		var testCaseID, testListID string
 		var runResult []byte
 		var videoDuration *float64
 		if err := rows.Scan(&run.ID, &state, &mode, &projectPath, &run.Requirements,
 			&testType, &testCaseID, &testListID, &runResult, &run.FixAttempts, &videoURL, &videoStatus,
-			&videoDuration, &run.CreatedAt, &run.UpdatedAt, &finishedAt); err != nil {
+			&videoDuration, &run.CreatedAt, &run.UpdatedAt, &finishedAt,
+			&llmProvider, &llmModel, &llmFallbackProvider, &llmFallbackModel); err != nil {
 			return nil, err
 		}
 		run.State = agent.State(state)
@@ -260,6 +280,18 @@ func (s *Store) ListRuns(ctx context.Context, limit, offset int) ([]*agent.TestR
 		}
 		if videoDuration != nil {
 			run.VideoDuration = *videoDuration
+		}
+		if llmProvider != nil {
+			run.LLMProvider = *llmProvider
+		}
+		if llmModel != nil {
+			run.LLMModel = *llmModel
+		}
+		if llmFallbackProvider != nil {
+			run.LLMFallbackProvider = *llmFallbackProvider
+		}
+		if llmFallbackModel != nil {
+			run.LLMFallbackModel = *llmFallbackModel
 		}
 		run.FinishedAt = finishedAt
 		runs = append(runs, &run)

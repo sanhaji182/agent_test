@@ -5,7 +5,7 @@ import { getRuns, isActive, type TestRun } from "@/lib/api";
 import { StatusBadge } from "@/components/ui/badge";
 import { EmptyState, LoadingSkeleton } from "@/components/ui/section";
 import { RunInspector } from "@/components/console/inspector";
-import { Search, Inbox } from "lucide-react";
+import { Search, Inbox, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
@@ -152,14 +152,15 @@ export default function RunsPage() {
         <div className="rounded-lg border border-[var(--border-default)] bg-white overflow-hidden">
           <table className="w-full text-left">
             <thead className="bg-gray-50 border-b border-[var(--border-default)]">
-              <tr>
-                <Th>Status</Th>
-                <Th>Run Name / ID</Th>
-                <Th>Coverage</Th>
-                <Th>Duration</Th>
-                <Th>Started</Th>
-                <Th align="right">Actions</Th>
-              </tr>
+	              <tr>
+	                <Th>Status</Th>
+	                <Th>Run Name / ID</Th>
+	                <Th>Model</Th>
+	                <Th>Coverage</Th>
+	                <Th>Duration</Th>
+	                <Th>Started</Th>
+	                <Th align="right">Actions</Th>
+	              </tr>
             </thead>
             <tbody>
               {filtered.map((r) => (
@@ -170,10 +171,21 @@ export default function RunsPage() {
                   className={selected?.id === r.id ? "bg-blue-50" : ""}
                 >
                   <Td><StatusBadge state={r.state} size="sm" /></Td>
-                  <Td className="font-medium">
-                    <span className="block truncate max-w-[200px]">{r.requirements || "Untitled test"}</span>
-                    <span className="text-xs text-[var(--text-muted)] font-mono">{r.id.slice(0, 8)}</span>
-                  </Td>
+	                  <Td className="font-medium">
+	                    <span className="block truncate max-w-[200px]">{r.requirements || "Untitled test"}</span>
+	                    <span className="text-xs text-[var(--text-muted)] font-mono">{r.id.slice(0, 8)}</span>
+	                  </Td>
+	                  <Td>
+	                    {r.llm_model ? (
+	                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--accent-light)] border border-[var(--accent)]/15 text-[11px] font-medium text-[var(--accent)] whitespace-nowrap" title={r.llm_provider ? `Provider: ${r.llm_provider}` : undefined}>
+	                        <Sparkles className="w-3 h-3" />
+	                        {r.llm_model}
+	                        {r.llm_fallback_model && <span className="text-[var(--text-muted)] font-normal">+fb</span>}
+	                      </span>
+	                    ) : (
+	                      <span className="text-sm text-[var(--text-muted)]">-</span>
+	                    )}
+	                  </Td>
                   <Td>
                     {r.run_result ? (
                       <span className="text-sm text-[var(--text-primary)]">

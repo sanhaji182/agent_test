@@ -121,6 +121,12 @@ type TestRun struct {
 	Screenshots  []string          `json:"screenshots,omitempty"`
 	FixAttempts  int               `json:"fix_attempts"`
 	Error        string            `json:"error,omitempty"`
+	// LLM metadata: provider & model yang dipakai run ini (termasuk fallback
+	// bila dikonfigurasi). Di-set saat agent dibangun; dipakai UI & laporan.
+	LLMProvider         string `json:"llm_provider,omitempty"`
+	LLMModel            string `json:"llm_model,omitempty"`
+	LLMFallbackProvider string `json:"llm_fallback_provider,omitempty"`
+	LLMFallbackModel    string `json:"llm_fallback_model,omitempty"`
 	// Video recording fields
 	VideoURL             string  `json:"video_url,omitempty"`
 	VideoStatus          string  `json:"video_status,omitempty"` // "recording", "ready", "failed", "none"

@@ -18,13 +18,15 @@ type uiStrings struct {
 	HTMLLang string
 
 	// Header
-	Title       string
-	RunLabel    string
-	GeneratedAt string
-	StartedAt   string
-	FinishedAt  string
-	ModeLabel   string
-	TypeLabel   string
+	Title         string
+	RunLabel      string
+	GeneratedAt   string
+	StartedAt     string
+	FinishedAt    string
+	ModeLabel     string
+	TypeLabel     string
+	ModelLabel    string
+	FallbackLabel string
 
 	// State
 	StateCompleted string
@@ -94,13 +96,15 @@ type uiStrings struct {
 var uiID = uiStrings{
 	HTMLLang: "id",
 
-	Title:       "Laporan Hasil Test",
-	RunLabel:    "Kode Run",
-	GeneratedAt: "Dibuat tanggal",
-	StartedAt:   "Mulai",
-	FinishedAt:  "Selesai",
-	ModeLabel:   "mode",
-	TypeLabel:   "jenis",
+	Title:         "Laporan Hasil Test",
+	RunLabel:      "Kode Run",
+	GeneratedAt:   "Dibuat tanggal",
+	StartedAt:     "Mulai",
+	FinishedAt:    "Selesai",
+	ModeLabel:     "mode",
+	TypeLabel:     "jenis",
+	ModelLabel:    "model AI",
+	FallbackLabel: "cadangan",
 
 	StateCompleted: "SELESAI",
 	StateFailed:    "GAGAL",
@@ -167,13 +171,15 @@ var uiID = uiStrings{
 var uiEN = uiStrings{
 	HTMLLang: "en",
 
-	Title:       "Test Results Report",
-	RunLabel:    "Run ID",
-	GeneratedAt: "Generated",
-	StartedAt:   "Started",
-	FinishedAt:  "Finished",
-	ModeLabel:   "mode",
-	TypeLabel:   "type",
+	Title:         "Test Results Report",
+	RunLabel:      "Run ID",
+	GeneratedAt:   "Generated",
+	StartedAt:     "Started",
+	FinishedAt:    "Finished",
+	ModeLabel:     "mode",
+	TypeLabel:     "type",
+	ModelLabel:    "AI model",
+	FallbackLabel: "fallback",
 
 	StateCompleted: "COMPLETED",
 	StateFailed:    "FAILED",
@@ -271,32 +277,36 @@ type recommendation struct {
 
 // ReportData adalah data yang dikirim ke template HTML.
 type ReportData struct {
-	S            uiStrings
-	Lang         string
-	ID           string
-	State        string
-	Requirements string
-	ProjectPath  string
-	Mode         string
-	TestType     string
-	RunResult    *agent.RunResult
-	TestPlan     *agent.TestPlan
-	TestFiles    []agent.TestFile
-	Screenshots  []string
-	GeneratedAt  string
-	CreatedAt    string
-	FinishedAt   string
-	PassRate     float64
-	FailRate     float64
-	DurationSec  float64
-	FixAttempts  int
-	RunError     string
-	Grade        string
-	GradeLabel   string
-	Summary      string
-	Categories   []FailureCategory
-	Recs         []recommendation
-	HasFailures  bool
+	S                   uiStrings
+	Lang                string
+	ID                  string
+	State               string
+	Requirements        string
+	ProjectPath         string
+	Mode                string
+	TestType            string
+	LLMProvider         string
+	LLMModel            string
+	LLMFallbackProvider string
+	LLMFallbackModel    string
+	RunResult           *agent.RunResult
+	TestPlan            *agent.TestPlan
+	TestFiles           []agent.TestFile
+	Screenshots         []string
+	GeneratedAt         string
+	CreatedAt           string
+	FinishedAt          string
+	PassRate            float64
+	FailRate            float64
+	DurationSec         float64
+	FixAttempts         int
+	RunError            string
+	Grade               string
+	GradeLabel          string
+	Summary             string
+	Categories          []FailureCategory
+	Recs                []recommendation
+	HasFailures         bool
 }
 
 // categoryKey menentukan kunci kategori dari pesan kegagalan.
@@ -683,8 +693,10 @@ footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--bord
         {{if eq .State "done"}}<span class="badge badge-pass">✓ {{.S.StateCompleted}}</span>
         {{else if eq .State "failed"}}<span class="badge badge-fail">✗ {{.S.StateFailed}}</span>
         {{else}}<span class="badge badge-running">● {{.S.StateRunning}}</span>{{end}}
-        {{if .Mode}}<span class="badge" style="background:rgba(255,255,255,0.12);color:#e2e8f0">{{.S.ModeLabel}}: {{.Mode}}</span>{{end}}
-        {{if .TestType}}<span class="badge" style="background:rgba(255,255,255,0.12);color:#e2e8f0">{{.S.TypeLabel}}: {{.TestType}}</span>{{end}}
+	        {{if .Mode}}<span class="badge" style="background:rgba(255,255,255,0.12);color:#e2e8f0">{{.S.ModeLabel}}: {{.Mode}}</span>{{end}}
+	        {{if .TestType}}<span class="badge" style="background:rgba(255,255,255,0.12);color:#e2e8f0">{{.S.TypeLabel}}: {{.TestType}}</span>{{end}}
+	        {{if .LLMModel}}<span class="badge" style="background:rgba(255,255,255,0.18);color:#fff">🤖 {{.S.ModelLabel}}: {{.LLMModel}}{{if .LLMProvider}} ({{.LLMProvider}}){{end}}</span>{{end}}
+	        {{if .LLMFallbackModel}}<span class="badge" style="background:rgba(255,255,255,0.10);color:#cbd5e1">🛟 {{.S.FallbackLabel}}: {{.LLMFallbackModel}}{{if .LLMFallbackProvider}} ({{.LLMFallbackProvider}}){{end}}</span>{{end}}
       </div>
     </div>
     <div class="banner-right">
@@ -725,6 +737,7 @@ footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--bord
 <div class="section">
   <h2>📊 {{.S.ExecSummary}}</h2>
   <div class="summary-text">{{.Summary}}</div>
+  {{if .LLMModel}}<p class="meta" style="margin-top:0.75rem">🤖 {{.S.ModelLabel}}: <code>{{.LLMModel}}</code>{{if .LLMProvider}} ({{.LLMProvider}}){{end}}{{if .LLMFallbackModel}} · {{.S.FallbackLabel}}: <code>{{.LLMFallbackModel}}</code>{{end}}</p>{{end}}
 </div>
 
 <!-- Apa yang dicek -->
@@ -891,31 +904,35 @@ func GenerateHTML(w io.Writer, run *agent.TestRun, lang string) error {
 	}
 
 	data := ReportData{
-		S:            s,
-		Lang:         s.HTMLLang,
-		ID:           run.ID,
-		State:        string(run.State),
-		Requirements: run.Requirements,
-		ProjectPath:  run.ProjectPath,
-		Mode:         run.Mode,
-		TestType:     run.TestType,
-		RunResult:    run.RunResult,
-		TestPlan:     run.TestPlan,
-		TestFiles:    run.TestFiles,
-		Screenshots:  run.Screenshots,
-		GeneratedAt:  time.Now().Format("2006-01-02 15:04:05"),
-		CreatedAt:    createdAt,
-		FinishedAt:   finishedAt,
-		PassRate:     passRate,
-		FailRate:     100.0 - passRate,
-		FixAttempts:  run.FixAttempts,
-		RunError:     run.Error,
-		Grade:        grade,
-		GradeLabel:   gradeLabel,
-		Summary:      buildSummary(run, passRate, s),
-		Categories:   categories,
-		Recs:         buildRecommendations(categories, hasFailures, s),
-		HasFailures:  hasFailures,
+		S:                   s,
+		Lang:                s.HTMLLang,
+		ID:                  run.ID,
+		State:               string(run.State),
+		Requirements:        run.Requirements,
+		ProjectPath:         run.ProjectPath,
+		Mode:                run.Mode,
+		TestType:            run.TestType,
+		LLMProvider:         run.LLMProvider,
+		LLMModel:            run.LLMModel,
+		LLMFallbackProvider: run.LLMFallbackProvider,
+		LLMFallbackModel:    run.LLMFallbackModel,
+		RunResult:           run.RunResult,
+		TestPlan:            run.TestPlan,
+		TestFiles:           run.TestFiles,
+		Screenshots:         run.Screenshots,
+		GeneratedAt:         time.Now().Format("2006-01-02 15:04:05"),
+		CreatedAt:           createdAt,
+		FinishedAt:          finishedAt,
+		PassRate:            passRate,
+		FailRate:            100.0 - passRate,
+		FixAttempts:         run.FixAttempts,
+		RunError:            run.Error,
+		Grade:               grade,
+		GradeLabel:          gradeLabel,
+		Summary:             buildSummary(run, passRate, s),
+		Categories:          categories,
+		Recs:                buildRecommendations(categories, hasFailures, s),
+		HasFailures:         hasFailures,
 	}
 	if run.RunResult != nil {
 		data.DurationSec = float64(run.RunResult.DurationMs) / 1000.0

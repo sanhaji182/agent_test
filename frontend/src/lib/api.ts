@@ -21,9 +21,13 @@ export interface TestRun {
   test_files?: TestFile[];
   run_result?: RunResult;
   screenshots?: string[];
-  fix_attempts: number;
-  error?: string;
-  video_url?: string;
+	  fix_attempts: number;
+	  error?: string;
+	  llm_provider?: string;
+	  llm_model?: string;
+	  llm_fallback_provider?: string;
+	  llm_fallback_model?: string;
+	  video_url?: string;
   video_status?: string;
   video_duration?: number;
   video_failure_marker_at?: number;

@@ -20,9 +20,9 @@ import { EmptyState } from "@/components/ui/section";
 import {
   ArrowLeft, FileText, RotateCw, FileCode, AlertTriangle, Download,
   CheckCircle2, XCircle, Image as ImageIcon, ListChecks, Eye,
-  Radio, Film, GitCompare, GitBranch, KeyRound, Sparkles,
-  Wand2, Code, Gauge, Accessibility, Search, Eye as EyeIcon,
-} from "lucide-react";
+	  Radio, Film, GitCompare, GitBranch, KeyRound, Sparkles,
+	  Wand2, Code, Gauge, Accessibility, Search, Eye as EyeIcon, LifeBuoy,
+	} from "lucide-react";
 import Link from "next/link";
 
 export default function RunConsolePage() {
@@ -175,12 +175,26 @@ export default function RunConsolePage() {
         <div className="p-4 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border)]">
           <ExecutionTimeline state={displayState} />
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mt-4">
-          <Meta label="Type" value={(run.test_type || "ui").toUpperCase()} />
-          <Meta label="Mode" value={run.mode || "simple"} />
-          <Meta label="Auth" value={run.auth_type || "none"} />
-          <Meta label="Plan Source" value={run.feature_map?.source || (run.prd ? "prd" : "requirements")} />
-        </div>
+	        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mt-4">
+	          <Meta label="Type" value={(run.test_type || "ui").toUpperCase()} />
+	          <Meta label="Mode" value={run.mode || "simple"} />
+	          <Meta label="Auth" value={run.auth_type || "none"} />
+	          <Meta label="Plan Source" value={run.feature_map?.source || (run.prd ? "prd" : "requirements")} />
+	        </div>
+	        {run.llm_model && (
+	          <div className="mt-3 inline-flex flex-wrap items-center gap-2">
+	            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--accent-bg)] border border-[var(--accent)]/20 text-[11px] font-semibold text-[var(--accent)]">
+	              <Sparkles className="w-3 h-3" /> {run.llm_model}
+	              {run.llm_provider && <span className="text-[var(--text-muted)] font-normal">({run.llm_provider})</span>}
+	            </span>
+	            {run.llm_fallback_model && (
+	              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border)] text-[11px] font-medium text-[var(--text-muted)]" title="Fallback provider — dipakai otomatis jika model utama gagal">
+	                <LifeBuoy className="w-3 h-3" /> Fallback: {run.llm_fallback_model}
+	                {run.llm_fallback_provider && <span className="font-normal">({run.llm_fallback_provider})</span>}
+	            </span>
+	            )}
+	          </div>
+	        )}
         {result && (
           <div className="flex items-center gap-6 mt-4">
             <Stat icon={<CheckCircle2 className="w-4 h-4" />} value={result.passed} label="Passed" color="success" />

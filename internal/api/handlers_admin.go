@@ -42,12 +42,35 @@ func (s *Server) handleDemoSeed(w http.ResponseWriter, r *http.Request) {
 		{"test API endpoints", agent.StateDone, 6, 1},
 	}
 
+	// LLM metadata untuk run demo — pakai konfigurasi yang sedang aktif supaya
+	// data demo mencerminkan model yang benar-benar dipakai aplikasi.
+	demoProvider := s.cfg.LLMProvider
+	demoModel := s.cfg.LLMModel
+	demoFallbackProvider := s.cfg.LLMFallbackProvider
+	demoFallbackModel := s.cfg.LLMFallbackModel
+	if s.settings != nil {
+		if v, err := s.settings.Get(ctx, "llm_provider"); err == nil && v != "" {
+			demoProvider = v
+		}
+		if v, err := s.settings.Get(ctx, "llm_model"); err == nil && v != "" {
+			demoModel = v
+		}
+		if v, err := s.settings.Get(ctx, "llm_fallback_provider"); err == nil && v != "" {
+			demoFallbackProvider = v
+		}
+		if v, err := s.settings.Get(ctx, "llm_fallback_model"); err == nil && v != "" {
+			demoFallbackModel = v
+		}
+	}
+
 	var ids []string
 	for i, r := range runs {
 		run := &agent.TestRun{
 			ID: uuid.New().String(), ProjectPath: "https://demostore.com",
 			Requirements: r.req, Mode: "standard", State: r.state,
 			CreatedAt: now.Add(time.Duration(-i) * time.Hour), UpdatedAt: now,
+			LLMProvider: demoProvider, LLMModel: demoModel,
+			LLMFallbackProvider: demoFallbackProvider, LLMFallbackModel: demoFallbackModel,
 		}
 
 		if r.state == agent.StateDone || r.state == agent.StateFailed {
