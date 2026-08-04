@@ -358,6 +358,11 @@ func (s *Server) routes() {
 		// Notifications
 		r.Get("/notifications", s.handleListNotifications)
 		r.Get("/notifications/types", s.handleListNotificationTypes)
+		// Alerts (dedicated endpoint dengan severity/category server-side)
+		r.Get("/alerts", s.handleListAlerts)
+		r.Post("/alerts/read-all", s.handleMarkAllAlertsRead)
+		r.Post("/alerts/{id}/acknowledge", s.handleAcknowledgeAlert)
+		r.Post("/alerts/{id}/dismiss", s.handleDismissAlert)
 		// Drift detection (Phase 3)
 		r.Get("/drifts", s.handleListDrifts)
 		r.Patch("/drifts/{id}", s.handleUpdateDriftStatus)
@@ -480,6 +485,7 @@ func (s *Server) routes() {
 	s.router.Group(func(r chi.Router) {
 		r.Use(s.apiKeyAuth)
 		r.Handle("/videos/*", http.StripPrefix("/videos/", http.FileServer(http.Dir("/data/videos"))))
+		r.Handle("/screenshots/*", http.StripPrefix("/screenshots/", http.FileServer(http.Dir("/data/screenshots"))))
 	})
 }
 

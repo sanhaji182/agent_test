@@ -10,13 +10,15 @@ import (
 )
 
 type Notification struct {
-	ID         string    `json:"id"`
-	RunID      string    `json:"run_id"`
-	ScheduleID string    `json:"schedule_id,omitempty"`
-	Type       string    `json:"type"` // "failure", "flake", "degradation"
-	Message    string    `json:"message"`
-	Delivered  bool      `json:"delivered"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID           string    `json:"id"`
+	RunID        string    `json:"run_id"`
+	ScheduleID   string    `json:"schedule_id,omitempty"`
+	Type         string    `json:"type"` // "failure", "flake", "degradation"
+	Message      string    `json:"message"`
+	Delivered    bool      `json:"delivered"`
+	Acknowledged bool      `json:"acknowledged,omitempty"` // alert sudah dibaca/di-ack oleh user
+	Dismissed    bool      `json:"dismissed,omitempty"`    // alert dibuang dari daftar aktif
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type Store struct {
@@ -41,6 +43,46 @@ func (s *Store) List() []Notification {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return append([]Notification{}, s.items...)
+}
+
+// find locates an item by ID and applies fn to it. Returns false when missing.
+func (s *Store) find(id string, fn func(*Notification)) bool {
+	for i := range s.items {
+		if s.items[i].ID == id {
+			fn(&s.items[i])
+			return true
+		}
+	}
+	return false
+}
+
+// Acknowledge menandai alert sebagai sudah dibaca/di-ack oleh user.
+func (s *Store) Acknowledge(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.find(id, func(n *Notification) { n.Acknowledged = true })
+}
+
+// Dismiss menyembunyikan alert dari daftar aktif.
+func (s *Store) Dismiss(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.find(id, func(n *Notification) { n.Dismissed = true })
+}
+
+// MarkAllRead menandai semua alert sebagai acknowledged. Mengembalikan jumlah
+// alert yang baru saja ditandai (belum acknowledged sebelumnya).
+func (s *Store) MarkAllRead() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	count := 0
+	for i := range s.items {
+		if !s.items[i].Acknowledged {
+			s.items[i].Acknowledged = true
+			count++
+		}
+	}
+	return count
 }
 
 func (s *Store) ByRun(runID string) []Notification {
@@ -86,9 +128,9 @@ func DeliverSlack(webhookURL, runID, status, message string, passed, failed, tot
 	payload := map[string]interface{}{
 		"attachments": []map[string]interface{}{
 			{
-				"color":  color,
-				"title":  fmt.Sprintf("%s Test Run %s", emoji, status),
-				"text":   message,
+				"color": color,
+				"title": fmt.Sprintf("%s Test Run %s", emoji, status),
+				"text":  message,
 				"fields": []map[string]interface{}{
 					{"title": "Run ID", "value": runID, "short": true},
 					{"title": "Results", "value": fmt.Sprintf("%d passed / %d failed / %d total", passed, failed, total), "short": true},

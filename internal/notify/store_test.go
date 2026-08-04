@@ -127,3 +127,45 @@ func TestTriggerFailure_NoWebhookStillRecords(t *testing.T) {
 		t.Fatal("no webhook means not delivered")
 	}
 }
+
+func TestStore_AcknowledgeDismissMarkAllRead(t *testing.T) {
+	s := NewStore()
+	a := s.Add(Notification{RunID: "r1", Type: "failure", Message: "a"})
+	b := s.Add(Notification{RunID: "r1", Type: "flake", Message: "b"})
+	c := s.Add(Notification{RunID: "r2", Type: "degradation", Message: "c"})
+
+	// Acknowledge satu item.
+	if !s.Acknowledge(a.ID) {
+		t.Fatal("Acknowledge should return true for existing id")
+	}
+	if s.Acknowledge("missing") {
+		t.Fatal("Acknowledge should return false for unknown id")
+	}
+
+	// Dismiss satu item (belum acknowledged).
+	if !s.Dismiss(b.ID) {
+		t.Fatal("Dismiss should return true for existing id")
+	}
+
+	// MarkAllRead menandai semua yang belum acknowledged (b dan c).
+	if n := s.MarkAllRead(); n != 2 {
+		t.Fatalf("expected 2 newly read, got %d", n)
+	}
+	if n := s.MarkAllRead(); n != 0 {
+		t.Fatalf("expected 0 newly read on second pass, got %d", n)
+	}
+
+	byID := map[string]Notification{}
+	for _, n := range s.List() {
+		byID[n.ID] = n
+	}
+	if !byID[a.ID].Acknowledged || byID[a.ID].Dismissed {
+		t.Errorf("a: expected acknowledged only, got %+v", byID[a.ID])
+	}
+	if !byID[b.ID].Acknowledged || !byID[b.ID].Dismissed {
+		t.Errorf("b: expected acknowledged+dismissed, got %+v", byID[b.ID])
+	}
+	if !byID[c.ID].Acknowledged || byID[c.ID].Dismissed {
+		t.Errorf("c: expected acknowledged only, got %+v", byID[c.ID])
+	}
+}
