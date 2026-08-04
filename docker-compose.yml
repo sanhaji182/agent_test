@@ -15,14 +15,14 @@ services:
       STEEL_API_KEY: "${STEEL_API_KEY:-}"
       PLAYWRIGHT_DOWNLOAD_HOST: "https://cdn.npmmirror.com/binaries/playwright"
       PLAYWRIGHT_NODEJS_PATH: "/usr/bin/node"
-      BROWSER_ALLOWED_HOSTS: "localhost,127.0.0.1,host.docker.internal"
+      BROWSER_ALLOWED_HOSTS: "localhost,127.0.0.1,host.docker.internal,asisten.digital,*.asisten.digital"
       LANGGRAPH_URL: "http://langgraph-sidecar:8000"
       API_KEY: "${API_KEY:-}"
       LLM_MODEL: "${LLM_MODEL:-claude-sonnet-4-5}"
       LLM_PROVIDER: "${LLM_PROVIDER:-anthropic}"
       LLM_API_KEY: "${LLM_API_KEY:-}"
       LLM_BASE_URL: "${LLM_BASE_URL:-}"
-      MAX_FIX_ATTEMPTS: "3"
+      MAX_FIX_ATTEMPTS: "1"
       SCREENSHOTS_PATH: "/data/screenshots"
       REPORTS_PATH: "/data/reports"
       TRACING_ENABLED: "true"
@@ -35,9 +35,6 @@ services:
         condition: service_healthy
     volumes:
       - app_data:/data
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
