@@ -3,7 +3,7 @@
 -- Up
 CREATE TABLE IF NOT EXISTS run_events (
     id          BIGSERIAL PRIMARY KEY,
-    run_id      VARCHAR(32)  NOT NULL,
+    run_id      UUID         NOT NULL REFERENCES test_runs(id) ON DELETE CASCADE,
     event_type  VARCHAR(64)  NOT NULL,
     phase       VARCHAR(64)  NOT NULL DEFAULT '',
     message     TEXT         NOT NULL DEFAULT '',
