@@ -29,11 +29,11 @@ func main() {
 
 	// Initialize distributed tracing
 	tracingShutdown, err := tracing.Init(ctx, tracing.Config{
-		Enabled:           cfg.TracingEnabled,
-		ExporterEndpoint:  cfg.TracingEndpoint,
-		ServiceName:       "gotest-agent",
-		ServiceVersion:    cfg.ServiceVersion,
-		Environment:       cfg.AppEnv,
+		Enabled:          cfg.TracingEnabled,
+		ExporterEndpoint: cfg.TracingEndpoint,
+		ServiceName:      "gotest-agent",
+		ServiceVersion:   cfg.ServiceVersion,
+		Environment:      cfg.AppEnv,
 	})
 	if err != nil {
 		slog.Warn("failed to initialize tracing", "error", err)
@@ -62,6 +62,14 @@ func main() {
 	}
 
 	srv := api.NewServer(cfg, store, settingsStore)
+
+	// Reap runs left in-flight by a previous instance. After a restart no
+	// goroutine owns them, so they would otherwise stay "running" forever.
+	if n, err := srv.ReapStaleRuns(ctx); err != nil {
+		slog.Warn("reap stale runs failed", "error", err)
+	} else if n > 0 {
+		slog.Info("reaped stale in-flight runs from previous instance", "count", n)
+	}
 
 	// Optional durable queue (QUEUE_ENABLED=true): enqueue runs to Redis/Asynq
 	// and execute them via a worker in this process. Default remains in-process

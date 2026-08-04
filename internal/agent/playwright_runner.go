@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -99,6 +100,11 @@ type BrowserAction struct {
 }
 
 func (r *PlaywrightRunner) Run(ctx context.Context, testFiles []TestFile, projectURL string) (*RunResult, error) {
+	// Ensure the screenshot directory exists so failure/step screenshots can be
+	// written (Playwright errors with "no such file or directory" otherwise).
+	if r.ScreenshotDir != "" {
+		_ = os.MkdirAll(r.ScreenshotDir, 0o755)
+	}
 	// Install Playwright once per process lifetime (AUDIT P-01)
 	playwrightInstallOnce.Do(func() {
 		playwrightInstallErr = playwright.Install()
@@ -131,6 +137,20 @@ func (r *PlaywrightRunner) Run(ctx context.Context, testFiles []TestFile, projec
 		return nil, fmt.Errorf("could not launch %s browser: %w", r.BrowserType, err)
 	}
 	defer browser.Close()
+
+	// Watchdog: if the run context is cancelled or times out, force-close the
+	// browser so any in-flight (blocking) Playwright operation unblocks and Run
+	// returns promptly. Without this, a hung page operation would keep the run
+	// stuck in "running" forever, ignoring both cancel requests and the timeout.
+	runDone := make(chan struct{})
+	defer close(runDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = browser.Close()
+		case <-runDone:
+		}
+	}()
 
 	// Determine viewport dimensions
 	vpWidth, vpHeight := 1280, 720
@@ -209,21 +229,24 @@ func (r *PlaywrightRunner) runSequential(ctx context.Context, page playwright.Pa
 				}
 			}
 
-			// Screenshot on failure for diagnostics
-			if err != nil && r.ScreenshotDir != "" {
-				ssName := fmt.Sprintf("fail_%s_%d_%d.png", tf.Name, i, time.Now().UnixMilli())
-				ssPath := filepath.Join(r.ScreenshotDir, ssName)
-				if ss, ssErr := page.Screenshot(playwright.PageScreenshotOptions{Path: playwright.String(ssPath)}); ssErr == nil && len(ss) > 0 {
-					failures = append(failures, Failure{
-						Test:       fmt.Sprintf("%s:action_%d", tf.Name, i),
-						Message:    err.Error(),
-						Screenshot: "/screenshots/" + ssName,
-						DurationMs: time.Since(actionStart).Milliseconds(),
-					})
-				}
-			}
-
+			// Record every failure (with an optional screenshot) so the run result
+			// carries actionable detail and the fix loop has real input. Previously
+			// failures were only captured when a screenshot succeeded, which left
+			// run_result.failures empty (null) despite a non-zero failed count.
 			if err != nil {
+				failure := Failure{
+					Test:       fmt.Sprintf("%s:action_%d", tf.Name, i),
+					Message:    err.Error(),
+					DurationMs: time.Since(actionStart).Milliseconds(),
+				}
+				if r.ScreenshotDir != "" {
+					ssName := fmt.Sprintf("fail_%s_%d_%d.png", tf.Name, i, time.Now().UnixMilli())
+					ssPath := filepath.Join(r.ScreenshotDir, ssName)
+					if ss, ssErr := page.Screenshot(playwright.PageScreenshotOptions{Path: playwright.String(ssPath)}); ssErr == nil && len(ss) > 0 {
+						failure.Screenshot = "/screenshots/" + ssName
+					}
+				}
+				failures = append(failures, failure)
 				failedActions++
 			} else {
 				successfulActions++
@@ -343,10 +366,11 @@ func (r *PlaywrightRunner) executeAction(ctx context.Context, page playwright.Pa
 		if !IsSafeBrowserURL(a.URL, r.AllowedHosts...) {
 			return fmt.Errorf("browser egress blocked: unsafe URL %q", a.URL)
 		}
-		_, err = page.Goto(a.URL)
+		_, err = page.Goto(a.URL, playwright.PageGotoOptions{Timeout: playwright.Float(60000)})
 		if err == nil {
 			page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
-				State: playwright.LoadStateNetworkidle,
+				State:   playwright.LoadStateNetworkidle,
+				Timeout: playwright.Float(15000),
 			})
 		}
 	case "fill":
@@ -481,7 +505,7 @@ func (r *PlaywrightRunner) executeAction(ctx context.Context, page playwright.Pa
 					if !IsSafeBrowserURL(a.URL, r.AllowedHosts...) {
 						return fmt.Errorf("browser egress blocked: unsafe URL %q", a.URL)
 					}
-					_, err = page.Goto(a.URL)
+					_, err = page.Goto(a.URL, playwright.PageGotoOptions{Timeout: playwright.Float(60000)})
 				case "fill":
 					err = page.Locator(a.Selector).Fill(a.Value, playwright.LocatorFillOptions{Timeout: playwright.Float(3000)})
 				case "click":

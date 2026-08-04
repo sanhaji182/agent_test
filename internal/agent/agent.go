@@ -4,6 +4,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -75,6 +76,10 @@ type RunResult struct {
 	DurationMs int64     `json:"duration_ms,omitempty"` // Total execution time
 	Healed     int       `json:"healed,omitempty"`      // Actions recovered by self-healing
 	Retried    int       `json:"retried,omitempty"`     // Actions recovered by simple retry
+	// Screenshots adalah daftar URL screenshot yang diambil selama eksekusi
+	// (satu per step). Di-set oleh runner; dipakai agent untuk mengisi
+	// run.Screenshots dan mencatat visual artifacts.
+	Screenshots []string `json:"screenshots,omitempty"`
 }
 
 // Failure menyimpan detail test yang gagal
@@ -349,6 +354,10 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 		// Check for cancellation before each execution cycle
 		select {
 		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				a.emit(run.ID, "run_failed", "running", "execution timed out", nil)
+				return a.fail(run, fmt.Errorf("execution timed out"))
+			}
 			return a.cancel(run)
 		default:
 		}
@@ -370,6 +379,11 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 		}
 
 		if err != nil {
+			// Execution deadline exceeded → timeout, report as a failure (not a user cancel)
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				a.emit(run.ID, "run_failed", "running", "execution timed out", nil)
+				return a.fail(run, fmt.Errorf("execution timed out: exceeded maximum run duration"))
+			}
 			// Context cancelled mid-execution → user-initiated cancel, not a failure
 			if ctx.Err() != nil {
 				return a.cancel(run)
@@ -378,6 +392,34 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 			return a.fail(run, fmt.Errorf("run: %w", err))
 		}
 		run.RunResult = result
+
+		// Register per-step screenshots as recordings + visual artifacts so runs
+		// always have visual evidence, even when every test passes. Set on the
+		// run BEFORE the save below so the screenshots list is persisted.
+		for i, shotURL := range result.Screenshots {
+			if shotURL == "" {
+				continue
+			}
+			run.Screenshots = append(run.Screenshots, shotURL)
+			if a.exec != nil {
+				label := fmt.Sprintf("step-%d", i)
+				a.exec.RecordScreenshot(run.ID, "", label, shotURL)
+			}
+		}
+
+		// Bila runner tidak menghasilkan video asli (mis. Steel Browser via
+		// CDP tidak merekam video), compile screenshot per-step menjadi video
+		// slideshow supaya tab Video di UI tetap terisi. Set sebelum save agar
+		// video_url ikut terpersist.
+		if result.VideoPath == "" && len(result.Screenshots) > 0 {
+			if vURL, dur := BuildSlideshowVideo(run.ID, "/data/screenshots", "/data/videos", result.Screenshots); vURL != "" {
+				result.VideoPath = vURL
+				run.VideoURL = vURL
+				run.VideoStatus = "ready"
+				run.VideoDuration = dur
+			}
+		}
+
 		a.save(run)
 
 		// Populate video fields jika runner menghasilkan video
@@ -426,8 +468,13 @@ func (a *Agent) executeSimple(ctx context.Context, run *TestRun) error {
 
 		fixed, err := a.llm.SuggestFixes(ctx, result.Failures, run.TestFiles)
 		if err != nil {
-			a.emit(run.ID, "run_failed", "fixing", err.Error(), nil)
-			return a.fail(run, fmt.Errorf("fix: %w", err))
+			// The fix mechanism itself failed (LLM unavailable, out of credits,
+			// or returned an unparseable response). This is NOT a test failure —
+			// don't discard the actual results. Stop fixing and report what we
+			// have, consistent with the max-fix-attempts path below (run → done).
+			a.emit(run.ID, "fix_attempt_failed", "fixing", fmt.Sprintf("Auto-fix unavailable, reporting current results: %v", err), nil)
+			slog.Warn("suggest fixes failed; reporting current results without fixing", "run_id", run.ID, "error", err)
+			break
 		}
 		run.TestFiles = fixed
 		a.emit(run.ID, "fix_attempt_completed", "fixing", "Fix applied, re-running", nil)

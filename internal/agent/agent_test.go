@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -64,6 +65,75 @@ func TestAgentExecute_CancellationStopsRun(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("Execute did not return after context cancellation — run not actually stopped")
+	}
+}
+
+func TestAgentExecute_TimeoutFailsRun(t *testing.T) {
+	a := agent.New(&mockLLM{}, &blockingRunner{}, 3)
+	run := &agent.TestRun{ID: "test-timeout", ProjectPath: "/tmp/p", State: agent.StateIdle}
+
+	// A deadline (not a manual cancel) simulates the whole-run watchdog timing
+	// out. The run must end up FAILED (a timeout), not CANCELLED (user action).
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	err := a.Execute(ctx, run)
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if run.State != agent.StateFailed {
+		t.Fatalf("expected state failed on timeout, got %s", run.State)
+	}
+}
+
+// errFixLLM behaves like mockLLM but its SuggestFixes always fails, simulating
+// an unavailable/misconfigured LLM (e.g. out of credits) during the fix step.
+type errFixLLM struct{ *mockLLM }
+
+func (errFixLLM) SuggestFixes(_ context.Context, _ []agent.Failure, _ []agent.TestFile) ([]agent.TestFile, error) {
+	return nil, errors.New("openai-compatible: status 402: insufficient balance")
+}
+
+// alwaysFailRunner always reports one failing action so the fix loop triggers.
+type alwaysFailRunner struct{}
+
+func (alwaysFailRunner) Run(_ context.Context, _ []agent.TestFile, _ string) (*agent.RunResult, error) {
+	return &agent.RunResult{Passed: 1, Failed: 1, Total: 2, Failures: []agent.Failure{{Test: "flaky", Message: "boom"}}}, nil
+}
+
+// TestAgentExecute_FixErrorReportsResultsNotFailure guards the behavior that an
+// auto-fix failure (LLM unavailable / out of credits / unparseable response) must
+// NOT discard the actual test results. The run should finish as done with its real
+// pass/fail counts, not be hard-failed with a misleading "fix: ..." error.
+func TestAgentExecute_FixErrorReportsResultsNotFailure(t *testing.T) {
+	a := agent.New(errFixLLM{&mockLLM{}}, alwaysFailRunner{}, 3)
+	run := &agent.TestRun{ID: "test-fix-err", ProjectPath: "/tmp/p", State: agent.StateIdle}
+
+	err := a.Execute(context.Background(), run)
+	if err != nil {
+		t.Fatalf("fix error must not fail the run, got: %v", err)
+	}
+	if run.State != agent.StateDone {
+		t.Fatalf("expected state done (results reported), got %s", run.State)
+	}
+	if run.RunResult == nil || run.RunResult.Passed != 1 || run.RunResult.Failed != 1 {
+		t.Fatalf("expected results preserved (1 passed / 1 failed), got %+v", run.RunResult)
+	}
+}
+
+func TestNewFallbackLLM_ProviderSelection(t *testing.T) {
+	if llm := agent.NewFallbackLLM(); llm != nil {
+		t.Fatal("no providers should yield nil")
+	}
+	if llm := agent.NewFallbackLLM(agent.ProviderConfig{Provider: "bogus"}); llm != nil {
+		t.Fatal("unknown-only providers should yield nil")
+	}
+	// Unknown primary is skipped; a valid fallback still produces a usable LLM.
+	if llm := agent.NewFallbackLLM(
+		agent.ProviderConfig{Provider: "bogus"},
+		agent.ProviderConfig{Provider: "anthropic", APIKey: "k", Model: "m"},
+	); llm == nil {
+		t.Fatal("a valid fallback provider should yield a non-nil LLM")
 	}
 }
 
