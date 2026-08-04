@@ -9,48 +9,29 @@ import { Badge } from "@/components/ui/badge";
 import { TableContainer, Th, Td, Tr } from "@/components/ui/table";
 import { Layers, Search, Plus, PlayCircle, CalendarClock, CheckCircle2 } from "lucide-react";
 
+import { getSuites, createSuite, type Suite } from "@/lib/api";
+
 export default function SuitesPage() {
-  const [suites, setSuites] = useState<any[]>([]);
+  const [suites, setSuites] = useState<Suite[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [showModal, setShowModal] = useState(false);
 
+  const loadSuites = () => {
+    setLoading(true);
+    getSuites()
+      .then(setSuites)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  };
+
   useEffect(() => {
-    // TODO: Fetch real suites data
-    setTimeout(() => {
-      setSuites([
-        { 
-          id: "suite_1", 
-          name: "E2E Checkout Flow", 
-          description: "Complete checkout process tests",
-          testCount: 12,
-          status: "active",
-          lastRun: "2026-07-31T14:00:00Z"
-        },
-        { 
-          id: "suite_2", 
-          name: "User Authentication", 
-          description: "Login, logout, password reset flows",
-          testCount: 8,
-          status: "active",
-          lastRun: "2026-07-31T12:00:00Z"
-        },
-        { 
-          id: "suite_3", 
-          name: "API Integration Tests", 
-          description: "Backend API endpoint validation",
-          testCount: 24,
-          status: "archived",
-          lastRun: "2026-07-25T10:00:00Z"
-        },
-      ]);
-      setLoading(false);
-    }, 500);
+    loadSuites();
   }, []);
 
-  const filteredSuites = suites.filter(s => 
+  const filteredSuites = suites.filter(s =>
     s.name.toLowerCase().includes(query.toLowerCase()) ||
-    s.description?.toLowerCase().includes(query.toLowerCase())
+    (s.tags || []).some(t => t.toLowerCase().includes(query.toLowerCase()))
   );
 
   if (loading) return <LoadingSkeleton rows={6} />;
@@ -114,11 +95,11 @@ export default function SuitesPage() {
                     <span>{suite.name}</span>
                   </Td>
                   <Td>
-                    <StatusBadge status={suite.status} />
+                    <StatusBadge status={suite.pinned ? "active" : "inactive"} />
                   </Td>
-                  <Td className="text-sm text-[var(--text-muted)]">{suite.testCount} tests</Td>
+                  <Td className="text-sm text-[var(--text-muted)]">{suite.run_ids?.length || 0} tests</Td>
                   <Td className="text-sm text-[var(--text-muted)] whitespace-nowrap">
-                    {formatDate(suite.lastRun)}
+                    {formatDate(suite.created_at)}
                   </Td>
                   <Td align="right" className="space-x-2">
                     <Link href={`/runs?suite=${suite.id}`}>
@@ -140,7 +121,13 @@ export default function SuitesPage() {
 
       {/* Create Suite Modal */}
       {showModal && (
-        <SuiteModal onClose={() => setShowModal(false)} />
+        <SuiteModal
+          onClose={() => setShowModal(false)}
+          onCreated={() => {
+            setShowModal(false);
+            loadSuites();
+          }}
+        />
       )}
     </div>
   );
@@ -168,17 +155,30 @@ function StatusBadge({ status }: { status: string }) {
   }
 }
 
-function SuiteModal({ onClose }: { onClose: () => void }) {
+function SuiteModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    
-    // TODO: Implement suite creation
-    alert("Suite created!");
-    onClose();
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      await createSuite({
+        name: name.trim(),
+        tags: description.trim() ? [description.trim()] : [],
+      });
+      onCreated();
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Failed to create suite");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -215,8 +215,13 @@ function SuiteModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="flex justify-end gap-3 pt-4 border-t">
+            {error && (
+              <p className="mr-auto text-xs text-red-600 self-center">{error}</p>
+            )}
             <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={!name.trim()}>Create Suite</Button>
+            <Button type="submit" disabled={!name.trim() || submitting}>
+              {submitting ? "Creating…" : "Create Suite"}
+            </Button>
           </div>
         </form>
       </div>

@@ -15,7 +15,7 @@ import {
 } from "@/lib/api";
 import {
   Settings, Terminal, Globe, FileText, Save, CheckCircle2,
-  AlertTriangle, RefreshCw, Loader2, XCircle,
+  AlertTriangle, RefreshCw, Loader2, XCircle, Info,
 } from "lucide-react";
 
 // Provider yang memakai base URL custom (OpenAI-compatible endpoint).
@@ -36,6 +36,16 @@ export default function SettingsPage() {
   const [models, setModels] = useState<string[]>([]);
   const [temperature, setTemperature] = useState("0.2");
   const [maxTokens, setMaxTokens] = useState("4096");
+
+  // --- Fallback provider state (failover saat provider utama gagal) ---
+  const [fbProvider, setFbProvider] = useState("");
+  const [fbBaseUrl, setFbBaseUrl] = useState("");
+  const [fbApiKey, setFbApiKey] = useState("");
+  const [fbOriginalApiKey, setFbOriginalApiKey] = useState("");
+  const [fbModel, setFbModel] = useState("");
+  const [fbTesting, setFbTesting] = useState(false);
+  const [fbTestResult, setFbTestResult] = useState<{ success: boolean; error?: string } | null>(null);
+  const [fbSaveState, setFbSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   // --- async state ---
   const [loadingSettings, setLoadingSettings] = useState(true);
@@ -62,6 +72,13 @@ export default function SettingsPage() {
         if (settings.llm_model) setModel(settings.llm_model);
         if (settings.llm_temperature) setTemperature(settings.llm_temperature);
         if (settings.llm_max_tokens) setMaxTokens(settings.llm_max_tokens);
+        if (settings.llm_fallback_provider) setFbProvider(settings.llm_fallback_provider);
+        if (settings.llm_fallback_base_url) setFbBaseUrl(settings.llm_fallback_base_url);
+        if (settings.llm_fallback_api_key) {
+          setFbApiKey(settings.llm_fallback_api_key);
+          setFbOriginalApiKey(settings.llm_fallback_api_key);
+        }
+        if (settings.llm_fallback_model) setFbModel(settings.llm_fallback_model);
       } finally {
         setLoadingSettings(false);
       }
@@ -92,12 +109,26 @@ export default function SettingsPage() {
   const handleTest = async () => {
     setTesting(true);
     setTestResult(null);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
     try {
-      const res = await testAIProvider({ provider, model, api_key: apiKey, base_url: baseUrl });
+      const res = await testAIProvider({
+        provider,
+        model,
+        base_url: baseUrl,
+        // The saved key is shown masked; send empty to mean "use the saved key".
+        api_key: apiKey === originalApiKey ? "" : apiKey,
+      }, controller.signal);
       setTestResult(res);
     } catch (e) {
-      setTestResult({ success: false, error: e instanceof Error ? e.message : "connection failed" });
+      setTestResult({
+        success: false,
+        error: controller.signal.aborted
+          ? "Koneksi timeout (30 detik) — provider tidak merespons."
+          : (e instanceof Error ? e.message : "connection failed"),
+      });
     } finally {
+      clearTimeout(timeoutId);
       setTesting(false);
     }
   };
@@ -123,6 +154,55 @@ export default function SettingsPage() {
       setTimeout(() => setSaveState("idle"), 2500);
     } catch {
       setSaveState("error");
+    }
+  };
+
+  const isFbCustomBase = CUSTOM_BASE_PROVIDERS.has(fbProvider.toLowerCase());
+
+  const handleTestFallback = async () => {
+    setFbTesting(true);
+    setFbTestResult(null);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    try {
+      const res = await testAIProvider({
+        provider: fbProvider,
+        model: fbModel,
+        base_url: fbBaseUrl,
+        api_key: fbApiKey === fbOriginalApiKey ? "" : fbApiKey,
+      }, controller.signal);
+      setFbTestResult(res);
+    } catch (e) {
+      setFbTestResult({
+        success: false,
+        error: controller.signal.aborted
+          ? "Koneksi timeout (30 detik) — provider tidak merespons."
+          : (e instanceof Error ? e.message : "connection failed"),
+      });
+    } finally {
+      clearTimeout(timeoutId);
+      setFbTesting(false);
+    }
+  };
+
+  const handleSaveFallback = async () => {
+    setFbSaveState("saving");
+    try {
+      const payload: Record<string, string> = {
+        llm_fallback_provider: fbProvider,
+        llm_fallback_model: fbModel,
+        llm_fallback_base_url: fbBaseUrl,
+      };
+      // Sama seperti key utama: hanya kirim jika diubah (server mengirim nilai masked).
+      if (fbApiKey && fbApiKey !== fbOriginalApiKey) {
+        payload.llm_fallback_api_key = fbApiKey;
+      }
+      await saveSettings(payload);
+      setFbOriginalApiKey(fbApiKey);
+      setFbSaveState("saved");
+      setTimeout(() => setFbSaveState("idle"), 2500);
+    } catch {
+      setFbSaveState("error");
     }
   };
 
@@ -157,6 +237,35 @@ export default function SettingsPage() {
       </div>
 
       {/* ── AI Provider Tab ── */}
+      {activeTab === "ai" && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <div className="flex gap-3">
+            <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+            <div className="text-sm space-y-2">
+              <p className="font-semibold text-blue-900">Bagaimana aplikasi memilih provider LLM?</p>
+              <p className="text-blue-800">
+                Saat run test, aplikasi memakai provider berdasarkan prioritas berikut (yang lebih tinggi menimpa yang lebih rendah):
+              </p>
+              <ol className="list-decimal list-inside space-y-1 text-blue-800">
+                <li>
+                  <span className="font-medium">Active Profile</span> — jika Anda mengaktifkan profil di{" "}
+                  <span className="font-medium">Provider Profiles</span>, profil itu yang dipakai.
+                </li>
+                <li>
+                  <span className="font-medium">LLM Provider Configuration</span> — konfigurasi default di bawah (dipakai jika tidak ada profil aktif).
+                </li>
+                <li>
+                  <span className="font-medium">Environment variables</span> — fallback paling rendah.
+                </li>
+              </ol>
+              <p className="text-blue-800">
+                <span className="font-medium">Fallback Provider</span> dipakai sebagai cadangan otomatis bila provider utama yang terpilih gagal (mis. saldo habis atau rate-limit).
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeTab === "ai" && (
         <Section title="LLM Provider Configuration">
           {loadingSettings ? (
@@ -241,7 +350,27 @@ export default function SettingsPage() {
                   ))}
                 </datalist>
                 {models.length > 0 && (
-                  <p className="text-xs text-green-600 mt-1">{models.length} model tersedia dari provider.</p>
+                  <div className="mt-2">
+                    <p className="text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                      {models.length} model tersedia — klik untuk memilih:
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                      {models.map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setModel(m)}
+                          className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${
+                            model === m
+                              ? "bg-blue-50 border-blue-300 text-blue-700 font-medium"
+                              : "bg-white border-[var(--border-default)] text-[var(--text-secondary)] hover:border-blue-300 hover:text-blue-600"
+                          }`}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -290,6 +419,125 @@ export default function SettingsPage() {
                   </span>
                 )}
               </div>
+            </div>
+          )}
+        </Section>
+      )}
+
+      {/* ── Fallback Provider (failover) ── */}
+      {activeTab === "ai" && (
+        <Section title="Fallback Provider (Failover)">
+          {loadingSettings ? (
+            <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] py-8 justify-center">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading settings…
+            </div>
+          ) : (
+            <div className="space-y-5">
+              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
+                <p className="text-xs text-blue-800 leading-relaxed">
+                  Opsional. Jika provider utama gagal (mis. saldo habis atau rate-limit), sistem otomatis
+                  beralih ke provider cadangan ini. Pilih <span className="font-medium">(none)</span> untuk menonaktifkan fallback.
+                </p>
+              </div>
+
+              {/* Fallback Provider */}
+              <div>
+                <label className="block text-sm font-medium text-[var(--text-primary)] mb-1.5">Provider</label>
+                <select
+                  className="w-full px-3 py-2 bg-white border border-[var(--border-default)] rounded-md text-sm focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
+                  value={fbProvider}
+                  onChange={(e) => { setFbProvider(e.target.value); setFbTestResult(null); }}
+                >
+                  <option value="">(none — fallback disabled)</option>
+                  {providers.length === 0 && fbProvider && <option value={fbProvider}>{fbProvider}</option>}
+                  {providers.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {fbProvider && (
+                <>
+                  {/* Base URL */}
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--text-primary)] mb-1.5">
+                      Base URL {isFbCustomBase && <span className="text-red-500">*</span>}
+                    </label>
+                    <Input
+                      placeholder={isFbCustomBase ? "https://your-proxy.example.com/v1" : "https://api.openai.com/v1 (default)"}
+                      value={fbBaseUrl}
+                      onChange={(e) => setFbBaseUrl(e.target.value)}
+                      helperText={isFbCustomBase
+                        ? "Endpoint OpenAI-compatible. Harus berakhir sebelum /chat/completions (cth: .../v1)."
+                        : "Kosongkan untuk memakai endpoint default provider."}
+                    />
+                  </div>
+
+                  {/* API Key */}
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--text-primary)] mb-1.5">
+                      API Key {fbProvider !== "local" && fbProvider !== "ollama" && <span className="text-red-500">*</span>}
+                    </label>
+                    <Input
+                      type="password"
+                      placeholder="sk-..."
+                      value={fbApiKey}
+                      onChange={(e) => setFbApiKey(e.target.value)}
+                      helperText="Disimpan terenkripsi. Nilai yang tersimpan ditampilkan tersamar (masked)."
+                    />
+                  </div>
+
+                  {/* Model */}
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--text-primary)] mb-1.5">Model</label>
+                    <Input
+                      placeholder="cth: claude-sonnet-4.6, gpt-5.5"
+                      value={fbModel}
+                      onChange={(e) => setFbModel(e.target.value)}
+                      list="fb-llm-models"
+                    />
+                    <datalist id="fb-llm-models">
+                      {(providers.find((p) => p.id === fbProvider)?.models || []).map((m) => (
+                        <option key={m} value={m} />
+                      ))}
+                    </datalist>
+                  </div>
+
+                  {/* Test result */}
+                  {fbTestResult && (
+                    <div className={`flex items-start gap-2 p-3 rounded-lg border text-sm ${
+                      fbTestResult.success
+                        ? "bg-green-50 border-green-200 text-green-800"
+                        : "bg-red-50 border-red-200 text-red-800"
+                    }`}>
+                      {fbTestResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" /> : <XCircle className="w-4 h-4 shrink-0 mt-0.5" />}
+                      <span>{fbTestResult.success ? "Koneksi fallback berhasil." : `Gagal: ${fbTestResult.error}`}</span>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex flex-wrap items-center gap-3 pt-2">
+                    <Button variant="secondary" onClick={handleTestFallback} disabled={fbTesting || !fbModel}>
+                      {fbTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                      <span className="ml-1">{fbTesting ? "Testing…" : "Test Connection"}</span>
+                    </Button>
+                    <Button onClick={handleSaveFallback} disabled={fbSaveState === "saving"}>
+                      {fbSaveState === "saving" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      <span className="ml-1">{fbSaveState === "saving" ? "Saving…" : "Save Fallback"}</span>
+                    </Button>
+                    {fbSaveState === "saved" && (
+                      <span className="flex items-center gap-1 text-sm text-green-600">
+                        <CheckCircle2 className="w-4 h-4" /> Tersimpan
+                      </span>
+                    )}
+                    {fbSaveState === "error" && (
+                      <span className="flex items-center gap-1 text-sm text-red-600">
+                        <AlertTriangle className="w-4 h-4" /> Gagal menyimpan
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </Section>

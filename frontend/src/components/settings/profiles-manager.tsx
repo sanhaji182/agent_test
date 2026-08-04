@@ -193,7 +193,7 @@ export function ProfilesManager() {
         <div>
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">Provider Profiles</h3>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">
-            Simpan beberapa provider; aktifkan salah satu untuk dipakai run test.
+            Simpan beberapa provider; aktifkan salah satu untuk dipakai run test. Profil yang aktif menimpa LLM Provider Configuration.
           </p>
         </div>
         <Button size="sm" onClick={openAdd}>

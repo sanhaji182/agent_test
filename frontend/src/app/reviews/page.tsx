@@ -2,47 +2,61 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import {
+  getAllReviews,
+  approveReview,
+  rejectReview,
+  getUserLabel,
+  type Review,
+} from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Section, EmptyState, LoadingSkeleton } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
 import { TableContainer, Th, Td, Tr } from "@/components/ui/table";
-import { ClipboardCheck, Search, Check, XCircle, Clock, ArrowRight } from "lucide-react";
+import { ClipboardCheck, Check, XCircle, Clock, ArrowRight } from "lucide-react";
 
 export default function ReviewsPage() {
-  const [reviews, setReviews] = useState<any[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("pending");
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const loadReviews = () => {
+    return getAllReviews()
+      .then((r) => setReviews(r || []))
+      .catch((e) => setError(e.message));
+  };
 
   useEffect(() => {
-    // TODO: Fetch real reviews data
-    setTimeout(() => {
-      setReviews([
-        { 
-          id: "rev_1", 
-          title: "Checkout Flow Improvements", 
-          testCount: 12,
-          status: "pending",
-          createdAt: "2026-07-31T10:00:00Z"
-        },
-        { 
-          id: "rev_2", 
-          title: "API Endpoint Validation", 
-          testCount: 8,
-          status: "approved",
-          createdAt: "2026-07-30T14:30:00Z"
-        },
-        { 
-          id: "rev_3", 
-          title: "Authentication Tests", 
-          testCount: 5,
-          status: "rejected",
-          createdAt: "2026-07-29T09:15:00Z"
-        },
-      ]);
-      setLoading(false);
-    }, 500);
+    loadReviews().finally(() => setLoading(false));
   }, []);
+
+  const handleApprove = async (id: string) => {
+    setBusyId(id);
+    setError(null);
+    try {
+      await approveReview(id, getUserLabel() || "dashboard", "");
+      await loadReviews();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    setBusyId(id);
+    setError(null);
+    try {
+      await rejectReview(id, getUserLabel() || "dashboard", "");
+      await loadReviews();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const filteredReviews = reviews.filter(r => filter === "all" || r.status === filter);
 
@@ -55,6 +69,13 @@ export default function ReviewsPage() {
         <h1 className="text-xl font-semibold tracking-tight mb-1">Test Reviews</h1>
         <p className="text-sm text-[var(--text-muted)] mt-1">Review and approve AI-generated test cases before deployment</p>
       </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="rounded-lg bg-red-50 border border-red-200 p-4">
+          <p className="text-sm text-red-700">{error}</p>
+        </div>
+      )}
 
       {/* Filters - Modern Segment Control */}
       <div className="inline-flex rounded-lg border border-[var(--border-default)] p-0.5 bg-white">
@@ -72,7 +93,7 @@ export default function ReviewsPage() {
                 : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-gray-50"
             }`}
           >
-            {f.label} ({getCount(filteredReviews, f.value)})
+            {f.label} ({getCount(reviews, f.value)})
           </button>
         ))}
       </div>
@@ -80,7 +101,7 @@ export default function ReviewsPage() {
       {/* Reviews List */}
       {filteredReviews.length === 0 ? (
         <Section title="No reviews found">
-          <EmptyState 
+          <EmptyState
             icon={<ClipboardCheck className="w-8 h-8" />}
             title={!filter || filter === "pending" ? "No pending reviews" : `No ${filter} reviews`}
             description={!filter || filter === "pending" ? "All test cases have been reviewed." : "No reviews with this status."}
@@ -91,9 +112,10 @@ export default function ReviewsPage() {
           <table className="w-full text-left">
             <thead className="bg-gray-50 border-b border-[var(--border-default)]">
               <tr>
-                <Th>Title</Th>
-                <Th>Tests</Th>
+                <Th>Review</Th>
+                <Th>Type</Th>
                 <Th>Status</Th>
+                <Th>Reviewer</Th>
                 <Th>Date</Th>
                 <Th align="right">Actions</Th>
               </tr>
@@ -102,23 +124,39 @@ export default function ReviewsPage() {
               {filteredReviews.map((review) => (
                 <Tr key={review.id} hover>
                   <Td className="font-medium">
-                    <span>{review.title}</span>
+                    <span>Run {review.run_id.slice(0, 8)}</span>
                   </Td>
-                  <Td className="text-sm text-[var(--text-muted)]">{review.testCount} tests</Td>
+                  <Td className="text-sm text-[var(--text-muted)]">
+                    {formatType(review.type)}
+                  </Td>
                   <Td>
                     <StatusBadge status={review.status} />
                   </Td>
                   <Td className="text-sm text-[var(--text-muted)] whitespace-nowrap">
-                    {formatDate(review.createdAt)}
+                    {review.reviewer || "-"}
+                  </Td>
+                  <Td className="text-sm text-[var(--text-muted)] whitespace-nowrap">
+                    {formatDate(review.created_at)}
                   </Td>
                   <Td align="right" className="space-x-2">
                     {review.status === "pending" && (
                       <>
-                        <Button variant="secondary" size="sm">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={busyId === review.id}
+                          onClick={() => handleApprove(review.id)}
+                        >
                           <Check className="w-3.5 h-3.5 mr-1" />
                           Approve
                         </Button>
-                        <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={busyId === review.id}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => handleReject(review.id)}
+                        >
                           <XCircle className="w-3.5 h-3.5" />
                           Reject
                         </Button>
@@ -165,8 +203,12 @@ function StatusBadge({ status }: { status: string }) {
   }
 }
 
-function getCount(list: any[], status: string): number {
+function getCount(list: Review[], status: string): number {
   return list.filter(r => r.status === status).length;
+}
+
+function formatType(type: string): string {
+  return type.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
 }
 
 function formatDate(dateStr: string): string {

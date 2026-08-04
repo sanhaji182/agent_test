@@ -1,41 +1,37 @@
 "use client";
 
-import { Sidebar } from "@/components/sidebar";
-import { useState } from "react";
+import { cn } from "@/lib/utils";
 
 interface PageLayoutProps {
   children: React.ReactNode;
   title?: string;
   description?: string;
   action?: React.ReactNode;
+  className?: string;
 }
 
-export function PageLayout({ children, title, description, action }: PageLayoutProps) {
+/**
+ * Standard page shell: a consistent page header (title + description + actions)
+ * followed by the page body. Spacing/padding is provided by the AppShell.
+ */
+export function PageLayout({ children, title, description, action, className }: PageLayoutProps) {
   return (
-    <div className="ml-60 min-h-screen bg-[var(--bg-page)]">
-      {/* Header */}
+    <div className={cn("space-y-6", className)}>
       {(title || action) && (
-        <div className="sticky top-0 z-30 bg-[var(--bg-page)]/80 backdrop-blur-md border-b border-[var(--border-default)]">
-          <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                {title && (
-                  <h1 className="text-xl font-semibold text-[var(--text-primary)]">{title}</h1>
-                )}
-                {description && (
-                  <p className="text-sm text-[var(--text-muted)] mt-1">{description}</p>
-                )}
-              </div>
-              {action && <div>{action}</div>}
-            </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            {title && (
+              <h1 className="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">{title}</h1>
+            )}
+            {description && (
+              <p className="text-sm text-[var(--text-muted)] mt-1.5">{description}</p>
+            )}
           </div>
+          {action && <div className="shrink-0">{action}</div>}
         </div>
       )}
       
-      {/* Content */}
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        {children}
-      </main>
+      <div>{children}</div>
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 export function TableContainer({ children }: { children: React.ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-[var(--border-default)] bg-white">
+    <div className="overflow-hidden rounded-[var(--radius)] border border-[var(--border-default)] bg-white shadow-[var(--shadow-xs)]">
       <div className="overflow-x-auto">{children}</div>
     </div>
   );
@@ -12,7 +12,7 @@ export function TableContainer({ children }: { children: React.ReactNode }) {
 
 export function Th({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "center" | "right" }) {
   return (
-    <th className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] ${align === "right" ? "text-right" : ""}`}>
+    <th className={`px-5 py-3.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] ${align === "right" ? "text-right" : ""}`}>
       {children}
     </th>
   );
@@ -27,9 +27,9 @@ export function Tr({ children, onClick, hover, className }: {
   return (
     <tr 
       className={cn(
-        "border-b border-[var(--border-default)]",
+        "border-b border-[var(--border-default)] last:border-b-0",
         onClick ? "cursor-pointer" : "",
-        hover && !onClick ? "hover:bg-gray-50 transition-colors" : "",
+        hover && !onClick ? "hover:bg-[var(--bg-hover)] transition-colors" : "",
         className
       )}
       onClick={onClick}
@@ -47,7 +47,7 @@ export function Td({ children, className, align = "left", colSpan }: {
 }) {
   return (
     <td 
-      className={`px-4 py-3 text-sm ${className || ""} ${align === "right" ? "text-right" : ""}`}
+      className={`px-5 py-3.5 text-sm text-[var(--text-primary)] ${className || ""} ${align === "right" ? "text-right" : ""}`}
       colSpan={colSpan}
     >
       {children}

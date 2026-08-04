@@ -11,17 +11,20 @@
   /* Backgrounds - Grayscale Base */
   --bg-page: #fafafa;
   --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-subtle: #f3f4f6;
   --bg-elevated: #f8f9fa;
   --bg-hover: #f5f6f7;
   --bg-active: #eef0f2;
   
   /* Text Colors - Semantic */
   --text-primary: #111827;
-  --text-secondary: #6b7280;
+  --text-secondary: #4b5563;
   --text-muted: #9ca3af;
   --text-inverse: #ffffff;
   
   /* Border Colors */
+  --border: #e5e7eb;
   --border-default: #e5e7eb;
   --border-strong: #d1d5db;
   --border-focused: #2563eb;
@@ -30,6 +33,7 @@
   --accent: #2563eb;
   --accent-hover: #1d4ed8;
   --accent-light: #eff6ff;
+  --accent-bg: rgba(37, 99, 235, 0.08);
   --accent-foreground: #ffffff;
   
   /* Status Colors (Use Sparingly) */
@@ -62,9 +66,9 @@
   --font-caption: 12px / 18px;        /* Captions, timestamps */
   --font-mono: 13px / 20px;           /* Code, IDs */
   
-  /* Font families */
-  --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: var(--font-geist-mono), 'SF Mono', 'Fira Code', monospace;
+  /* Font families (system fonts — no external fetch needed at build time) */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
   
   /* ========== SHADOW SYSTEM ========== */
   
@@ -76,9 +80,10 @@
   --shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.12);
   
   /* Radius - Only 2 options */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
 }
 
 .dark {
@@ -86,22 +91,26 @@
   
   --bg-page: #0a0a0a;
   --bg-surface: #0f0f0f;
+  --bg-card: #111111;
+  --bg-subtle: #1a1a1a;
   --bg-elevated: #171717;
   --bg-hover: #1c1c1c;
   --bg-active: #232323;
   
   --text-primary: #f5f5f5;
   --text-secondary: #a3a3a3;
-  --text-muted: #717171;
+  --text-muted: #6b6b6b;
   --text-inverse: #0f0f0f;
   
+  --border: #262626;
   --border-default: #262626;
   --border-strong: #404040;
   --border-focused: #60a5fa;
   
   --accent: #3b82f6;
   --accent-hover: #2563eb;
-  --accent-light: rgba(59, 130, 246, 0.1);
+  --accent-light: rgba(59, 130, 246, 0.12);
+  --accent-bg: rgba(59, 130, 246, 0.15);
   --accent-foreground: #ffffff;
   
   --success: #10b981;

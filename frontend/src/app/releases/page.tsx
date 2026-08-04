@@ -8,35 +8,17 @@ import { Badge } from "@/components/ui/badge";
 import { TableContainer, Th, Td, Tr } from "@/components/ui/table";
 import { Tag, Clock, CheckCircle2, AlertTriangle, ArrowUpRight } from "lucide-react";
 
+import { getReleases, type Release } from "@/lib/api";
+
 export default function ReleasesPage() {
-  const [releases, setReleases] = useState<any[]>([]);
+  const [releases, setReleases] = useState<Release[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // TODO: Fetch real releases data
-    setTimeout(() => {
-      setReleases([
-        { 
-          id: "rel_1", 
-          name: "v2.5.0", 
-          description: "Enhanced AI test generation with confidence scoring",
-          status: "current",
-          releaseDate: "2026-07-31T12:00:00Z",
-          testsAdded: 45,
-          testsRemoved: 8,
-        },
-        { 
-          id: "rel_2", 
-          name: "v2.4.0", 
-          description: "Multi-framework export support",
-          status: "previous",
-          releaseDate: "2026-07-15T10:00:00Z",
-          testsAdded: 32,
-          testsRemoved: 5,
-        },
-      ]);
-      setLoading(false);
-    }, 500);
+    getReleases()
+      .then(setReleases)
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <LoadingSkeleton rows={6} />;
@@ -69,14 +51,14 @@ export default function ReleasesPage() {
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatBox label="Total Releases" value={releases.length.toString()} />
-        <StatBox label="Tests in Current Release" value={releases[0]?.testsAdded?.toString() || "0"} positive />
-        <StatBox label="Tests Removed" value={releases[0]?.testsRemoved?.toString() || "0"} />
+        <StatBox label="Runs in Latest Release" value={releases[0]?.run_ids?.length?.toString() || "0"} positive />
+        <StatBox label="Latest Status" value={releases[0]?.status || "-"} />
       </div>
     </div>
   );
 }
 
-function ReleaseCard({ release, isFirst }: { release: any; isFirst: boolean }) {
+function ReleaseCard({ release, isFirst }: { release: Release; isFirst: boolean }) {
   return (
     <div className={`p-4 rounded-lg border ${isFirst ? "bg-blue-50 border-blue-200" : "bg-white border-[var(--border-default)]"}`}>
       <div className="flex items-start justify-between">
@@ -91,7 +73,7 @@ function ReleaseCard({ release, isFirst }: { release: any; isFirst: boolean }) {
                 <Badge variant="success" size="sm">Current</Badge>
               )}
             </div>
-            <p className="text-sm text-[var(--text-secondary)]">{release.description}</p>
+            <p className="text-sm text-[var(--text-secondary)]">{release.version}{release.status ? ` · ${release.status}` : ""}</p>
           </div>
         </div>
         
@@ -108,16 +90,16 @@ function ReleaseCard({ release, isFirst }: { release: any; isFirst: boolean }) {
         <div className="flex items-center gap-4 mt-4 pt-4 border-t border-blue-200">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-green-600" />
-            <span className="text-xs text-[var(--text-muted)]">{release.testsAdded} tests added</span>
+            <span className="text-xs text-[var(--text-muted)]">{release.run_ids?.length || 0} runs</span>
           </div>
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-yellow-600" />
-            <span className="text-xs text-[var(--text-muted)]">{release.testsRemoved} tests removed</span>
+            <span className="text-xs text-[var(--text-muted)]">{release.status || "unknown"}</span>
           </div>
           <div className="flex items-center gap-2 ml-auto">
             <Clock className="w-4 h-4 text-[var(--text-muted)]" />
             <span className="text-xs text-[var(--text-muted)] whitespace-nowrap">
-              {formatDate(release.releaseDate)}
+              {formatDate(release.created_at)}
             </span>
           </div>
         </div>

@@ -497,6 +497,12 @@ export async function analyzeFailure(id: string): Promise<FailureAnalysis> {
 export function reportUrl(id: string): string {
   return `${API_BASE}/api/v1/runs/${id}/report`;
 }
+export function exportUrl(id: string): string {
+  return `${API_BASE}/api/v1/runs/${id}/export`;
+}
+export function exportJunitUrl(id: string): string {
+  return `${API_BASE}/api/v1/runs/${id}/export-junit`;
+}
 
 // Advanced testing features
 export async function runAudit(id: string): Promise<AuditResult> {
@@ -607,6 +613,10 @@ export async function getRunRecordings(id: string): Promise<Recording[]> {
   return apiFetch<Recording[]>(`/api/v1/runs/${id}/recordings`);
 }
 
+export async function getRecordings(): Promise<Recording[]> {
+  return apiFetch<Recording[]>("/api/v1/recordings");
+}
+
 // Visual artifacts
 export interface VisualArtifact {
   id: string;
@@ -715,6 +725,42 @@ export async function getReleaseSummary(id: string): Promise<ReleaseSummary> {
   return apiFetch<ReleaseSummary>(`/api/v1/releases/${id}/summary`);
 }
 
+// --- Alerts (dedicated /api/v1/alerts endpoint with server-side severity/category) ---
+export interface Alert {
+  id: string;
+  run_id: string;
+  schedule_id?: string;
+  type: string;
+  severity?: string; // "critical" | "warning" | "info"
+  category?: string; // "failure" | "drift" | "system"
+  message: string;
+  delivered: boolean;
+  acknowledged?: boolean;
+  dismissed?: boolean;
+  created_at: string;
+}
+
+export async function getAlerts(params?: { type?: string; limit?: number; include_dismissed?: boolean }): Promise<Alert[]> {
+  const qs = new URLSearchParams();
+  if (params?.type) qs.set("type", params.type);
+  if (params?.limit) qs.set("limit", String(params.limit));
+  if (params?.include_dismissed) qs.set("include_dismissed", "true");
+  const q = qs.toString();
+  return apiFetch<Alert[]>(`/api/v1/alerts${q ? `?${q}` : ""}`);
+}
+
+export async function acknowledgeAlert(id: string): Promise<{ acknowledged: boolean }> {
+  return apiFetch(`/api/v1/alerts/${id}/acknowledge`, { method: "POST" });
+}
+
+export async function dismissAlert(id: string): Promise<{ dismissed: boolean }> {
+  return apiFetch(`/api/v1/alerts/${id}/dismiss`, { method: "POST" });
+}
+
+export async function markAllAlertsRead(): Promise<{ updated: number }> {
+  return apiFetch("/api/v1/alerts/read-all", { method: "POST" });
+}
+
 // --- Notifications ---
 export interface Notification {
   id: string;
@@ -734,6 +780,7 @@ export async function getNotifications(): Promise<Notification[]> {
 export interface MetricsSummary {
   total_runs: number;
   pass_rate: number;
+  avg_duration_ms: number;
   total_tests: number;
   total_passed: number;
   total_failed: number;
@@ -745,6 +792,12 @@ export interface Hotspot {
   fail_rate: number;
 }
 
+export interface FlakyTest {
+  test_name: string;
+  flip_count: number;
+  total_appearances: number;
+}
+
 export async function getMetricsSummary(): Promise<MetricsSummary> {
   return apiFetch<MetricsSummary>("/api/v1/metrics/summary");
 }
@@ -753,8 +806,20 @@ export async function getMetricsHotspots(): Promise<Hotspot[]> {
   return apiFetch<Hotspot[]>("/api/v1/metrics/hotspots");
 }
 
-export async function getMetricsTrend(): Promise<{ date: string; pass_rate: number; fail_count: number }[]> {
-  return apiFetch("/api/v1/metrics/trend");
+export async function getMetricsFlaky(): Promise<FlakyTest[]> {
+  return apiFetch<FlakyTest[]>("/api/v1/metrics/flaky");
+}
+
+export interface TrendPoint {
+  date: string;
+  pass_rate: number;
+  fail_count: number;
+  total_tests: number;
+  duration_ms: number;
+}
+
+export async function getMetricsTrend(): Promise<TrendPoint[]> {
+  return apiFetch<TrendPoint[]>("/api/v1/metrics/trend");
 }
 
 // --- Intelligence ---
@@ -829,13 +894,25 @@ export async function rejectReview(id: string, reviewer: string, comment: string
 export interface Suite {
   id: string;
   name: string;
+  project_id?: string;
+  environment?: string;
   tags: string[];
   pinned: boolean;
   run_ids: string[];
+  created_at: string;
 }
 
 export async function getSuites(): Promise<Suite[]> {
   return apiFetch<Suite[]>("/api/v1/suites");
+}
+
+export async function createSuite(data: Partial<Suite>): Promise<Suite> {
+  return apiFetch<Suite>("/api/v1/suites", { method: "POST", body: JSON.stringify(data) });
+}
+
+// --- Demo data ---
+export async function seedDemoData(): Promise<{ message: string; runs: number }> {
+  return apiFetch("/api/v1/demo/seed", { method: "POST" });
 }
 
 // --- Settings & AI Providers ---
@@ -849,8 +926,8 @@ export async function getAIProviders(): Promise<AIProvider[]> {
   return apiFetch<AIProvider[]>("/api/v1/ai/providers");
 }
 
-export async function testAIProvider(data: { provider: string; model: string; api_key: string; base_url: string }): Promise<{ success: boolean; error?: string }> {
-  return apiFetch<{ success: boolean; error?: string }>("/api/v1/ai/test-provider", { method: "POST", body: JSON.stringify(data) });
+export async function testAIProvider(data: { provider: string; model: string; api_key: string; base_url: string }, signal?: AbortSignal): Promise<{ success: boolean; error?: string }> {
+  return apiFetch<{ success: boolean; error?: string }>("/api/v1/ai/test-provider", { method: "POST", body: JSON.stringify(data), signal });
 }
 
 export async function getAIModels(data: { provider: string; api_key: string; base_url: string }): Promise<{ models: string[]; error?: string }> {

@@ -8,20 +8,17 @@ import { Badge } from "@/components/ui/badge";
 import { TableContainer, Th, Td, Tr } from "@/components/ui/table";
 import { Download, FileJson, CheckCircle2, Code2, PlayCircle } from "lucide-react";
 
+import { getRuns, exportUrl, type TestRun } from "@/lib/api";
+
 export default function ExportsPage() {
-  const [runs, setRuns] = useState<any[]>([]);
+  const [runs, setRuns] = useState<TestRun[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // TODO: Fetch real runs data
-    setTimeout(() => {
-      setRuns([
-        { id: "run_1", name: "Checkout Flow Test", date: "2026-07-31" },
-        { id: "run_2", name: "Login Authentication", date: "2026-07-30" },
-        { id: "run_3", name: "User Registration", date: "2026-07-29" },
-      ]);
-      setLoading(false);
-    }, 500);
+    getRuns()
+      .then((data) => setRuns(data.filter((r) => r.state === "done")))
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <LoadingSkeleton rows={6} />;
@@ -86,14 +83,29 @@ export default function ExportsPage() {
               <tbody>
                 {runs.map((run) => (
                   <Tr key={run.id} hover>
-                    <Td className="font-medium">{run.name}</Td>
-                    <Td><Badge variant="success" size="sm">✓</Badge></Td>
-                    <Td className="text-sm text-[var(--text-muted)] whitespace-nowrap">{formatDate(run.date)}</Td>
+                    <Td className="font-medium">
+                      <span className="block truncate max-w-[240px]">{run.requirements || "Untitled test"}</span>
+                      <span className="text-xs text-[var(--text-muted)] font-mono">{run.id.slice(0, 8)}</span>
+                    </Td>
+                    <Td>
+                      {run.run_result ? (
+                        <span className="text-sm">
+                          <span className="text-green-600">{run.run_result.passed}✓</span>
+                          <span className="mx-1">·</span>
+                          <span className="text-red-600">{run.run_result.failed}✗</span>
+                        </span>
+                      ) : (
+                        <Badge variant="success" size="sm">✓</Badge>
+                      )}
+                    </Td>
+                    <Td className="text-sm text-[var(--text-muted)] whitespace-nowrap">{formatDate(run.created_at)}</Td>
                     <Td align="right" className="space-x-2">
-                      <Button variant="secondary" size="sm">
-                        <Download className="w-3.5 h-3.5 mr-1" />
-                        Export
-                      </Button>
+                      <a href={exportUrl(run.id)} target="_blank" rel="noreferrer">
+                        <Button variant="secondary" size="sm">
+                          <Download className="w-3.5 h-3.5 mr-1" />
+                          Export
+                        </Button>
+                      </a>
                     </Td>
                   </Tr>
                 ))}

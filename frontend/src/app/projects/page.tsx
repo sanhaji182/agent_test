@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { getProjects, type Project } from "@/lib/api";
+import { getProjects, createProject, type Project } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState, LoadingSkeleton } from "@/components/ui/section";
@@ -16,6 +16,7 @@ export default function ProjectsPage() {
   const [query, setQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [newProject, setNewProject] = useState({ name: "", test_type: "ui" });
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     getProjects().then((p) => setProjects(p || [])).catch((e) => setError(e.message)).finally(() => setLoading(false));
@@ -27,10 +28,21 @@ export default function ProjectsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Implement project creation API call
-    alert("Project creation coming soon!");
-    setShowForm(false);
-    setNewProject({ name: "", test_type: "ui" });
+    if (!newProject.name.trim() || creating) return;
+    setCreating(true);
+    setError(null);
+    try {
+      await createProject({ name: newProject.name.trim(), test_type: newProject.test_type });
+      // Refresh list from the server so the new project shows up with its real data.
+      const refreshed = await getProjects();
+      setProjects(refreshed || []);
+      setShowForm(false);
+      setNewProject({ name: "", test_type: "ui" });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCreating(false);
+    }
   };
 
   if (loading) return <LoadingSkeleton rows={6} />;
@@ -79,7 +91,7 @@ export default function ProjectsPage() {
             </div>
             
             <div className="flex gap-3 pt-4 border-t">
-              <Button type="submit" disabled={!newProject.name}>Create</Button>
+              <Button type="submit" disabled={!newProject.name || creating}>{creating ? "Creating..." : "Create"}</Button>
               <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>Cancel</Button>
             </div>
           </form>
