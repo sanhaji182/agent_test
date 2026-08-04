@@ -78,6 +78,7 @@ func (s *Store) UpdateRun(ctx context.Context, run *agent.TestRun) error {
 	testFiles, _ := json.Marshal(run.TestFiles)
 	runResult, _ := json.Marshal(run.RunResult)
 	featureMap, _ := json.Marshal(run.FeatureMap)
+	screenshots, _ := json.Marshal(run.Screenshots)
 
 	_, err := s.pool.Exec(ctx, `
 		UPDATE test_runs SET
@@ -90,7 +91,7 @@ func (s *Store) UpdateRun(ctx context.Context, run *agent.TestRun) error {
 			test_type = $19, test_case_id = nullif($20, '')::uuid,
 			test_list_id = nullif($21, '')::uuid, prd = $22, api_docs = $23,
 			auth_type = $24, credentials = $25, focus_hints = $26,
-			skip_hints = $27, feature_map = $28
+			skip_hints = $27, feature_map = $28, screenshots = $29
 		WHERE id = $1`,
 		run.ID, string(run.State), run.CodeAnalysis,
 		testPlan, testFiles, runResult,
@@ -99,7 +100,7 @@ func (s *Store) UpdateRun(ctx context.Context, run *agent.TestRun) error {
 		run.VideoSize, run.VideoFailureMarkerAt,
 		run.Mode, run.ProjectPath, run.Requirements, run.TestType,
 		run.TestCaseID, run.TestListID, run.PRD, run.APIDocs, run.AuthType,
-		run.Credentials, run.FocusHints, run.SkipHints, featureMap)
+		run.Credentials, run.FocusHints, run.SkipHints, featureMap, screenshots)
 	return err
 }
 
@@ -111,12 +112,13 @@ func (s *Store) GetRun(ctx context.Context, id string) (*agent.TestRun, error) {
 			prd, api_docs, auth_type, credentials, focus_hints, skip_hints, feature_map,
 			code_analysis, test_plan, test_files,
 			run_result, fix_attempts, error_msg, created_at, updated_at, finished_at,
-			video_url, video_status, video_duration, video_size, video_failure_marker_at
+			video_url, video_status, video_duration, video_size, video_failure_marker_at,
+			screenshots
 		FROM test_runs WHERE id = $1`, id)
 
 	var run agent.TestRun
 	var state string
-	var testPlan, testFiles, runResult, featureMap []byte
+	var testPlan, testFiles, runResult, featureMap, screenshots []byte
 	var codeAnalysis, errorMsg, videoURL, videoStatus *string
 	var mode, projectPath, testType, prd, apiDocs, authType, credentials, focusHints, skipHints *string
 	var testCaseID, testListID string
@@ -129,7 +131,8 @@ func (s *Store) GetRun(ctx context.Context, id string) (*agent.TestRun, error) {
 		&credentials, &focusHints, &skipHints, &featureMap, &codeAnalysis, &testPlan, &testFiles,
 		&runResult, &run.FixAttempts,
 		&errorMsg, &run.CreatedAt, &run.UpdatedAt, &finishedAt,
-		&videoURL, &videoStatus, &videoDuration, &videoSize, &videoFailureMarkerAt)
+		&videoURL, &videoStatus, &videoDuration, &videoSize, &videoFailureMarkerAt,
+		&screenshots)
 	if err != nil {
 		return nil, err
 	}
@@ -199,6 +202,9 @@ func (s *Store) GetRun(ctx context.Context, id string) (*agent.TestRun, error) {
 	}
 	if len(featureMap) > 0 {
 		json.Unmarshal(featureMap, &run.FeatureMap)
+	}
+	if len(screenshots) > 0 {
+		json.Unmarshal(screenshots, &run.Screenshots)
 	}
 
 	return &run, nil

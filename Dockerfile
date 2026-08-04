@@ -19,7 +19,9 @@ LABEL org.opencontainers.image.title="GoTest Agent"
 LABEL org.opencontainers.image.description="AI-powered testing platform"
 
 # Install only runtime system dependencies
-RUN apk add --no-cache ca-certificates curl libc6-compat gcompat nodejs npm
+# ffmpeg: digunakan untuk meng-compile screenshot per-step menjadi video
+# slideshow (recording) saat runner tidak menghasilkan video asli.
+RUN apk add --no-cache ca-certificates curl libc6-compat gcompat nodejs npm ffmpeg
 
 # Create non-root user
 RUN addgroup -S gotest && adduser -S -G gotest -h /app -s /sbin/nologin gotest
@@ -35,9 +37,10 @@ COPY --from=builder /bin/mcp /usr/local/bin/mcp
 # COPY --from=builder /root/.cache/ms-playwright-go /home/gotest/.cache/ms-playwright-go
 # COPY --from=builder /root/.cache/ms-playwright /home/gotest/.cache/ms-playwright
 
-# Create data directories
-RUN mkdir -p /app/data/screenshots /app/data/reports /app/data/videos \
-    && chown -R gotest:gotest /app
+# Create data directories (mounted as volume at runtime; pre-create so the
+# mounted volume inherits the non-root ownership on first creation)
+RUN mkdir -p /data/screenshots /data/reports /data/videos /app/data \
+    && chown -R gotest:gotest /data /app/data
 
 USER gotest
 

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  getRun, subscribeToRun, rerunRun, reportUrl, isActive, analyzeFailure,
+  getRun, subscribeToRun, rerunRun, reportUrl, exportUrl, exportJunitUrl, isActive, analyzeFailure,
   getRunEvents, getRunRecordings, getRunVisuals,
   runAudit, runExploratory, getPerformanceMetrics, getAccessibilityReport,
   runVisualRegression, exportCode,
@@ -18,7 +18,7 @@ import { Tabs } from "@/components/console/tabs";
 import { ScreenshotStrip } from "@/components/console/screenshot-strip";
 import { EmptyState } from "@/components/ui/section";
 import {
-  ArrowLeft, FileText, RotateCw, FileCode, AlertTriangle,
+  ArrowLeft, FileText, RotateCw, FileCode, AlertTriangle, Download,
   CheckCircle2, XCircle, Image as ImageIcon, ListChecks, Eye,
   Radio, Film, GitCompare, GitBranch, KeyRound, Sparkles,
   Wand2, Code, Gauge, Accessibility, Search, Eye as EyeIcon,
@@ -201,6 +201,7 @@ export default function RunConsolePage() {
       {/* Tabbed console */}
       <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-[var(--shadow-sm)] p-5">
         <Tabs tabs={[
+          { id: "report", label: "Report", content: <ReportView run={run} /> },
           { id: "video", label: "Video", content: <VideoPlayer run={run} events={liveEvents} /> },
           { id: "events", label: "Live Events", count: liveEvents.length, content: <EventsView events={liveEvents} /> },
           { id: "steps", label: "Steps", count: stepCount(run), content: <StepsView run={run} /> },
@@ -225,7 +226,60 @@ export default function RunConsolePage() {
             onExploratory={handleExploratory}
             onExportCode={handleExportCode}
           /> },
-        ]} initial={run.video_url ? "video" : "events"} />
+        ]} initial={isActive(run.state) ? (run.video_url ? "video" : "events") : "report"} />
+      </div>
+    </div>
+  );
+}
+
+function ReportView({ run }: { run: TestRun }) {
+  const idShort = run.id.slice(0, 8);
+  const download = async (url: string, filename: string) => {
+    try {
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      alert("Gagal mengunduh: " + (e as Error).message);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <a
+          href={reportUrl(run.id)}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--accent)] text-white text-xs font-medium hover:bg-[var(--accent-hover)] transition-colors"
+        >
+          <FileText className="w-3.5 h-3.5" /> Buka Report Lengkap (HTML)
+        </a>
+        <button
+          onClick={() => download(exportUrl(run.id), `run-${idShort}.json`)}
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors"
+        >
+          <Download className="w-3.5 h-3.5" /> Export JSON
+        </button>
+        <button
+          onClick={() => download(exportJunitUrl(run.id), `run-${idShort}.xml`)}
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors"
+        >
+          <Download className="w-3.5 h-3.5" /> Export JUnit XML
+        </button>
+      </div>
+      <p className="text-xs text-[var(--text-muted)]">
+        Report HTML berisi ringkasan hasil, daftar kegagalan, test plan, dan test files. Export JUnit XML untuk integrasi CI/CD.
+      </p>
+      <div className="border border-[var(--border)] rounded-lg overflow-hidden bg-white">
+        <iframe src={reportUrl(run.id)} title="Test Report" className="w-full h-[560px]" />
       </div>
     </div>
   );

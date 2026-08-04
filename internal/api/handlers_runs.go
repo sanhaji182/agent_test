@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,7 +64,7 @@ func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
 		Requirements: req.Requirements, Mode: mode, TestType: testType,
 		PRD: req.PRD, APIDocs: req.APIDocs, AuthType: req.AuthType,
 		Credentials: req.Credentials, FocusHints: req.FocusHints,
-		SkipHints: req.SkipHints, FeatureMap: s.deriveFeatureMap(r.Context(), req.PRD, req.Requirements),
+		SkipHints: req.SkipHints, FeatureMap: s.deriveFeatureMapBounded(r.Context(), req.PRD, req.Requirements),
 		Browser: req.Browser, Viewport: req.Viewport, Parallel: req.Parallel, TestData: req.TestData,
 		Tags:       req.Tags,
 		WebhookURL: req.WebhookURL,
@@ -95,6 +96,15 @@ func (s *Server) deriveFeatureMap(ctx context.Context, prd, requirements string)
 		return fm
 	}
 	return deriveFeatureMapFallback(prd, requirements)
+}
+
+// deriveFeatureMapBounded wraps deriveFeatureMap with a bounded timeout so a slow
+// LLM cannot block the create-run HTTP handler (which has a 30s WriteTimeout).
+// On timeout it falls back to the non-AI feature map derivation.
+func (s *Server) deriveFeatureMapBounded(ctx context.Context, prd, requirements string) *agent.FeatureMap {
+	fmCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	return s.deriveFeatureMap(fmCtx, prd, requirements)
 }
 
 func (s *Server) parseAPIDocsWithAI(ctx context.Context, p *project.Project) []planning.DraftCase {
@@ -404,6 +414,8 @@ func (s *Server) buildAgentForRun(run *agent.TestRun) *agent.Agent {
 	llmModel := s.cfg.LLMModel
 	apiKey := s.cfg.AnthropicAPIKey
 	baseURL := s.cfg.LLMBaseURL
+	var llmMaxTokens int64
+	var llmTemperature float64
 
 	if s.settings != nil {
 		ctx := context.Background()
@@ -418,6 +430,16 @@ func (s *Server) buildAgentForRun(run *agent.TestRun) *agent.Agent {
 		}
 		if v, err := s.settings.Get(ctx, "llm_base_url"); err == nil && v != "" {
 			baseURL = v
+		}
+		if v, err := s.settings.Get(ctx, "llm_max_tokens"); err == nil && v != "" {
+			if n, perr := strconv.ParseInt(v, 10, 64); perr == nil {
+				llmMaxTokens = n
+			}
+		}
+		if v, err := s.settings.Get(ctx, "llm_temperature"); err == nil && v != "" {
+			if f, perr := strconv.ParseFloat(v, 64); perr == nil {
+				llmTemperature = f
+			}
 		}
 	}
 
@@ -436,17 +458,60 @@ func (s *Server) buildAgentForRun(run *agent.TestRun) *agent.Agent {
 			if p.BaseURL != "" {
 				baseURL = p.BaseURL
 			}
+			if p.MaxTokens != "" {
+				if n, perr := strconv.ParseInt(p.MaxTokens, 10, 64); perr == nil {
+					llmMaxTokens = n
+				}
+			}
+			if p.Temperature != "" {
+				if f, perr := strconv.ParseFloat(p.Temperature, 64); perr == nil {
+					llmTemperature = f
+				}
+			}
 		}
 	}
 
-	llm := agent.NewLLM(llmProvider, llmModel, apiKey, baseURL)
+	// Fallback provider (opsional): DB settings override env. Memberi redundansi
+	// tingkat-provider — jika provider utama gagal (mis. saldo habis), eksekusi
+	// otomatis failover ke provider cadangan alih-alih menggagalkan seluruh run.
+	fbProvider := s.cfg.LLMFallbackProvider
+	fbModel := s.cfg.LLMFallbackModel
+	fbAPIKey := s.cfg.LLMFallbackAPIKey
+	fbBaseURL := s.cfg.LLMFallbackBaseURL
+	if s.settings != nil {
+		ctxFB := context.Background()
+		if v, err := s.settings.Get(ctxFB, "llm_fallback_provider"); err == nil && v != "" {
+			fbProvider = v
+		}
+		if v, err := s.settings.Get(ctxFB, "llm_fallback_model"); err == nil && v != "" {
+			fbModel = v
+		}
+		if v, err := s.settings.Get(ctxFB, "llm_fallback_api_key"); err == nil && v != "" {
+			fbAPIKey = v
+		}
+		if v, err := s.settings.Get(ctxFB, "llm_fallback_base_url"); err == nil && v != "" {
+			fbBaseURL = v
+		}
+	}
+
+	providers := []agent.ProviderConfig{
+		{Provider: llmProvider, Model: llmModel, APIKey: apiKey, BaseURL: baseURL, MaxTokens: llmMaxTokens, Temperature: llmTemperature},
+	}
+	if fbProvider != "" {
+		providers = append(providers, agent.ProviderConfig{
+			Provider: fbProvider, Model: fbModel, APIKey: fbAPIKey, BaseURL: fbBaseURL,
+		})
+		slog.Info("LLM fallback configured", "primary", llmProvider, "fallback", fbProvider)
+	}
+
+	llm := agent.NewFallbackLLM(providers...)
 	if llm == nil {
 		slog.Error("unsupported LLM provider", "provider", llmProvider)
 		return nil
 	}
 
 	pwRunner := agent.NewPlaywrightRunner("/tmp/agent_test/videos", llm)
-	pwRunner.ScreenshotDir = "/tmp/agent_test/screenshots"
+	pwRunner.ScreenshotDir = "/data/screenshots"
 	pwRunner.WithAllowedHosts(s.cfg.BrowserAllowedHosts)
 	if run != nil {
 		if run.Browser != "" {
@@ -469,15 +534,18 @@ func (s *Server) buildAgentForRun(run *agent.TestRun) *agent.Agent {
 	var mainRunner agent.Runner = pwRunner
 	if s.steel != nil {
 		steelRunner := agent.NewSteelRunner(s.steel, llm)
-		steelRunner.ScreenshotDir = "/tmp/agent_test/screenshots"
+		steelRunner.ScreenshotDir = "/data/screenshots"
 		steelRunner.WithAllowedHosts(s.cfg.BrowserAllowedHosts)
 		if run != nil && run.TestData != nil {
 			steelRunner.TestData = run.TestData
 		}
+		if run != nil && run.Parallel {
+			steelRunner.WithParallel(true)
+		}
 		mainRunner = steelRunner
 	}
 
-	return agent.NewWithConfig(llm, mainRunner, 3, agent.AgentConfig{
+	return agent.NewWithConfig(llm, mainRunner, s.cfg.MaxFixAttempts, agent.AgentConfig{
 
 		Exec:  execCtx,
 		Store: s.store,
@@ -522,6 +590,17 @@ func (s *Server) launchRun(run *agent.TestRun) {
 		// mid-flight. Cleanup runs only when RunBlocking returns (terminal
 		// state), so the cancel func stays registered for the run's lifetime.
 		ctx, cancel := context.WithCancel(context.Background())
+		// Whole-run watchdog: bound total execution time so a hung browser
+		// session cannot keep a run "running" forever. The Playwright runner
+		// honors ctx (it closes the browser on Done), so the deadline actually
+		// interrupts in-flight work and the run terminates as failed.
+		if s.cfg.RunTimeoutSeconds > 0 {
+			var timeoutCancel context.CancelFunc
+			ctx, timeoutCancel = context.WithTimeout(ctx, time.Duration(s.cfg.RunTimeoutSeconds)*time.Second)
+			parentCancel := cancel
+			cancel = func() { parentCancel(); timeoutCancel() }
+		}
+		defer cancel() // release context resources when the goroutine exits
 		s.cancelsMu.Lock()
 		s.runCancels[run.ID] = cancel
 		s.metrics.SetActiveRuns(int64(len(s.runCancels)))
@@ -571,6 +650,50 @@ func (s *Server) launchRun(run *agent.TestRun) {
 			}()
 		}
 	}()
+}
+
+// ReapStaleRuns marks runs left in a non-terminal, in-flight state as failed.
+// Called once at startup: after a restart no goroutine owns these runs, so they
+// would otherwise remain "running" forever (zombie runs). Each candidate is loaded
+// fully via GetRun before updating so no run data (test files, plan, etc.) is lost.
+func (s *Server) ReapStaleRuns(ctx context.Context) (int, error) {
+	const pageSize = 100
+	reaped := 0
+	for offset := 0; ; offset += pageSize {
+		summaries, err := s.store.ListRuns(ctx, pageSize, offset)
+		if err != nil {
+			return reaped, err
+		}
+		if len(summaries) == 0 {
+			break
+		}
+		for _, summary := range summaries {
+			switch summary.State {
+			case agent.StateAnalyzing, agent.StatePlanGenerated, agent.StateWritingTests, agent.StateRunning, agent.StateFixing:
+				full, err := s.store.GetRun(ctx, summary.ID)
+				if err != nil || full == nil {
+					slog.Warn("reap stale run: load failed", "run_id", summary.ID, "error", err)
+					continue
+				}
+				prev := full.State
+				now := time.Now()
+				full.State = agent.StateFailed
+				full.Error = "run aborted: server restarted while execution was in progress"
+				full.FinishedAt = &now
+				full.UpdatedAt = now
+				if err := s.store.UpdateRun(ctx, full); err != nil {
+					slog.Warn("reap stale run: update failed", "run_id", full.ID, "error", err)
+					continue
+				}
+				reaped++
+				slog.Info("reaped stale in-flight run", "run_id", full.ID, "previous_state", string(prev))
+			}
+		}
+		if len(summaries) < pageSize {
+			break
+		}
+	}
+	return reaped, nil
 }
 
 // handleCancelRun cancels an in-flight run by triggering its context cancellation.
@@ -1139,8 +1262,13 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
+	// Language: ?lang=id (default) or ?lang=en
+	lang := r.URL.Query().Get("lang")
+	if lang == "" {
+		lang = "id"
+	}
 	w.Header().Set("Content-Type", "text/html")
-	report.GenerateHTML(w, run)
+	report.GenerateHTML(w, run, lang)
 }
 
 func (s *Server) handleDeleteRun(w http.ResponseWriter, r *http.Request) {

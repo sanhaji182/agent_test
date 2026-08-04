@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,7 @@ type SteelRunner struct {
 	ScreenshotDir string
 	TestData      map[string]string
 	AllowedHosts  []string
+	Parallel      bool
 }
 
 // NewSteelRunner creates a runner that uses Steel Browser cloud for execution.
@@ -39,8 +41,18 @@ func (r *SteelRunner) WithAllowedHosts(hosts ...string) *SteelRunner {
 	return r
 }
 
+// WithParallel enables concurrent test file execution.
+func (r *SteelRunner) WithParallel(parallel bool) *SteelRunner {
+	r.Parallel = parallel
+	return r
+}
+
 // Run executes test files using a Steel cloud browser session.
 func (r *SteelRunner) Run(ctx context.Context, testFiles []TestFile, projectURL string) (*RunResult, error) {
+	// Ensure the screenshot directory exists so failure screenshots can be written.
+	if r.ScreenshotDir != "" {
+		_ = os.MkdirAll(r.ScreenshotDir, 0o755)
+	}
 	// Install Playwright driver saja (skip browser — Steel sediakan browser remote).
 	steelDriverOnce.Do(func() {
 		steelDriverErr = playwright.Install(&playwright.RunOptions{SkipInstallBrowsers: true})
@@ -78,6 +90,11 @@ func (r *SteelRunner) Run(ctx context.Context, testFiles []TestFile, projectURL 
 	}
 	defer browser.Close()
 
+	// Execute test files concurrently when enabled (each in its own context).
+	if r.Parallel && len(testFiles) > 1 {
+		return r.runParallel(ctx, browser, testFiles)
+	}
+
 	// Use existing context or create new one
 	contexts := browser.Contexts()
 	var bCtx playwright.BrowserContext
@@ -112,6 +129,7 @@ func (r *SteelRunner) Run(ctx context.Context, testFiles []TestFile, projectURL 
 	successfulActions := 0
 	failedActions := 0
 	var failures []Failure
+	var stepShots []string
 
 	for _, tf := range testFiles {
 		var actions []BrowserAction
@@ -123,6 +141,16 @@ func (r *SteelRunner) Run(ctx context.Context, testFiles []TestFile, projectURL 
 			a := actions[i]
 			totalActions++
 			err := localRunner.executeAction(ctx, page, &a)
+
+			// Capture a screenshot after every step (success or failure) so runs
+			// always produce visual evidence — not only when something fails.
+			if r.ScreenshotDir != "" {
+				stepName := fmt.Sprintf("step_%s_%d_%d", tf.Name, i, time.Now().UnixMilli())
+				ssPath := r.ScreenshotDir + "/" + stepName + ".png"
+				if ss, ssErr := page.Screenshot(playwright.PageScreenshotOptions{Path: playwright.String(ssPath)}); ssErr == nil && len(ss) > 0 {
+					stepShots = append(stepShots, "/screenshots/"+stepName+".png")
+				}
+			}
 
 			if err != nil && r.ScreenshotDir != "" {
 				ssName := fmt.Sprintf("steel_fail_%s_%d_%d.png", tf.Name, i, time.Now().UnixMilli())
@@ -147,11 +175,89 @@ func (r *SteelRunner) Run(ctx context.Context, testFiles []TestFile, projectURL 
 	}
 
 	return &RunResult{
-		Passed:   successfulActions,
-		Failed:   failedActions,
-		Total:    totalActions,
-		Failures: failures,
+		Passed:      successfulActions,
+		Failed:      failedActions,
+		Total:       totalActions,
+		Failures:    failures,
+		Screenshots: stepShots,
 	}, nil
+}
+
+// runParallel executes test files concurrently, each in its own browser context
+// within the shared Steel session. This cuts wall-clock time roughly by the
+// number of test files (bounded by the slowest file).
+func (r *SteelRunner) runParallel(ctx context.Context, browser playwright.Browser, testFiles []TestFile) (*RunResult, error) {
+	type fileResult struct {
+		passed   int
+		failed   int
+		total    int
+		failures []Failure
+	}
+	results := make([]fileResult, len(testFiles))
+	var wg sync.WaitGroup
+
+	localRunner := &PlaywrightRunner{
+		ScreenshotDir: r.ScreenshotDir,
+		llm:           r.llm,
+		TestData:      r.TestData,
+		AllowedHosts:  r.AllowedHosts,
+	}
+
+	for idx, tf := range testFiles {
+		wg.Add(1)
+		go func(i int, tf TestFile) {
+			defer wg.Done()
+
+			bCtx, err := browser.NewContext()
+			if err != nil {
+				results[i] = fileResult{failed: 1, total: 1}
+				return
+			}
+			defer bCtx.Close()
+			if err := InstallContextEgressGuard(bCtx, r.AllowedHosts...); err != nil {
+				results[i] = fileResult{failed: 1, total: 1}
+				return
+			}
+			page, err := bCtx.NewPage()
+			if err != nil {
+				results[i] = fileResult{failed: 1, total: 1}
+				return
+			}
+			defer page.Close()
+
+			var actions []BrowserAction
+			if err := json.Unmarshal([]byte(tf.Content), &actions); err != nil {
+				return
+			}
+
+			res := fileResult{}
+			for j := 0; j < len(actions); j++ {
+				a := actions[j]
+				res.total++
+				if err := localRunner.executeAction(ctx, page, &a); err != nil {
+					res.failed++
+					res.failures = append(res.failures, Failure{
+						Test:    fmt.Sprintf("%s:action_%d", tf.Name, j),
+						Message: err.Error(),
+					})
+				} else {
+					res.passed++
+				}
+				time.Sleep(500 * time.Millisecond)
+			}
+			results[i] = res
+		}(idx, tf)
+	}
+	wg.Wait()
+
+	agg := &RunResult{}
+	for _, res := range results {
+		agg.Passed += res.passed
+		agg.Failed += res.failed
+		agg.Total += res.total
+		agg.Failures = append(agg.Failures, res.failures...)
+	}
+	return agg, nil
 }
 
 // --- Phase 3: Performance Metrics Collection ---

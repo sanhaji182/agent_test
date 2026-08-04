@@ -9,20 +9,24 @@ import { Badge } from "@/components/ui/badge";
 import { TableContainer, Th, Td, Tr } from "@/components/ui/table";
 import { Video, PlayCircle, Trash2, Search, Download, Eye, Plus } from "lucide-react";
 
+import { getRecordings, type Recording } from "@/lib/api";
+
 export default function RecordingsPage() {
-  const [recordings, setRecordings] = useState<any[]>([]);
+  const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
 
   useEffect(() => {
-    // TODO: Fetch real recordings data
-    setTimeout(() => setLoading(false), 500);
+    getRecordings()
+      .then(setRecordings)
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, []);
 
   const filteredRecordings = recordings.filter(rec => {
     if (filterStatus !== "all" && rec.status !== filterStatus) return false;
-    if (query && !rec.name.toLowerCase().includes(query.toLowerCase())) return false;
+    if (query && !rec.test_name.toLowerCase().includes(query.toLowerCase())) return false;
     return true;
   });
 
@@ -32,6 +36,13 @@ export default function RecordingsPage() {
     completed: recordings.filter(r => r.status === "completed").length,
     archived: recordings.filter(r => r.status === "archived").length,
   });
+
+  const getDurationSec = (rec: Recording): number => {
+    if (!rec.start_time || !rec.end_time) return 0;
+    const start = new Date(rec.start_time).getTime();
+    const end = new Date(rec.end_time).getTime();
+    return Math.max(0, Math.round((end - start) / 1000));
+  };
 
   if (loading) return <LoadingSkeleton rows={6} />;
 
@@ -119,8 +130,8 @@ export default function RecordingsPage() {
               {filteredRecordings.map((rec) => (
                 <Tr key={rec.id} hover>
                   <Td className="font-medium">
-                    <span className="block truncate max-w-[180px]">{rec.name}</span>
-                    <span className="text-xs text-[var(--text-muted)]">{rec.description || ""}</span>
+                    <span className="block truncate max-w-[180px]">{rec.test_name}</span>
+                    <span className="text-xs text-[var(--text-muted)]">{rec.step_name || ""}</span>
                   </Td>
                   <Td>
                     <Badge 
@@ -130,9 +141,9 @@ export default function RecordingsPage() {
                       {rec.status}
                     </Badge>
                   </Td>
-                  <Td className="text-sm text-[var(--text-muted)]">{rec.events?.length || 0} events</Td>
-                  <Td className="text-sm text-[var(--text-muted)]">{formatDuration(rec.duration)}</Td>
-                  <Td className="text-sm text-[var(--text-muted)] whitespace-nowrap">{formatDate(rec.date)}</Td>
+                  <Td className="text-sm text-[var(--text-muted)]">—</Td>
+                  <Td className="text-sm text-[var(--text-muted)]">{formatDuration(getDurationSec(rec))}</Td>
+                  <Td className="text-sm text-[var(--text-muted)] whitespace-nowrap">{formatDate(rec.start_time)}</Td>
                   <Td align="right" className="space-x-2">
                     <Link href={`/recordings/${rec.id}`}>
                       <Button variant="ghost" size="sm">

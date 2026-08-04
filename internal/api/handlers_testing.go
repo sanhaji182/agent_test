@@ -65,7 +65,7 @@ func (s *Server) handleExploratoryTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	runner := agent.NewPlaywrightRunner("/tmp/agent_test/videos", nil)
-	runner.ScreenshotDir = "/tmp/agent_test/screenshots"
+	runner.ScreenshotDir = "/data/screenshots"
 	runner.WithAllowedHosts(s.cfg.BrowserAllowedHosts)
 
 	result, err := runner.RunExploratoryTest(r.Context(), page, req.URL, req.MaxDepth)
