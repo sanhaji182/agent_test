@@ -30,6 +30,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return { ok: true };
       });
       return true;
+    case 'ATTACH_SESSION':
+      // Rekam ke session yang sudah dibuat dari dashboard wizard (auto-link).
+      respondAsync(sendResponse, () => attachSession(msg.sessionId, msg.name, msg.url));
+      return true;
     case 'FLUSH_EVENTS':
       flushEventsToBackend(msg.sessionId, msg.events);
       break;
@@ -67,12 +71,27 @@ async function startRecording(name, url) {
   const session = await response.json();
   activeSession = { id: session.id, name, url: targetURL };
   persistSettings({ active: true, sessionId: session.id, sessionName: name, url: targetURL });
+  await broadcastStart(session.id);
+  return session;
+}
+
+// attachSession mulai merekam ke session yang sudah ada (dibuat dari dashboard
+// wizard) — events masuk ke session yang sama, jadi wizard melihatnya live.
+async function attachSession(sessionId, name, url) {
+  if (!sessionId) throw new Error('session id required');
+  const targetURL = url ? normalizeHTTPURL(url, 'target URL') : '';
+  activeSession = { id: sessionId, name: name || '', url: targetURL };
+  persistSettings({ active: true, sessionId, sessionName: activeSession.name, url: targetURL });
+  await broadcastStart(sessionId);
+  return activeSession;
+}
+
+async function broadcastStart(sessionId) {
   // Notify all tabs to start recording
   const tabs = await chrome.tabs.query({});
   for (const tab of tabs) {
-    chrome.tabs.sendMessage(tab.id, { type: 'START_RECORDING', sessionId: session.id }).catch(() => {});
+    chrome.tabs.sendMessage(tab.id, { type: 'START_RECORDING', sessionId }).catch(() => {});
   }
-  return session;
 }
 
 async function stopRecording() {

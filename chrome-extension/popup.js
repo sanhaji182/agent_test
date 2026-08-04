@@ -92,22 +92,43 @@ async function loadSessions() {
       sessionListDiv.innerHTML = '<p class="empty">No sessions yet. Start recording!</p>';
       return;
     }
-    sessionListDiv.innerHTML = sessions.map((s) =>
-      `<div class="session-item" data-id="${s.id}" title="Click to copy ID">
-        <strong>${escapeHtml(s.name)}</strong><br/>
+    sessionListDiv.innerHTML = sessions.map((s) => {
+      const attachable = s.status === 'recording' ? `<button class="btn btn-attach" data-attach="${s.id}" data-name="${escapeHtml(s.name)}" data-url="${escapeHtml(s.base_url || '')}">Attach</button>` : '';
+      return `<div class="session-item" data-id="${s.id}" title="Click to copy ID">
+        <strong>${escapeHtml(s.name)}</strong>${attachable}<br/>
         <span style="color:#64748b">${s.status}</span> &middot;
         <code style="font-size:10px">${s.id}</code>
-      </div>`
-    ).join('');
+      </div>`;
+    }).join('');
 
     // Copy session ID on click
     document.querySelectorAll('.session-item').forEach((el) => {
-      el.addEventListener('click', () => {
+      el.addEventListener('click', (e) => {
+        if (e.target.classList.contains('btn-attach')) return; // attach handled below
         const id = el.dataset.id;
         navigator.clipboard.writeText(id).then(() => {
           el.style.background = '#d1fae5';
           setTimeout(() => { el.style.background = ''; }, 800);
         });
+      });
+    });
+
+    // Attach buttons: rekam ke session yang dibuat dari dashboard wizard.
+    document.querySelectorAll('[data-attach]').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          const session = await chrome.runtime.sendMessage({
+            type: 'ATTACH_SESSION',
+            sessionId: btn.dataset.attach,
+            name: btn.dataset.name,
+            url: btn.dataset.url
+          });
+          if (session && session.ok === false) throw new Error(session.error || 'Unknown error');
+          updateUI({ recording: true, session });
+        } catch (err) {
+          alert('Failed to attach: ' + err.message);
+        }
       });
     });
   } catch (e) {

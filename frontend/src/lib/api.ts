@@ -444,6 +444,10 @@ export async function getTestCases(projectId?: string): Promise<TestCase[]> {
   return apiFetch<TestCase[]>(`/api/v1/test-cases${qs}`);
 }
 
+export async function getTestCase(id: string): Promise<TestCase> {
+  return apiFetch<TestCase>(`/api/v1/test-cases/${id}`);
+}
+
 export async function updateTestCase(id: string, data: Partial<TestCase>): Promise<TestCase> {
   return apiFetch<TestCase>(`/api/v1/test-cases/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 }

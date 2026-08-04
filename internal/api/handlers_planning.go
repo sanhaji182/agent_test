@@ -194,6 +194,10 @@ func (s *Server) handleUpdateTestCase(w http.ResponseWriter, r *http.Request) {
 		Steps      []string `json:"steps"`
 		Assertions []string `json:"assertions"`
 		Tags       []string `json:"tags"`
+		// ExecutableContent memungkinkan visual editor menyimpan browser-action
+		// JSON yang sudah diedit. Kosong = tidak mengubah (pakai pointer supaya
+		// bisa membedakan "tidak dikirim" dari "dikosongkan").
+		ExecutableContent *string `json:"executable_content"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid payload")
@@ -214,6 +218,17 @@ func (s *Server) handleUpdateTestCase(w http.ResponseWriter, r *http.Request) {
 	}
 	if payload.Tags != nil {
 		tc.Tags = payload.Tags
+	}
+	if payload.ExecutableContent != nil {
+		// Validasi: harus berupa JSON array browser actions yang valid.
+		if *payload.ExecutableContent != "" {
+			var actions []agent.BrowserAction
+			if err := json.Unmarshal([]byte(*payload.ExecutableContent), &actions); err != nil {
+				writeJSONError(w, http.StatusBadRequest, "executable_content must be a valid browser-action JSON array")
+				return
+			}
+		}
+		tc.ExecutableContent = *payload.ExecutableContent
 	}
 
 	if err := s.planning.UpdateTestCase(r.Context(), tc); err != nil {

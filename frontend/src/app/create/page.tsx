@@ -88,12 +88,27 @@ export default function CreatePage() {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Load the current default model from Settings so we can hint it in the field.
-  useEffect(() => {
-    getSettings()
-      .then((s) => { if (s.llm_model) setDefaultModel(s.llm_model); })
-      .catch(() => {});
-  }, []);
+	  // Load the current default model from Settings so we can hint it in the field.
+	  useEffect(() => {
+	    getSettings()
+	      .then((s) => { if (s.llm_model) setDefaultModel(s.llm_model); })
+	      .catch(() => {});
+	  }, []);
+
+	  // Support deep-link: /create?method=record (tombol "Record Test" di dashboard)
+	  // langsung memilih metode Rekam. Juga prefill URL bila ?url= disertakan.
+	  useEffect(() => {
+	    if (typeof window === "undefined") return;
+	    const qs = new URLSearchParams(window.location.search);
+	    if (qs.get("method") === "record") {
+	      setMethod("record");
+	      setStep(1);
+	    }
+	    const url = qs.get("url");
+	    if (url) {
+	      setFormData((prev) => ({ ...prev, project_path: url }));
+	    }
+	  }, []);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -469,9 +484,9 @@ export default function CreatePage() {
                       </div>
                     )}
 
-                    <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-                      Jalankan extension di tab yang menampilkan aplikasi target, lalu klik-klik seperti biasa. Event akan muncul di sini secara live.
-                    </p>
+	                    <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+	                      Buka extension (icon GoTest Agent di toolbar), klik <strong>Attach</strong> pada sesi ini di daftar "Recent Sessions", lalu klik-klik di aplikasi target seperti biasa. Event akan muncul di sini secara live.
+	                    </p>
 
                     {/* Recording actions */}
                     {!testCase ? (

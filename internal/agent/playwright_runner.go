@@ -208,22 +208,30 @@ func (r *PlaywrightRunner) runSequential(ctx context.Context, page playwright.Pa
 	retriedCount := 0
 	var failures []Failure
 
-	for _, tf := range testFiles {
+	for fileIdx := range testFiles {
+		tf := testFiles[fileIdx]
 		var actions []BrowserAction
 		if err := json.Unmarshal([]byte(tf.Content), &actions); err != nil {
 			continue
 		}
+		actionsChanged := false
 
 		for i := 0; i < len(actions); i++ {
-			a := actions[i]
 			totalActions++
 			actionStart := time.Now()
-			err := r.executeAction(ctx, page, &a)
+			before := actions[i]
+			err := r.executeAction(ctx, page, &actions[i])
+			// Jika self-healing mengubah aksi (via pointer), simpan kembali ke slice
+			// supaya versi yang sudah diperbaiki ikut tersimpan ke test case.
+			if actions[i] != before {
+				healedCount++
+				actionsChanged = true
+			}
 
 			// Simple retry once before declaring failure (reduces flaky results)
 			if err != nil {
 				time.Sleep(500 * time.Millisecond)
-				err = r.executeAction(ctx, page, &a)
+				err = r.executeAction(ctx, page, &actions[i])
 				if err == nil {
 					retriedCount++
 				}
@@ -253,6 +261,15 @@ func (r *PlaywrightRunner) runSequential(ctx context.Context, page playwright.Pa
 			}
 
 			time.Sleep(500 * time.Millisecond)
+		}
+
+		// Tulis kembali aksi yang sudah diperbaiki (healed) ke testFiles supaya
+		// run.TestFiles & auto-saved test case membawa versi final — replay
+		// deterministik tidak perlu healing lagi.
+		if actionsChanged {
+			if b, err := json.Marshal(actions); err == nil {
+				testFiles[fileIdx].Content = string(b)
+			}
 		}
 	}
 

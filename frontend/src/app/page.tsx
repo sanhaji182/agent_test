@@ -10,7 +10,7 @@ import Link from "next/link";
 import { 
   PlayCircle,
   Lightbulb, AlertTriangle, ArrowUpRight,
-  Shield, Sparkles
+  Shield, Sparkles, Video
 } from "lucide-react";
 
 export default function DashboardPage() {
@@ -109,6 +109,11 @@ export default function DashboardPage() {
           <Link href="/create">
             <Button>Create First Test</Button>
           </Link>
+          <Link href="/create?method=record">
+            <Button variant="secondary">
+              <Video className="w-4 h-4 mr-2" /> Record Test
+            </Button>
+          </Link>
           <Button variant="secondary" onClick={handleSeedDemo} disabled={seeding}>
             <Sparkles className="w-4 h-4 mr-2" />
             {seeding ? "Loading…" : "Load Demo Data"}
@@ -128,6 +133,11 @@ export default function DashboardPage() {
       }
       action={
         <div className="flex items-center gap-2">
+          <Link href="/create?method=record">
+            <Button variant="secondary">
+              <Video className="w-4 h-4 mr-2" /> Record Test
+            </Button>
+          </Link>
           <Button variant="secondary" onClick={handleSeedDemo} disabled={seeding}>
             <Sparkles className="w-4 h-4 mr-2" />
             {seeding ? "Loading…" : "Load Demo Data"}

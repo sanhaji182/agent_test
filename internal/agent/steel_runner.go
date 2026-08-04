@@ -131,16 +131,22 @@ func (r *SteelRunner) Run(ctx context.Context, testFiles []TestFile, projectURL 
 	var failures []Failure
 	var stepShots []string
 
-	for _, tf := range testFiles {
+	for fileIdx := range testFiles {
+		tf := testFiles[fileIdx]
 		var actions []BrowserAction
 		if err := json.Unmarshal([]byte(tf.Content), &actions); err != nil {
 			continue
 		}
+		actionsChanged := false
 
 		for i := 0; i < len(actions); i++ {
-			a := actions[i]
 			totalActions++
-			err := localRunner.executeAction(ctx, page, &a)
+			before := actions[i]
+			err := localRunner.executeAction(ctx, page, &actions[i])
+			// Simpan aksi hasil self-healing kembali ke slice (lihat playwright_runner).
+			if actions[i] != before {
+				actionsChanged = true
+			}
 
 			// Capture a screenshot after every step (success or failure) so runs
 			// always produce visual evidence — not only when something fails.
@@ -171,6 +177,13 @@ func (r *SteelRunner) Run(ctx context.Context, testFiles []TestFile, projectURL 
 			}
 
 			time.Sleep(500 * time.Millisecond)
+		}
+
+		// Tulis kembali aksi hasil healing ke testFiles (untuk auto-save test case).
+		if actionsChanged {
+			if b, err := json.Marshal(actions); err == nil {
+				testFiles[fileIdx].Content = string(b)
+			}
 		}
 	}
 
