@@ -169,6 +169,10 @@ type AgentConfig struct {
 	Exec          *execution.Context
 	Store         RunPersistence                         // Optional: auto-saves state transitions + panic-safe completion
 	RunnerFactory func(testType, viewport string) Runner // Optional: select runner per test type
+	// OnComplete dipanggil setelah run mencapai state terminal (done/failed/
+	// cancelled) dan state akhir sudah ter-persist. Dipakai API layer untuk
+	// auto-save run sukses sebagai test case deterministik.
+	OnComplete func(run *TestRun)
 }
 
 // Agent adalah orchestrator utama yang menjalankan seluruh alur testing
@@ -261,6 +265,17 @@ func (a *Agent) RunBlocking(ctx context.Context, run *TestRun) {
 	}
 	if err != nil {
 		slog.Error("run execution failed", "run_id", run.ID, "error", err)
+	}
+	// Terminal-state hook (post-persist) — dipakai untuk auto-save test case.
+	if a.cfg.OnComplete != nil {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("OnComplete hook panicked", "run_id", run.ID, "panic", r)
+				}
+			}()
+			a.cfg.OnComplete(run)
+		}()
 	}
 }
 

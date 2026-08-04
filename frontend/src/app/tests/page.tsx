@@ -186,29 +186,40 @@ export default function TestLibraryPage() {
                 </Td>
               </Tr>
             ) : (
-              filteredTests.map((test) => (
-                <Tr key={test.id} hover>
-                  <Td className="font-medium">
-                    <span className="block truncate max-w-[180px]">{test.title}</span>
-                    <span className="text-xs text-[var(--text-muted)]">{test.feature}</span>
-                  </Td>
-                  <Td><PriorityBadge priority={test.priority} /></Td>
-                  <Td className="text-right space-x-2">
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      isLoading={runningId === test.id}
-                      onClick={() => handleRun(test)}
-                    >
-                      <PlayCircle className="w-3.5 h-3.5" />
-                      Run
-                    </Button>
-                    <Link href={`/tests/${test.id}/edit`}>
-                      <Button variant="secondary" size="sm">Edit</Button>
-                    </Link>
-                  </Td>
-                </Tr>
-              ))
+              filteredTests.map((test) => {
+                const deterministic = !!test.executable_content;
+                return (
+                  <Tr key={test.id} hover>
+                    <Td className="font-medium">
+                      <span className="block truncate max-w-[180px]">{test.title}</span>
+                      <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                        {deterministic && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--success-bg)] border border-[var(--success)]/20 text-[10px] font-semibold text-[var(--success)]" title="Test case ini bisa di-run ulang secara deterministik tanpa AI — persis seperti rekam-putar Katalon">
+                            <CheckCircle2 className="w-3 h-3" /> Deterministic
+                          </span>
+                        )}
+                        {test.steps?.length > 0 && <span>{test.steps.length} steps</span>}
+                        {test.feature && <span>· {test.feature}</span>}
+                      </span>
+                    </Td>
+                    <Td><PriorityBadge priority={test.priority} /></Td>
+                    <Td className="text-right space-x-2">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        isLoading={runningId === test.id}
+                        onClick={() => handleRun(test)}
+                      >
+                        <PlayCircle className="w-3.5 h-3.5" />
+                        Run
+                      </Button>
+                      <Link href={`/tests/${test.id}/edit`}>
+                        <Button variant="secondary" size="sm">Edit</Button>
+                      </Link>
+                    </Td>
+                  </Tr>
+                );
+              })
             )}
           </tbody>
         </table>

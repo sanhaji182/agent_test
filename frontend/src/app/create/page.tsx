@@ -1,33 +1,131 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createRun, getAvailableModels, getSettings } from "@/lib/api";
+import {
+  createRun,
+  createRecordingSession,
+  createTestCaseFromRecording,
+  deleteRecordingSession,
+  getAvailableModels,
+  getRecordingSession,
+  getSettings,
+  runTestCase,
+  updateRecordingSession,
+  type RecordedEvent,
+  type RecordingSession,
+  type TestCase,
+} from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { LoadingSkeleton } from "@/components/ui/section";
-import { RefreshCw, Sparkles } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowUpDown,
+  CheckCircle2,
+  ChevronDown,
+  Circle,
+  Globe,
+  MousePointerClick,
+  Navigation,
+  RefreshCw,
+  Sparkles,
+  Square,
+  Trash2,
+  Type,
+  Video,
+} from "lucide-react";
+
+type Method = "ai" | "record";
+
+const STEPS = ["Target", "Metode", "Konfirmasi"] as const;
+
+const EVENT_ICONS: Record<string, React.ReactNode> = {
+  click: <MousePointerClick className="w-3.5 h-3.5" />,
+  fill: <Type className="w-3.5 h-3.5" />,
+  navigate: <Navigation className="w-3.5 h-3.5" />,
+  scroll: <ArrowUpDown className="w-3.5 h-3.5" />,
+  assert: <CheckCircle2 className="w-3.5 h-3.5" />,
+};
+
+function eventIcon(type: string) {
+  return EVENT_ICONS[type] ?? <Circle className="w-3.5 h-3.5" />;
+}
 
 export default function CreatePage() {
   const router = useRouter();
+  const [step, setStep] = useState(0);
+  const [method, setMethod] = useState<Method>("ai");
+
   const [formData, setFormData] = useState({
     project_path: "",
-    requirements: "",
-    base_url: "",
     name: "",
+    requirements: "",
     model: "",
   });
+
+  // Model override (advanced)
   const [defaultModel, setDefaultModel] = useState("");
   const [models, setModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+
+  // Recording state
+  const [session, setSession] = useState<RecordingSession | null>(null);
+  const [events, setEvents] = useState<RecordedEvent[]>([]);
+  const [startingSession, setStartingSession] = useState(false);
+  const [stoppingSession, setStoppingSession] = useState(false);
+  const [testCase, setTestCase] = useState<TestCase | null>(null);
+
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const handleChange = (field: string, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
 
   // Load the current default model from Settings so we can hint it in the field.
   useEffect(() => {
     getSettings()
       .then((s) => { if (s.llm_model) setDefaultModel(s.llm_model); })
+      .catch(() => {});
+  }, []);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  // Poll for recorded events only while a session is active AND we're on the
+  // Metode step with "Rekam" selected. Cleans up on unmount and when stopping.
+  useEffect(() => {
+    stopPolling();
+    if (session && step === 1 && method === "record" && session.status !== "completed") {
+      pollRef.current = setInterval(() => {
+        getRecordingSession(session.id)
+          .then((res) => {
+            setSession(res.session);
+            setEvents(res.events || []);
+          })
+          .catch(() => {});
+      }, 2000);
+    }
+    return stopPolling;
+  }, [session, step, method, stopPolling]);
+
+  // Fetch events once right after creating a session.
+  const refreshEvents = useCallback((sessionId: string) => {
+    getRecordingSession(sessionId)
+      .then((res) => {
+        setSession(res.session);
+        setEvents(res.events || []);
+      })
       .catch(() => {});
   }, []);
 
@@ -50,35 +148,90 @@ export default function CreatePage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.project_path.trim() || !formData.requirements.trim()) return;
-    
-    setLoading(true);
+  const handleStartSession = async () => {
+    setStartingSession(true);
     setError(null);
-    
     try {
-      const payload: Parameters<typeof createRun>[0] = {
-        ...formData,
-        mode: "simple", // Use simple mode for now
-      };
-      if (!payload.model?.trim()) delete payload.model; // kosong = pakai default dari Settings
-      const result = await createRun(payload);
-      
-      if (result && result.run_id) {
-        router.push(`/runs/${result.run_id}`);
-      } else {
-        setError("Failed to create test run. Please try again.");
-      }
+      const s = await createRecordingSession({
+        name: formData.name.trim() || `Recording ${new Date().toLocaleTimeString()}`,
+        project_path: formData.project_path,
+        base_url: formData.project_path,
+      });
+      setSession(s);
+      setEvents([]);
+      refreshEvents(s.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      setError(err instanceof Error ? err.message : "Gagal membuat sesi rekam");
     } finally {
-      setLoading(false);
+      setStartingSession(false);
     }
   };
 
-  const handleChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  const handleStopAndConvert = async () => {
+    if (!session) return;
+    setStoppingSession(true);
+    setError(null);
+    try {
+      await updateRecordingSession(session.id, { status: "completed" });
+      stopPolling();
+      const tc = await createTestCaseFromRecording(session.id);
+      setTestCase(tc);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal membuat test case dari rekaman");
+    } finally {
+      setStoppingSession(false);
+    }
+  };
+
+  const handleDeleteSession = async () => {
+    if (!session) return;
+    stopPolling();
+    try {
+      await deleteRecordingSession(session.id);
+    } catch {
+      // Session mungkin sudah terhapus di server; tetap reset state lokal.
+    }
+    setSession(null);
+    setEvents([]);
+    setTestCase(null);
+  };
+
+  const canNextStep1 = formData.project_path.trim().length > 0;
+  const canNextStep2 =
+    method === "ai"
+      ? formData.requirements.trim().length > 0
+      : testCase !== null;
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      let runId: string | undefined;
+      if (method === "record") {
+        if (!testCase) return;
+        const result = await runTestCase(testCase.id);
+        runId = result?.run_id;
+      } else {
+        const payload: Parameters<typeof createRun>[0] = {
+          project_path: formData.project_path,
+          requirements: formData.requirements,
+          mode: "simple",
+        };
+        if (formData.model.trim()) payload.model = formData.model.trim();
+        const result = await createRun(payload);
+        runId = result?.run_id;
+      }
+
+      if (runId) {
+        router.push(`/runs/${runId}`);
+      } else {
+        setError("Gagal membuat test run. Silakan coba lagi.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Terjadi kesalahan");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -86,144 +239,413 @@ export default function CreatePage() {
       {/* Header */}
       <div>
         <h1 className="text-xl font-semibold tracking-tight mb-2">Create Test Run</h1>
-        <p className="text-sm text-[var(--text-muted)]">Define your requirements and let AI generate comprehensive tests</p>
+        <p className="text-sm text-[var(--text-muted)]">Buat test baru dalam 3 langkah mudah</p>
+      </div>
+
+      {/* Step Indicator */}
+      <div className="flex items-center gap-2">
+        {STEPS.map((label, i) => {
+          const active = i === step;
+          const done = i < step;
+          return (
+            <div key={label} className="flex items-center gap-2 flex-1 last:flex-none">
+              <div className="flex items-center gap-2">
+                <div
+                  className={cn(
+                    "w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold border transition-colors",
+                    done
+                      ? "bg-[var(--accent)] border-[var(--accent)] text-white"
+                      : active
+                        ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-bg)]"
+                        : "border-[var(--border-default)] text-[var(--text-muted)] bg-white"
+                  )}
+                >
+                  {done ? <CheckCircle2 className="w-3.5 h-3.5" /> : i + 1}
+                </div>
+                <span
+                  className={cn(
+                    "text-xs font-medium whitespace-nowrap",
+                    active ? "text-[var(--text-primary)]" : "text-[var(--text-muted)]"
+                  )}
+                >
+                  {label}
+                </span>
+              </div>
+              {i < STEPS.length - 1 && (
+                <div className="flex-1 h-px bg-[var(--border-default)] mx-1" />
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Form Card */}
       <div className="bg-white rounded-lg border border-[var(--border-default)] p-6 shadow-xs">
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Project Path */}
-          <Input
-            label="Project Path"
-            placeholder="/path/to/your/project"
-            value={formData.project_path}
-            onChange={(e) => handleChange("project_path", e.target.value)}
-            required
-            helperText="Local path to the project you want to test"
-          />
 
-          {/* Requirements */}
-          <div>
-            <label htmlFor="requirements" className="block text-sm font-medium text-[var(--text-primary)] mb-1.5">
-              Test Requirements <span className="text-red-500">*</span>
-            </label>
-            <textarea
-              id="requirements"
-              value={formData.requirements}
-              onChange={(e) => handleChange("requirements", e.target.value)}
-              placeholder="Describe what behaviors you want to test... Example: 'Test user login flow including valid credentials, invalid password, and account lockout'"
-              className="w-full h-32 px-3 py-2 bg-white border border-[var(--border-default)] rounded-md text-sm resize-none focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
+        {/* ============ STEP 1 — TARGET ============ */}
+        {step === 0 && (
+          <div className="space-y-5">
+            <Input
+              label="URL Aplikasi"
+              placeholder="https://asisten.digital/"
+              value={formData.project_path}
+              onChange={(e) => handleChange("project_path", e.target.value)}
+              leftIcon={<Globe className="w-4 h-4" />}
               required
+              helperText="Alamat aplikasi atau website yang mau dites."
             />
-            <p className="mt-1 text-xs text-[var(--text-muted)]">Be specific about scenarios, edge cases, and expected behaviors.</p>
-          </div>
-
-          {/* Base URL (Optional) */}
-          <Input
-            label="Base URL (Optional)"
-            placeholder="https://app.example.com"
-            value={formData.base_url}
-            onChange={(e) => handleChange("base_url", e.target.value)}
-            helperText="The base URL where the application is running"
-          />
-
-	          {/* Test Name (Optional) */}
-	          <Input
-	            label="Test Name (Optional)"
-	            placeholder="My Login Test"
-	            value={formData.name}
-	            onChange={(e) => handleChange("name", e.target.value)}
-	            helperText="Give your test a meaningful name"
-	          />
-
-	          {/* AI Model (Optional) — paksa model khusus untuk run ini */}
-	          <div>
-	            <div className="flex items-center justify-between mb-1.5">
-	              <label htmlFor="model" className="block text-sm font-medium text-[var(--text-primary)]">
-	                AI Model <span className="text-[var(--text-muted)] font-normal">(opsional)</span>
-	              </label>
-	              <Button
-	                type="button"
-	                variant="secondary"
-	                size="sm"
-	                onClick={handleFetchModels}
-	                disabled={fetchingModels}
-	              >
-	                <RefreshCw className={`w-3.5 h-3.5 ${fetchingModels ? "animate-spin" : ""}`} />
-	                {fetchingModels ? "Mengambil…" : "Ambil Model"}
-	              </Button>
-	            </div>
-	            <Input
-	              id="model"
-	              list="available-models"
-	              placeholder={defaultModel ? `Default: ${defaultModel}` : "Kosongkan untuk pakai model dari Settings"}
-	              value={formData.model}
-	              onChange={(e) => handleChange("model", e.target.value)}
-	              leftIcon={<Sparkles className="w-4 h-4" />}
-	              helperText={modelsError ? undefined : "Pilih model khusus untuk run ini. Kosongkan agar pakai model dari Settings."}
-	              error={modelsError || undefined}
-	            />
-	            <datalist id="available-models">
-	              {models.map((m) => (
-	                <option key={m} value={m} />
-	              ))}
-	            </datalist>
-	          </div>
-
-          {/* Error Message */}
-          {error && (
-            <div className="rounded-lg bg-red-50 border border-red-200 p-3">
-              <p className="text-sm text-red-700">{error}</p>
+            <Input
+              label="Nama Test (opsional)"
+              placeholder="My Login Test"
+              value={formData.name}
+              onChange={(e) => handleChange("name", e.target.value)}
+            />
+            <div className="flex justify-end pt-4 border-t border-[var(--border-default)]">
+              <Button
+                type="button"
+                disabled={!canNextStep1}
+                onClick={() => setStep(1)}
+              >
+                Lanjut
+                <ArrowRight className="w-4 h-4" />
+              </Button>
             </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex gap-3 pt-4 border-t border-[var(--border-default)]">
-            <Button 
-              type="submit" 
-              disabled={loading || !formData.project_path.trim() || !formData.requirements.trim()}
-              className="w-40"
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  Creating...
-                </span>
-              ) : (
-                "Create Test"
-              )}
-            </Button>
-            <Button 
-              type="button" 
-              variant="secondary" 
-              onClick={() => router.back()}
-              className="w-32"
-            >
-              Cancel
-            </Button>
           </div>
-        </form>
-      </div>
+        )}
 
-      {/* Tips Section */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-2">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          Tips for Better Results
-        </h3>
-        <ul className="text-sm text-blue-700 space-y-1 ml-6 list-disc">
-          <li>Be specific about user flows and acceptance criteria</li>
-          <li>Include both happy paths and edge cases</li>
-          <li>Specify expected behaviors, not implementation details</li>
-          <li>Consider different authentication states (logged in/out)</li>
-          <li>Think about data validation and error handling</li>
-        </ul>
+        {/* ============ STEP 2 — METODE ============ */}
+        {step === 1 && (
+          <div className="space-y-5">
+            <div className="grid gap-3">
+              {/* Card: Deskripsi AI */}
+              <button
+                type="button"
+                onClick={() => setMethod("ai")}
+                className={cn(
+                  "text-left rounded-lg border p-4 transition-colors",
+                  method === "ai"
+                    ? "border-[var(--accent)] bg-[var(--accent-bg)] ring-1 ring-[var(--accent)]/30"
+                    : "border-[var(--border-default)] bg-white hover:border-[var(--border-strong)]"
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className={cn(
+                      "w-8 h-8 rounded-[var(--radius-sm)] flex items-center justify-center shrink-0",
+                      method === "ai"
+                        ? "bg-[var(--accent)] text-white"
+                        : "bg-[var(--bg-subtle)] text-[var(--text-muted)]"
+                    )}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--text-primary)]">Deskripsi AI</p>
+                    <p className="text-xs text-[var(--text-muted)] mt-0.5 leading-relaxed">
+                      Jelaskan apa yang mau dites dalam bahasa bebas. AI akan menganalisis halaman, membuat, lalu menjalankan test secara otomatis.
+                    </p>
+                  </div>
+                </div>
+              </button>
+
+              {/* Card: Rekam (Extension) */}
+              <button
+                type="button"
+                onClick={() => setMethod("record")}
+                className={cn(
+                  "text-left rounded-lg border p-4 transition-colors",
+                  method === "record"
+                    ? "border-[var(--accent)] bg-[var(--accent-bg)] ring-1 ring-[var(--accent)]/30"
+                    : "border-[var(--border-default)] bg-white hover:border-[var(--border-strong)]"
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className={cn(
+                      "w-8 h-8 rounded-[var(--radius-sm)] flex items-center justify-center shrink-0",
+                      method === "record"
+                        ? "bg-[var(--accent)] text-white"
+                        : "bg-[var(--bg-subtle)] text-[var(--text-muted)]"
+                    )}
+                  >
+                    <Video className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--text-primary)]">Rekam (Extension)</p>
+                    <p className="text-xs text-[var(--text-muted)] mt-0.5 leading-relaxed">
+                      Rekam interaksi kamu di browser seperti Katalon. Hasil rekaman jadi test case yang bisa di-run ulang persis (deterministik).
+                    </p>
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            {/* AI path: requirements textarea */}
+            {method === "ai" && (
+              <div>
+                <label htmlFor="requirements" className="block text-sm font-medium text-[var(--text-primary)] mb-1.5">
+                  Apa yang mau dites? <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  id="requirements"
+                  value={formData.requirements}
+                  onChange={(e) => handleChange("requirements", e.target.value)}
+                  placeholder="Pastikan homepage https://asisten.digital/ berhasil dimuat dan heading utama terlihat."
+                  className="w-full h-32 px-3 py-2 bg-white border border-[var(--border-default)] rounded-md text-sm resize-none focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
+                  required
+                />
+                <p className="mt-1 text-xs text-[var(--text-muted)]">Tulis dalam bahasa bebas — makin spesifik makin bagus hasilnya.</p>
+              </div>
+            )}
+
+            {/* Record path: recording panel */}
+            {method === "record" && (
+              <div className="space-y-4">
+                {/* Install guide */}
+                <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-subtle)] p-3">
+                  <p className="text-xs font-semibold text-[var(--text-primary)] mb-1.5">Cara install extension:</p>
+                  <ol className="text-xs text-[var(--text-secondary)] space-y-1 list-decimal ml-4">
+                    <li>Buka <code className="font-mono text-[11px] bg-white px-1 py-0.5 rounded border border-[var(--border-default)]">chrome://extensions</code></li>
+                    <li>Aktifkan <strong>Developer mode</strong></li>
+                    <li>Load unpacked → folder <code className="font-mono text-[11px] bg-white px-1 py-0.5 rounded border border-[var(--border-default)]">chrome-extension/</code></li>
+                    <li>Klik icon GoTest Agent di toolbar</li>
+                  </ol>
+                </div>
+
+                {!session ? (
+                  <Button
+                    type="button"
+                    onClick={handleStartSession}
+                    isLoading={startingSession}
+                    disabled={startingSession}
+                  >
+                    <Video className="w-4 h-4" />
+                    {startingSession ? "Membuat sesi…" : "Mulai Sesi Rekam"}
+                  </Button>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Session status */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--danger)] opacity-60" />
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[var(--danger)]" />
+                        </span>
+                        <span className="text-xs font-medium text-[var(--text-primary)]">
+                          {session.name}
+                        </span>
+                        <Badge variant={session.status === "completed" ? "success" : "danger"} size="sm">
+                          {session.status}
+                        </Badge>
+                      </div>
+                      <span className="text-xs text-[var(--text-muted)]">
+                        {events.length} event
+                      </span>
+                    </div>
+
+                    {/* Live events */}
+                    {events.length > 0 ? (
+                      <div className="rounded-lg border border-[var(--border-default)] bg-white max-h-48 overflow-y-auto divide-y divide-[var(--border)]">
+                        {events.slice(-8).map((ev) => (
+                          <div key={ev.id} className="flex items-center gap-2.5 px-3 py-2">
+                            <span className="text-[var(--text-muted)] shrink-0">{eventIcon(ev.event_type)}</span>
+                            <span className="text-xs font-medium text-[var(--text-primary)] capitalize shrink-0 w-16">
+                              {ev.event_type}
+                            </span>
+                            <span className="text-xs text-[var(--text-secondary)] font-mono truncate flex-1">
+                              {ev.selector || ev.url || "—"}
+                            </span>
+                            {ev.value && (
+                              <span className="text-[11px] text-[var(--text-muted)] truncate max-w-[120px]">
+                                {ev.value}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-dashed border-[var(--border-default)] py-6 text-center">
+                        <p className="text-xs text-[var(--text-muted)]">Belum ada event. Mulai klik-klik di browser…</p>
+                      </div>
+                    )}
+
+                    <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                      Jalankan extension di tab yang menampilkan aplikasi target, lalu klik-klik seperti biasa. Event akan muncul di sini secara live.
+                    </p>
+
+                    {/* Recording actions */}
+                    {!testCase ? (
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={handleStopAndConvert}
+                          isLoading={stoppingSession}
+                          disabled={events.length === 0 || stoppingSession}
+                        >
+                          <Square className="w-3.5 h-3.5" />
+                          {stoppingSession ? "Memproses…" : "Berhenti & Jadikan Test Case"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={handleDeleteSession}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Hapus Sesi
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-[var(--success)]/30 bg-[var(--success-bg)] p-3 flex items-center gap-3">
+                        <CheckCircle2 className="w-4 h-4 text-[var(--success)] shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-[var(--text-primary)] truncate">
+                            {testCase.title}
+                          </p>
+                          <p className="text-[11px] text-[var(--text-muted)]">
+                            {testCase.steps?.length || 0} langkah · siap dijalankan
+                          </p>
+                        </div>
+                        <Badge variant="success" size="sm">Deterministic</Badge>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Error */}
+            {error && (
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex justify-between pt-4 border-t border-[var(--border-default)]">
+              <Button type="button" variant="secondary" onClick={() => setStep(0)}>
+                <ArrowLeft className="w-4 h-4" />
+                Kembali
+              </Button>
+              <Button
+                type="button"
+                disabled={!canNextStep2}
+                onClick={() => setStep(2)}
+              >
+                Lanjut
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ============ STEP 3 — KONFIRMASI ============ */}
+        {step === 2 && (
+          <div className="space-y-5">
+            {/* Summary */}
+            <div className="rounded-lg border border-[var(--border-default)] divide-y divide-[var(--border)]">
+              <SummaryRow label="Target URL" value={formData.project_path} />
+              <SummaryRow label="Nama" value={formData.name.trim() || "—"} />
+              <SummaryRow label="Metode" value={method === "ai" ? "Deskripsi AI" : "Rekam"} />
+              {method === "ai" ? (
+                <div className="px-4 py-3">
+                  <p className="text-xs font-medium text-[var(--text-muted)] mb-1">Requirements</p>
+                  <p className="text-sm text-[var(--text-primary)] whitespace-pre-wrap leading-relaxed">
+                    {formData.requirements}
+                  </p>
+                </div>
+              ) : testCase ? (
+                <div className="px-4 py-3">
+                  <p className="text-xs font-medium text-[var(--text-muted)] mb-1">Test Case</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm text-[var(--text-primary)] font-medium">{testCase.title}</p>
+                    <span className="text-xs text-[var(--text-muted)]">· {testCase.steps?.length || 0} langkah</span>
+                    <Badge variant="success" size="sm">Deterministic</Badge>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            {/* Advanced */}
+            {method === "ai" && (
+              <details className="group rounded-lg border border-[var(--border-default)]">
+                <summary className="flex items-center justify-between px-4 py-3 cursor-pointer select-none text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+                  Advanced (opsional)
+                  <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="px-4 pb-4 pt-1 border-t border-[var(--border)]">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label htmlFor="model" className="block text-sm font-medium text-[var(--text-primary)]">
+                      AI Model <span className="text-[var(--text-muted)] font-normal">(opsional)</span>
+                    </label>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleFetchModels}
+                      disabled={fetchingModels}
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${fetchingModels ? "animate-spin" : ""}`} />
+                      {fetchingModels ? "Mengambil…" : "Ambil Model"}
+                    </Button>
+                  </div>
+                  <Input
+                    id="model"
+                    list="available-models"
+                    placeholder={defaultModel ? `Default: ${defaultModel}` : "Kosongkan untuk pakai model dari Settings"}
+                    value={formData.model}
+                    onChange={(e) => handleChange("model", e.target.value)}
+                    leftIcon={<Sparkles className="w-4 h-4" />}
+                    helperText={modelsError ? undefined : "Kosongkan untuk pakai model dari Settings."}
+                    error={modelsError || undefined}
+                  />
+                  <datalist id="available-models">
+                    {models.map((m) => (
+                      <option key={m} value={m} />
+                    ))}
+                  </datalist>
+                </div>
+              </details>
+            )}
+
+            {/* Error */}
+            {error && (
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex justify-between pt-4 border-t border-[var(--border-default)]">
+              <Button type="button" variant="secondary" onClick={() => setStep(1)}>
+                <ArrowLeft className="w-4 h-4" />
+                Kembali
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSubmit}
+                isLoading={submitting}
+                disabled={submitting || (method === "record" && !testCase)}
+              >
+                {submitting
+                  ? "Memproses…"
+                  : method === "ai"
+                    ? "Buat & Jalankan Test"
+                    : "Jalankan Test Case"}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3 gap-4">
+      <span className="text-xs font-medium text-[var(--text-muted)] shrink-0">{label}</span>
+      <span className="text-sm text-[var(--text-primary)] text-right truncate">{value}</span>
     </div>
   );
 }

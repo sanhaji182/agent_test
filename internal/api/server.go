@@ -334,6 +334,7 @@ func (s *Server) routes() {
 		r.Post("/recording-sessions/{id}/events", s.handleAddRecordingEvent)
 		r.Get("/recording-sessions/{id}/events", s.handleListRecordingEvents)
 		r.Post("/recording-sessions/{id}/generate", s.handleGenerateTestFromRecording)
+		r.Post("/recording-sessions/{id}/create-test-case", s.handleCreateTestCaseFromRecording)
 		r.Delete("/recording-sessions/{id}", s.handleDeleteRecordingSession)
 		r.Patch("/recording-sessions/{id}", s.handleUpdateRecordingSession)
 		r.Get("/runs/{id}/visual", s.handleGetVisualArtifacts)

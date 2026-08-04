@@ -93,10 +93,12 @@ func (s *DBStore) CreateTestCases(ctx context.Context, cases []*TestCase) error 
 		tags, _ := json.Marshal(tc.Tags)
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO test_cases (id, project_id, plan_id, title, type, feature,
-				priority, steps, assertions, tags, version, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+				priority, steps, assertions, tags, version, created_at, updated_at,
+				executable_content, source_run_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 			tc.ID, nullableUUID(tc.ProjectID), nullableUUID(tc.PlanID), tc.Title, tc.Type,
-			tc.Feature, tc.Priority, steps, assertions, tags, tc.Version, tc.CreatedAt, tc.UpdatedAt); err != nil {
+			tc.Feature, tc.Priority, steps, assertions, tags, tc.Version, tc.CreatedAt, tc.UpdatedAt,
+			tc.ExecutableContent, nullableUUID(tc.SourceRunID)); err != nil {
 			return err
 		}
 	}
@@ -105,7 +107,8 @@ func (s *DBStore) CreateTestCases(ctx context.Context, cases []*TestCase) error 
 
 const testCaseColumns = `id, COALESCE(project_id::text, ''), COALESCE(plan_id::text, ''),
 	title, type, COALESCE(feature, ''), priority, steps, assertions, tags,
-	version, created_at, updated_at`
+	version, created_at, updated_at,
+	COALESCE(executable_content, ''), COALESCE(source_run_id::text, '')`
 
 func (s *DBStore) ListTestCases(ctx context.Context, projectID string) ([]*TestCase, error) {
 	var rows pgx.Rows
@@ -142,9 +145,11 @@ func (s *DBStore) UpdateTestCase(ctx context.Context, tc *TestCase) error {
 	tags, _ := json.Marshal(tc.Tags)
 	_, err := s.pool.Exec(ctx, `
 		UPDATE test_cases SET title = $2, type = $3, feature = $4, priority = $5,
-			steps = $6, assertions = $7, tags = $8, version = $9, updated_at = $10
+			steps = $6, assertions = $7, tags = $8, version = $9, updated_at = $10,
+			executable_content = $11
 		WHERE id = $1`,
-		tc.ID, tc.Title, tc.Type, tc.Feature, tc.Priority, steps, assertions, tags, tc.Version, tc.UpdatedAt)
+		tc.ID, tc.Title, tc.Type, tc.Feature, tc.Priority, steps, assertions, tags, tc.Version, tc.UpdatedAt,
+		tc.ExecutableContent)
 	return err
 }
 
@@ -153,7 +158,7 @@ func scanCase(row scanner) (*TestCase, error) {
 	var steps, assertions, tags []byte
 	if err := row.Scan(&tc.ID, &tc.ProjectID, &tc.PlanID, &tc.Title, &tc.Type,
 		&tc.Feature, &tc.Priority, &steps, &assertions, &tags, &tc.Version,
-		&tc.CreatedAt, &tc.UpdatedAt); err != nil {
+		&tc.CreatedAt, &tc.UpdatedAt, &tc.ExecutableContent, &tc.SourceRunID); err != nil {
 		return nil, err
 	}
 	tc.Steps = unmarshalStrings(steps)

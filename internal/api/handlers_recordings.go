@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-go-golems/gotest-agent/internal/agent"
+	"github.com/go-go-golems/gotest-agent/internal/planning"
 	"github.com/go-go-golems/gotest-agent/internal/recordings"
 )
 
@@ -196,6 +198,145 @@ func generatePlaywrightSkeleton(sess *recordings.Session, events []recordings.Ev
 
 func sanitizeForTS(s string) string {
 	return strings.ReplaceAll(s, "'", "\\'")
+}
+
+// handleCreateTestCaseFromRecording mengubah event rekam menjadi test case
+// deterministik: event di-convert ke browser-action JSON (executable_content),
+// sehingga hasil rekam bisa di-run ulang persis seperti rekam-putar Katalon.
+func (s *Server) handleCreateTestCaseFromRecording(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	sess, events, ok := s.recordings.GetSessionWithEvents(id)
+	if !ok {
+		writeJSONError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	if len(events) == 0 {
+		writeJSONError(w, http.StatusBadRequest, "no events in session")
+		return
+	}
+	if s.planning == nil {
+		writeJSONError(w, http.StatusInternalServerError, "planning store not available")
+		return
+	}
+
+	actions := recordingsEventsToBrowserActions(sess, events)
+	if len(actions) == 0 {
+		writeJSONError(w, http.StatusBadRequest, "no actionable events in session")
+		return
+	}
+	executable, err := json.Marshal(actions)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "marshal actions failed")
+		return
+	}
+
+	// Steps = ringkasan bahasa manusia dari event untuk tampilan di Tests page.
+	steps := recordingsEventsToSteps(events)
+	tags := []string{"recorded", "deterministic"}
+	if projectPath := sess.ProjectPath; projectPath != "" {
+		tags = append(tags, "recording")
+	}
+
+	tc := &planning.TestCase{
+		Title:             sess.Name,
+		Type:              "ui",
+		Feature:           "recorded",
+		Priority:          "high",
+		Steps:             steps,
+		Assertions:        []string{},
+		Tags:              tags,
+		ExecutableContent: string(executable),
+	}
+	if err := s.planning.CreateTestCases(r.Context(), []*planning.TestCase{tc}); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "save test case failed")
+		return
+	}
+	// Tandai sesi selesai.
+	s.recordings.UpdateSessionStatus(id, "completed")
+
+	writeJSON(w, http.StatusCreated, tc)
+}
+
+// recordingsEventsToBrowserActions mengubah event rekam menjadi browser actions
+// yang bisa dieksekusi SteelRunner/PlaywrightRunner secara langsung.
+func recordingsEventsToBrowserActions(sess *recordings.Session, events []recordings.Event) []agent.BrowserAction {
+	var actions []agent.BrowserAction
+	// Mulai dari base URL sesi bila tersedia.
+	if sess.BaseURL != "" {
+		actions = append(actions, agent.BrowserAction{Action: "goto", URL: sess.BaseURL})
+		actions = append(actions, agent.BrowserAction{Action: "wait", Ms: 1000})
+	}
+	for _, ev := range events {
+		switch ev.EventType {
+		case recordings.EventClick:
+			if ev.Selector != "" {
+				actions = append(actions, agent.BrowserAction{Action: "click", Selector: ev.Selector})
+			}
+		case recordings.EventFill:
+			if ev.Selector != "" {
+				actions = append(actions, agent.BrowserAction{Action: "fill", Selector: ev.Selector, Value: ev.Value})
+			}
+		case recordings.EventNavigate:
+			if ev.URL != "" {
+				actions = append(actions, agent.BrowserAction{Action: "goto", URL: ev.URL})
+			}
+		case recordings.EventSelect:
+			if ev.Selector != "" {
+				actions = append(actions, agent.BrowserAction{Action: "select", Selector: ev.Selector, Value: ev.Value})
+			}
+		case recordings.EventHover:
+			if ev.Selector != "" {
+				actions = append(actions, agent.BrowserAction{Action: "hover", Selector: ev.Selector})
+			}
+		case recordings.EventPress:
+			if ev.Value != "" {
+				actions = append(actions, agent.BrowserAction{Action: "press", Selector: ev.Selector, Key: ev.Value})
+			}
+		case recordings.EventScroll:
+			actions = append(actions, agent.BrowserAction{Action: "scroll", Y: 300})
+		case recordings.EventWait:
+			actions = append(actions, agent.BrowserAction{Action: "wait", Ms: 500})
+		case recordings.EventAssertText:
+			if ev.Selector != "" && ev.Value != "" {
+				actions = append(actions, agent.BrowserAction{Action: "assert", Selector: ev.Selector, Assert: "text_contains", Text: ev.Value})
+			}
+		case recordings.EventAssertVisible:
+			if ev.Selector != "" {
+				actions = append(actions, agent.BrowserAction{Action: "assert", Selector: ev.Selector, Assert: "visible"})
+			}
+		}
+	}
+	return actions
+}
+
+// recordingsEventsToSteps membuat ringkasan langkah bahasa manusia dari event.
+func recordingsEventsToSteps(events []recordings.Event) []string {
+	var steps []string
+	for _, ev := range events {
+		switch ev.EventType {
+		case recordings.EventClick:
+			steps = append(steps, "Klik "+ev.Selector)
+		case recordings.EventFill:
+			steps = append(steps, fmt.Sprintf("Isi %s dengan \"%s\"", ev.Selector, ev.Value))
+		case recordings.EventNavigate:
+			steps = append(steps, "Buka "+ev.URL)
+		case recordings.EventSelect:
+			steps = append(steps, fmt.Sprintf("Pilih \"%s\" di %s", ev.Value, ev.Selector))
+		case recordings.EventHover:
+			steps = append(steps, "Hover "+ev.Selector)
+		case recordings.EventPress:
+			steps = append(steps, "Tekan tombol "+ev.Value)
+		case recordings.EventScroll:
+			steps = append(steps, "Scroll halaman")
+		case recordings.EventWait:
+			steps = append(steps, "Tunggu")
+		case recordings.EventAssertText:
+			steps = append(steps, fmt.Sprintf("Pastikan %s berisi \"%s\"", ev.Selector, ev.Value))
+		case recordings.EventAssertVisible:
+			steps = append(steps, "Pastikan "+ev.Selector+" terlihat")
+		}
+	}
+	return steps
 }
 
 // handleDeleteRecordingSession deletes a recording session and its events.

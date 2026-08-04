@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   getRecordingSession,
   generateRecordingTest,
+  createTestCaseFromRecording,
   deleteRecordingSession,
   type RecordingSession,
   type RecordedEvent,
@@ -25,6 +26,7 @@ import {
   Sparkles,
   Copy,
   Check,
+  CheckCircle2,
   Trash2,
   Clock,
   Hash,
@@ -73,11 +75,16 @@ export default function RecordingDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Generate test state
-  const [testCode, setTestCode] = useState<string | null>(null);
-  const [testMeta, setTestMeta] = useState<{ language: string; framework: string } | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const [generateError, setGenerateError] = useState<string | null>(null);
+	  // Generate test state
+	  const [testCode, setTestCode] = useState<string | null>(null);
+	  const [testMeta, setTestMeta] = useState<{ language: string; framework: string } | null>(null);
+	  const [generating, setGenerating] = useState(false);
+	  const [generateError, setGenerateError] = useState<string | null>(null);
+
+	  // Save-as-test-case state (deterministic playback — like Katalon record & playback)
+	  const [savingCase, setSavingCase] = useState(false);
+	  const [savedCase, setSavedCase] = useState<{ id: string; title: string; steps: string[] } | null>(null);
+	  const [saveCaseError, setSaveCaseError] = useState<string | null>(null);
 
   // Copy state
   const [copied, setCopied] = useState(false);
@@ -92,20 +99,33 @@ export default function RecordingDetailPage() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  const handleGenerate = async () => {
-    setGenerating(true);
-    setGenerateError(null);
-    setTestCode(null);
-    try {
-      const result = await generateRecordingTest(id);
-      setTestCode(result.test_code);
-      setTestMeta({ language: result.language, framework: result.framework });
-    } catch (e) {
-      setGenerateError((e as Error).message);
-    } finally {
-      setGenerating(false);
-    }
-  };
+	  const handleGenerate = async () => {
+	    setGenerating(true);
+	    setGenerateError(null);
+	    setTestCode(null);
+	    try {
+	      const result = await generateRecordingTest(id);
+	      setTestCode(result.test_code);
+	      setTestMeta({ language: result.language, framework: result.framework });
+	    } catch (e) {
+	      setGenerateError((e as Error).message);
+	    } finally {
+	      setGenerating(false);
+	    }
+	  };
+
+	  const handleSaveAsTestCase = async () => {
+	    setSavingCase(true);
+	    setSaveCaseError(null);
+	    try {
+	      const tc = await createTestCaseFromRecording(id);
+	      setSavedCase({ id: tc.id, title: tc.title, steps: tc.steps || [] });
+	    } catch (e) {
+	      setSaveCaseError((e as Error).message);
+	    } finally {
+	      setSavingCase(false);
+	    }
+	  };
 
   const handleCopy = async () => {
     if (!testCode) return;
@@ -212,15 +232,36 @@ export default function RecordingDetailPage() {
               </span>
             </div>
           </div>
-          <button
-            onClick={handleGenerate}
-            disabled={generating || events.length === 0}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-xs font-semibold hover:bg-[var(--accent-hover)] disabled:opacity-50 transition-colors shadow-sm"
-          >
-            <Sparkles className={cn("w-3.5 h-3.5", generating && "animate-pulse")} />
-            {generating ? "Generating..." : "Generate Test"}
-          </button>
-        </div>
+	          <button
+	            onClick={handleGenerate}
+	            disabled={generating || events.length === 0}
+	            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-xs font-semibold hover:bg-[var(--accent-hover)] disabled:opacity-50 transition-colors shadow-sm"
+	          >
+	            <Sparkles className={cn("w-3.5 h-3.5", generating && "animate-pulse")} />
+	            {generating ? "Generating..." : "Generate Test"}
+	          </button>
+	        </div>
+
+	        {/* Save as deterministic test case (record & playback — seperti Katalon) */}
+	        <div className="mt-4 flex flex-wrap items-center gap-2">
+	          <button
+	            onClick={handleSaveAsTestCase}
+	            disabled={savingCase || events.length === 0 || !!savedCase}
+	            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[var(--success-bg)] border border-[var(--success)]/25 text-[var(--success)] text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-colors"
+	            title="Simpan hasil rekam sebagai test case deterministik — bisa di-run ulang persis tanpa AI"
+	          >
+	            <CheckCircle2 className="w-3.5 h-3.5" />
+	            {savingCase ? "Menyimpan..." : savedCase ? "Tersimpan sebagai Test Case" : "Save as Test Case"}
+	          </button>
+	          {savedCase && (
+	            <Link href="/tests" className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors">
+	              Buka Test Library →
+	            </Link>
+	          )}
+	          {saveCaseError && (
+	            <span className="text-xs text-[var(--danger)]">{saveCaseError}</span>
+	          )}
+	        </div>
 
         {/* Meta grid */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">

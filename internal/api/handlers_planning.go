@@ -778,6 +778,14 @@ func (s *Server) startTestCaseRun(ctx context.Context, tc *planning.TestCase, te
 
 func (s *Server) executeApprovedTestCaseRun(run *agent.TestRun, tc *planning.TestCase) {
 	ctx := context.Background()
+
+	// Deterministic path: case punya executable_content (browser-action JSON
+	// dari hasil AI/recorder) → jalankan langsung di browser TANPA regenerate AI.
+	if tc.ExecutableContent != "" {
+		s.executeDeterministicTestCase(ctx, run, tc)
+		return
+	}
+
 	run.TestFiles = buildApprovedCaseTestFiles(run, tc)
 	run.State = agent.StateWritingTests
 	run.UpdatedAt = time.Now()
@@ -820,6 +828,99 @@ func (s *Server) executeApprovedTestCaseRun(run *agent.TestRun, tc *planning.Tes
 	_ = s.store.UpdateRun(ctx, run)
 	s.events.Emit(run.ID, "simulated_result", "simulated", fmt.Sprintf("Approved test case simulated (%d steps walked — no real execution)", len(tc.Steps)), map[string]string{"test_case_id": tc.ID})
 	s.events.Emit(run.ID, "run_completed", "simulated", "Approved test case completed (simulated)", map[string]string{"test_case_id": tc.ID})
+}
+
+// executeDeterministicTestCase menjalankan test case yang punya executable_content
+// (browser-action JSON) langsung di browser via SteelRunner — tanpa analysis/plan/
+// write/fix AI, sehingga hasilnya deterministik (rekam-putar seperti Katalon).
+func (s *Server) executeDeterministicTestCase(ctx context.Context, run *agent.TestRun, tc *planning.TestCase) {
+	// Test files dari executable content (sudah berupa browser-action JSON).
+	run.TestFiles = []agent.TestFile{{Name: slug(tc.Title) + ".spec.json", Content: tc.ExecutableContent}}
+	run.State = agent.StateRunning
+	run.UpdatedAt = time.Now()
+	_ = s.store.UpdateRun(ctx, run)
+	s.events.Emit(run.ID, "run_started", "running", "Running deterministic test case (no AI): "+tc.Title, map[string]string{"test_case_id": tc.ID, "deterministic": "true"})
+
+	// Bounded timeout supaya run tidak hang selamanya.
+	execCtx := ctx
+	if s.cfg.RunTimeoutSeconds > 0 {
+		var cancel context.CancelFunc
+		execCtx, cancel = context.WithTimeout(ctx, time.Duration(s.cfg.RunTimeoutSeconds)*time.Second)
+		defer cancel()
+	}
+
+	// Bangun runner: Steel Browser (remote via CDP) jika tersedia, selain itu
+	// Playwright lokal. LLM=nil → self-healing nonaktif (benar-benar deterministik).
+	var runner agent.Runner
+	var pwRunner *agent.PlaywrightRunner
+	pwRunner = agent.NewPlaywrightRunner("/tmp/agent_test/videos", nil)
+	pwRunner.ScreenshotDir = "/data/screenshots"
+	pwRunner.WithAllowedHosts(s.cfg.BrowserAllowedHosts)
+	if run.Viewport != "" {
+		pwRunner.WithViewport(run.Viewport)
+	}
+	runner = pwRunner
+	if s.steel != nil {
+		steelRunner := agent.NewSteelRunner(s.steel, nil)
+		steelRunner.ScreenshotDir = "/data/screenshots"
+		steelRunner.WithAllowedHosts(s.cfg.BrowserAllowedHosts)
+		if run.Parallel {
+			steelRunner.WithParallel(true)
+		}
+		runner = steelRunner
+	}
+
+	exec := execution.NewContext(s.events, s.recordings, s.visuals)
+	result, err := runner.Run(execCtx, run.TestFiles, run.ProjectPath)
+
+	now := time.Now()
+	run.FinishedAt = &now
+	run.UpdatedAt = now
+	if err != nil {
+		run.State = agent.StateFailed
+		run.Error = err.Error()
+		_ = s.store.UpdateRun(context.Background(), run)
+		s.events.Emit(run.ID, "run_failed", "failed", err.Error(), map[string]string{"test_case_id": tc.ID})
+		return
+	}
+
+	run.RunResult = result
+	// Register per-step screenshots as recordings + visual artifacts (sama seperti
+	// jalur agent biasa) supaya run deterministik tetap punya bukti visual.
+	for i, shotURL := range result.Screenshots {
+		if shotURL == "" {
+			continue
+		}
+		run.Screenshots = append(run.Screenshots, shotURL)
+		if exec != nil {
+			label := fmt.Sprintf("step-%d", i)
+			exec.RecordScreenshot(run.ID, "", label, shotURL)
+		}
+	}
+	// Slideshow video dari screenshots (jika runner tidak menghasilkan video asli).
+	if result.VideoPath == "" && len(result.Screenshots) > 0 {
+		if vURL, dur := agent.BuildSlideshowVideo(run.ID, "/data/screenshots", "/data/videos", result.Screenshots); vURL != "" {
+			result.VideoPath = vURL
+			run.VideoURL = vURL
+			run.VideoStatus = "ready"
+			run.VideoDuration = dur
+		}
+	} else if result.VideoPath != "" {
+		run.VideoURL = result.VideoPath
+		run.VideoStatus = "ready"
+	}
+
+	if result.Failed > 0 {
+		run.State = agent.StateFailed
+	} else {
+		run.State = agent.StateDone
+	}
+	_ = s.store.UpdateRun(context.Background(), run)
+	if result.Failed > 0 {
+		s.events.Emit(run.ID, "run_failed", "failed", fmt.Sprintf("%d of %d actions failed", result.Failed, result.Total), map[string]string{"test_case_id": tc.ID})
+	} else {
+		s.events.Emit(run.ID, "run_completed", "done", fmt.Sprintf("Deterministic test case passed: %d actions", result.Passed), map[string]string{"test_case_id": tc.ID})
+	}
 }
 
 func (s *Server) executeApprovedTestCaseWithDocker(ctx context.Context, run *agent.TestRun, tc *planning.TestCase) {
@@ -1113,4 +1214,89 @@ func mergeDraftCase(dst, src *planning.DraftCase) {
 	if src.Confidence > 0 {
 		dst.Confidence = src.Confidence
 	}
+}
+
+// autoSaveRunAsTestCase menyimpan run yang selesai sukses sebagai test case
+// deterministik (executable_content = browser-action JSON dari hasil AI),
+// supaya case bisa di-run ulang tanpa regenerate AI — mirip rekam-putar Katalon.
+// Dipanggil dari hook OnComplete agent (buildAgentForRun).
+func (s *Server) autoSaveRunAsTestCase(ctx context.Context, run *agent.TestRun) {
+	if s.planning == nil || run == nil {
+		return
+	}
+	// Hanya run simple mode yang selesai sukses dan punya test files hasil AI.
+	// approved_case runs sudah punya test case; run gagal tidak disimpan.
+	if run.Mode != "simple" && run.Mode != "" {
+		return
+	}
+	if run.State != agent.StateDone {
+		return
+	}
+	if len(run.TestFiles) == 0 {
+		return
+	}
+	// Dedupe: bila run ini sudah punya test case (source_run_id sama), skip.
+	if existing, err := s.planning.ListTestCases(ctx, ""); err == nil {
+		for _, tc := range existing {
+			if tc.SourceRunID == run.ID {
+				slog.Info("run already saved as test case, skipping auto-save", "run_id", run.ID, "test_case_id", tc.ID)
+				return
+			}
+		}
+	}
+
+	// Gabungkan semua browser actions dari test files menjadi satu konten executable.
+	var actions []agent.BrowserAction
+	for _, tf := range run.TestFiles {
+		var fileActions []agent.BrowserAction
+		if err := json.Unmarshal([]byte(tf.Content), &fileActions); err != nil {
+			continue
+		}
+		actions = append(actions, fileActions...)
+	}
+	if len(actions) == 0 {
+		slog.Warn("auto-save: run has no parsable browser actions", "run_id", run.ID)
+		return
+	}
+	executable, err := json.Marshal(actions)
+	if err != nil {
+		slog.Warn("auto-save: marshal actions failed", "run_id", run.ID, "error", err)
+		return
+	}
+
+	// Judul dari requirements (dipotong), steps dari scenario names.
+	title := strings.TrimSpace(run.Requirements)
+	if title == "" {
+		title = "Saved test " + run.ID[:8]
+	}
+	if len(title) > 120 {
+		title = title[:117] + "..."
+	}
+	var steps []string
+	if run.TestPlan != nil {
+		for _, sc := range run.TestPlan.Scenarios {
+			steps = append(steps, sc.Name)
+		}
+	}
+	if len(steps) == 0 {
+		steps = []string{title}
+	}
+	tags := append([]string{"auto-saved", "deterministic"}, run.Tags...)
+
+	tc := &planning.TestCase{
+		Title:             title,
+		Type:              run.TestType,
+		Feature:           "",
+		Priority:          "high",
+		Steps:             steps,
+		Assertions:        []string{},
+		Tags:              tags,
+		ExecutableContent: string(executable),
+		SourceRunID:       run.ID,
+	}
+	if err := s.planning.CreateTestCases(ctx, []*planning.TestCase{tc}); err != nil {
+		slog.Warn("auto-save test case failed", "run_id", run.ID, "error", err)
+		return
+	}
+	slog.Info("run auto-saved as deterministic test case", "run_id", run.ID, "test_case_id", tc.ID, "actions", len(actions))
 }

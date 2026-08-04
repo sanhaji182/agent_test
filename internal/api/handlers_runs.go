@@ -571,6 +571,9 @@ func (s *Server) buildAgentForRun(run *agent.TestRun) *agent.Agent {
 
 		Exec:  execCtx,
 		Store: s.store,
+		OnComplete: func(doneRun *agent.TestRun) {
+			s.autoSaveRunAsTestCase(context.Background(), doneRun)
+		},
 		RunnerFactory: func(testType, viewport string) agent.Runner {
 			appiumRunner := runner.NewAppiumRunner()
 			if profile, ok := runner.DeviceProfiles[viewport]; ok {

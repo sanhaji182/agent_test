@@ -383,8 +383,15 @@ func (r *PlaywrightRunner) executeAction(ctx context.Context, page playwright.Pa
 		time.Sleep(time.Duration(a.Ms) * time.Millisecond)
 	case "hover":
 		err = page.Locator(a.Selector).First().Hover(playwright.LocatorHoverOptions{Timeout: playwright.Float(3000)})
+	case "select":
+		_, err = page.Locator(a.Selector).First().SelectOption(playwright.SelectOptionValues{Values: &[]string{a.Value}}, playwright.LocatorSelectOptionOptions{Timeout: playwright.Float(3000)})
 	case "press":
-		err = page.Locator(a.Selector).First().Press(a.Key, playwright.LocatorPressOptions{Timeout: playwright.Float(3000)})
+		if a.Selector != "" {
+			err = page.Locator(a.Selector).First().Press(a.Key, playwright.LocatorPressOptions{Timeout: playwright.Float(3000)})
+		} else {
+			// Tanpa selector: tekan tombol di keyboard (mis. rekam dari extension).
+			err = page.Keyboard().Press(a.Key)
+		}
 	case "screenshot":
 		// Capture screenshot for visual testing / evidence
 		if r.ScreenshotDir != "" {

@@ -104,6 +104,8 @@ export interface TestCase {
   assertions: string[];
   tags: string[];
   version: number;
+  executable_content?: string;
+  source_run_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -1034,6 +1036,10 @@ export async function addRecordingEvent(sessionId: string, event: Omit<RecordedE
 
 export async function generateRecordingTest(sessionId: string): Promise<{ test_code: string; language: string; framework: string }> {
   return apiFetch<{ test_code: string; language: string; framework: string }>(`/api/v1/recording-sessions/${sessionId}/generate`, { method: "POST" });
+}
+
+export async function createTestCaseFromRecording(sessionId: string): Promise<TestCase> {
+  return apiFetch<TestCase>(`/api/v1/recording-sessions/${sessionId}/create-test-case`, { method: "POST" });
 }
 
 export async function deleteRecordingSession(id: string): Promise<void> {

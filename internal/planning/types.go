@@ -44,19 +44,25 @@ type DraftPlan struct {
 // TestCase is an approved, versioned reusable test case. It maps to the
 // test_cases table.
 type TestCase struct {
-	ID         string    `json:"id"`
-	ProjectID  string    `json:"project_id"`
-	PlanID     string    `json:"plan_id,omitempty"`
-	Title      string    `json:"title"`
-	Type       string    `json:"type"`
-	Feature    string    `json:"feature"`
-	Priority   string    `json:"priority"`
-	Steps      []string  `json:"steps"`
-	Assertions []string  `json:"assertions"`
-	Tags       []string  `json:"tags"`
-	Version    int       `json:"version"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID         string   `json:"id"`
+	ProjectID  string   `json:"project_id"`
+	PlanID     string   `json:"plan_id,omitempty"`
+	Title      string   `json:"title"`
+	Type       string   `json:"type"`
+	Feature    string   `json:"feature"`
+	Priority   string   `json:"priority"`
+	Steps      []string `json:"steps"`
+	Assertions []string `json:"assertions"`
+	Tags       []string `json:"tags"`
+	Version    int      `json:"version"`
+	// ExecutableContent menyimpan browser-action JSON yang siap dieksekusi
+	// langsung (hasil AI/recorder) — membuat case bisa di-run deterministik
+	// tanpa regenerate AI. Kosong untuk case dari alur planning biasa.
+	ExecutableContent string `json:"executable_content,omitempty"`
+	// SourceRunID menandai run asal auto-save (untuk link kembali & dedupe).
+	SourceRunID string    `json:"source_run_id,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // TestList is a named grouping of approved test-case IDs used for execution
