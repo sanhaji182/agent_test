@@ -100,13 +100,18 @@ export default function CreatePage() {
 	  useEffect(() => {
 	    if (typeof window === "undefined") return;
 	    const qs = new URLSearchParams(window.location.search);
-	    if (qs.get("method") === "record") {
-	      setMethod("record");
-	      setStep(1);
-	    }
-	    const url = qs.get("url");
+	    const url = qs.get("url") || "";
 	    if (url) {
 	      setFormData((prev) => ({ ...prev, project_path: url }));
+	    }
+	    // Deep-link ?method=record: pilih metode Rekam, tapi JANGAN lompati
+	    // langkah Target — URL aplikasi tetap wajib diisi dulu di Step 1.
+	    // (Tombol "Record Test" di dashboard mengarah ke sini.)
+	    if (qs.get("method") === "record") {
+	      setMethod("record");
+	      if (url) {
+	        setStep(1);
+	      }
 	    }
 	  }, []);
 
@@ -163,24 +168,30 @@ export default function CreatePage() {
     }
   };
 
-  const handleStartSession = async () => {
-    setStartingSession(true);
-    setError(null);
-    try {
-      const s = await createRecordingSession({
-        name: formData.name.trim() || `Recording ${new Date().toLocaleTimeString()}`,
-        project_path: formData.project_path,
-        base_url: formData.project_path,
-      });
-      setSession(s);
-      setEvents([]);
-      refreshEvents(s.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Gagal membuat sesi rekam");
-    } finally {
-      setStartingSession(false);
-    }
-  };
+	  const handleStartSession = async () => {
+	    // Validasi: URL aplikasi wajib (sesi rekam butuh base_url untuk replay).
+	    if (!formData.project_path.trim()) {
+	      setError("Isi dulu URL aplikasi di langkah Target sebelum mulai merekam.");
+	      setStep(0);
+	      return;
+	    }
+	    setStartingSession(true);
+	    setError(null);
+	    try {
+	      const s = await createRecordingSession({
+	        name: formData.name.trim() || `Recording ${new Date().toLocaleTimeString()}`,
+	        project_path: formData.project_path,
+	        base_url: formData.project_path,
+	      });
+	      setSession(s);
+	      setEvents([]);
+	      refreshEvents(s.id);
+	    } catch (err) {
+	      setError(err instanceof Error ? err.message : "Gagal membuat sesi rekam");
+	    } finally {
+	      setStartingSession(false);
+	    }
+	  };
 
   const handleStopAndConvert = async () => {
     if (!session) return;

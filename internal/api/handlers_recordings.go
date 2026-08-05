@@ -142,8 +142,22 @@ func generatePlaywrightSkeleton(sess *recordings.Session, events []recordings.Ev
 	var b strings.Builder
 	b.WriteString("import { test, expect } from '@playwright/test';\n\n")
 	fmt.Fprintf(&b, "test('%s', async ({ page }) => {\n", sess.Name)
-	fmt.Fprintf(&b, "  // Navigate to base URL\n")
-	fmt.Fprintf(&b, "  await page.goto('%s');\n\n", sess.BaseURL)
+	// Navigate to base URL — kecuali event pertama sudah navigate ke URL sama.
+	base := strings.TrimRight(sess.BaseURL, "/")
+	firstNav := ""
+	for _, ev := range events {
+		if ev.EventType == recordings.EventNavigate && ev.URL != "" {
+			firstNav = strings.TrimRight(ev.URL, "/")
+			break
+		}
+		if ev.EventType != recordings.EventWait && ev.EventType != recordings.EventScroll {
+			break
+		}
+	}
+	if base != "" && firstNav != base {
+		fmt.Fprintf(&b, "  // Navigate to base URL\n")
+		fmt.Fprintf(&b, "  await page.goto('%s');\n\n", sess.BaseURL)
+	}
 	for _, ev := range events {
 		switch ev.EventType {
 		case recordings.EventClick:
@@ -261,9 +275,21 @@ func (s *Server) handleCreateTestCaseFromRecording(w http.ResponseWriter, r *htt
 // yang bisa dieksekusi SteelRunner/PlaywrightRunner secara langsung.
 func recordingsEventsToBrowserActions(sess *recordings.Session, events []recordings.Event) []agent.BrowserAction {
 	var actions []agent.BrowserAction
-	// Mulai dari base URL sesi bila tersedia.
-	if sess.BaseURL != "" {
-		actions = append(actions, agent.BrowserAction{Action: "goto", URL: sess.BaseURL})
+	// Mulai dari base URL sesi bila tersedia. Lewati bila event pertama sudah
+	// navigate ke URL yang sama (hindari goto ganda — fix audit 6a).
+	base := strings.TrimRight(sess.BaseURL, "/")
+	firstNav := ""
+	for _, ev := range events {
+		if ev.EventType == recordings.EventNavigate && ev.URL != "" {
+			firstNav = strings.TrimRight(ev.URL, "/")
+			break
+		}
+		if ev.EventType != recordings.EventWait && ev.EventType != recordings.EventScroll {
+			break
+		}
+	}
+	if base != "" && firstNav != base {
+		actions = append(actions, agent.BrowserAction{Action: "goto", URL: base})
 		actions = append(actions, agent.BrowserAction{Action: "wait", Ms: 1000})
 	}
 	for _, ev := range events {

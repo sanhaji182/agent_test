@@ -9,7 +9,7 @@ import { logout, isAdmin } from "@/lib/api";
 import { 
   LayoutDashboard, PlayCircle, Settings, Zap, Calendar, Bell, Shield, 
   ClipboardCheck, Layers, Download, BookOpen, KeyRound, FileText, Video,
-  ChevronLeft, Home, Users
+  ChevronLeft, ChevronRight, Home, Users
 } from "lucide-react";
 
 interface NavItem {
@@ -70,16 +70,14 @@ export function Sidebar() {
           )}
         </Link>
         
-        {/* Collapse Toggle */}
-        {!collapsed && (
-          <button
-            onClick={toggle}
-            className="p-1.5 rounded-md hover:bg-[var(--bg-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-            aria-label="Collapse sidebar"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-        )}
+	        {/* Collapse/Expand Toggle */}
+	        <button
+	          onClick={toggle}
+	          className="p-1.5 rounded-md hover:bg-[var(--bg-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+	          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+	        >
+	          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+	        </button>
       </div>
       
       {/* Navigation */}

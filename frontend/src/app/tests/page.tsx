@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   approveChangeProposal,
+  rejectChangeProposal,
   getTestCaseProposals,
   getTestCaseMaintenance,
   getTestCases,
@@ -28,6 +29,8 @@ export default function TestLibraryPage() {
   const [tests, setTests] = useState<TestCase[]>([]);
   const [maintenance, setMaintenance] = useState<MaintenanceItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("ui");
   const [query, setQuery] = useState("");
   const [runningId, setRunningId] = useState<string | null>(null);
@@ -42,10 +45,12 @@ export default function TestLibraryPage() {
       .then(([testData, maintenanceData]) => {
         setTests(testData || []);
         setMaintenance(maintenanceData || []);
+        setLoadError(null);
       })
-      .catch(() => {
+      .catch((e) => {
         setTests([]);
         setMaintenance([]);
+        setLoadError(e instanceof Error ? e.message : "Gagal memuat test case");
       })
       .finally(() => setLoading(false));
   }, []);
@@ -59,9 +64,12 @@ export default function TestLibraryPage() {
 
   const handleRun = async (test: TestCase) => {
     setRunningId(test.id);
+    setRunError(null);
     try {
       const res = await runTestCase(test.id);
       window.location.href = `/runs/${res.run_id}`;
+    } catch (e) {
+      setRunError(e instanceof Error ? e.message : "Gagal menjalankan test — periksa koneksi backend lalu coba lagi.");
     } finally {
       setRunningId(null);
     }
@@ -86,18 +94,32 @@ export default function TestLibraryPage() {
     }
   };
 
-  const approveProposal = async (proposal: ChangeProposal) => {
-    setApprovingId(proposal.id);
-    try {
-      const res = await approveChangeProposal(proposal.id, { reviewer: "self-hosted", comment: "Approved from Test Library" });
-      setTests((prev) => prev.map((test) => test.id === res.test_case.id ? res.test_case : test));
-      setSelected(res.test_case);
-      setProposals((prev) => prev.map((item) => item.id === res.proposal.id ? res.proposal : item));
-      getTestCaseMaintenance().then((m) => setMaintenance(m || [])).catch(() => {});
-    } finally {
-      setApprovingId(null);
-    }
-  };
+	  const approveProposal = async (proposal: ChangeProposal) => {
+	    setApprovingId(proposal.id);
+	    try {
+	      const res = await approveChangeProposal(proposal.id, { reviewer: "self-hosted", comment: "Approved from Test Library" });
+	      setTests((prev) => prev.map((test) => test.id === res.test_case.id ? res.test_case : test));
+	      setSelected(res.test_case);
+	      setProposals((prev) => prev.map((item) => item.id === res.proposal.id ? res.proposal : item));
+	      getTestCaseMaintenance().then((m) => setMaintenance(m || [])).catch(() => {});
+	    } catch (e) {
+	      setRunError(e instanceof Error ? e.message : "Gagal menyetujui proposal");
+	    } finally {
+	      setApprovingId(null);
+	    }
+	  };
+
+	  const rejectProposal = async (proposal: ChangeProposal) => {
+	    setApprovingId(proposal.id);
+	    try {
+	      const rejected = await rejectChangeProposal(proposal.id, { reviewer: "self-hosted", comment: "Declined from Test Library" });
+	      setProposals((prev) => prev.map((item) => item.id === rejected.id ? rejected : item));
+	    } catch (e) {
+	      setRunError(e instanceof Error ? e.message : "Gagal menolak proposal");
+	    } finally {
+	      setApprovingId(null);
+	    }
+	  };
 
   if (loading) return <LoadingSkeleton rows={7} />;
 
@@ -109,12 +131,25 @@ export default function TestLibraryPage() {
           <h1 className="text-xl font-semibold tracking-tight">Test Library</h1>
           <p className="text-sm text-[var(--text-muted)] mt-1">Approved test cases ready for execution</p>
         </div>
-        <Link href="/create">
-          <Button>New Test</Button>
-        </Link>
-      </div>
+	        <Link href="/create">
+	          <Button>New Test</Button>
+	        </Link>
+	      </div>
 
-      {/* Tab Controls - Modern Segmented Control */}
+	      {/* Load error state — bedakan dari "belum ada data" */}
+	      {loadError && (
+	        <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex items-center justify-between gap-3" role="alert">
+	          <p className="text-sm text-red-700">Gagal memuat test case: {loadError}</p>
+	          <Button variant="secondary" size="sm" onClick={() => window.location.reload()}>Muat Ulang</Button>
+	        </div>
+	      )}
+	      {runError && (
+	        <div className="rounded-lg border border-red-200 bg-red-50 p-4" role="alert" aria-live="polite">
+	          <p className="text-sm text-red-700">{runError}</p>
+	        </div>
+	      )}
+
+	      {/* Tab Controls - Modern Segmented Control */}
       <div className="inline-flex rounded-lg border border-[var(--border-default)] p-0.5 bg-white">
         {[
           { value: "ui", label: "UI Tests" },
@@ -258,14 +293,16 @@ export default function TestLibraryPage() {
                   <div key={proposal.id} className="p-3 rounded-lg bg-gray-50 mb-2">
                     <p className="text-sm font-medium mb-2">{proposal.rationale}</p>
                     <div className="flex gap-2">
-                      <Button 
-                        size="sm"
-                        isLoading={approvingId === proposal.id}
-                        onClick={() => approveProposal(proposal)}
-                      >
-                        Approve
-                      </Button>
-                      <Button size="sm" variant="secondary">Decline</Button>
+	                      <Button 
+	                        size="sm"
+	                        isLoading={approvingId === proposal.id}
+	                        onClick={() => approveProposal(proposal)}
+	                      >
+	                        Approve
+	                      </Button>
+	                      <Button size="sm" variant="secondary" isLoading={approvingId === proposal.id} onClick={() => rejectProposal(proposal)}>
+	                        {proposal.status === "rejected" ? "Ditolak" : "Decline"}
+	                      </Button>
                     </div>
                   </div>
                 ))}

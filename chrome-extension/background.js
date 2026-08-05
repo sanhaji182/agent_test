@@ -3,6 +3,8 @@
 
 const DEFAULT_BASE_URL = 'http://localhost:8080';
 const SETTINGS_KEY = 'gotest_recorder_settings';
+const STOP_FLUSH_WAIT_MS = 800; // time for content scripts to flush after STOP_RECORDING
+const POST_RETRY_DELAY_MS = 500;
 
 let activeSession = null;
 let baseUrl = DEFAULT_BASE_URL;
@@ -35,8 +37,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       respondAsync(sendResponse, () => attachSession(msg.sessionId, msg.name, msg.url));
       return true;
     case 'FLUSH_EVENTS':
-      flushEventsToBackend(msg.sessionId, msg.events);
-      break;
+      // Keep the service worker alive until the batch is posted: without
+      // respondAsync + return true the async fetch loop can be killed on idle.
+      respondAsync(sendResponse, () => flushEventsToBackend(msg.sessionId, msg.events));
+      return true;
     case 'GET_STATUS':
       sendResponse({
         recording: !!activeSession,
@@ -80,6 +84,23 @@ async function startRecording(name, url) {
 async function attachSession(sessionId, name, url) {
   if (!sessionId) throw new Error('session id required');
   const targetURL = url ? normalizeHTTPURL(url, 'target URL') : '';
+  // Verify the session exists server-side and is still recording before attaching.
+  let remote;
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/recording-sessions/${sessionId}`, {
+      headers: authHeaders()
+    });
+    if (!response.ok) {
+      return { ok: false, error: `Session not found or unreachable (HTTP ${response.status})` };
+    }
+    const body = await response.json();
+    remote = body && body.session ? body.session : body;
+  } catch (e) {
+    return { ok: false, error: `Could not verify session: ${e.message || e}` };
+  }
+  if (remote.status !== 'recording') {
+    return { ok: false, error: `Session is not recording (status: ${remote.status || 'unknown'})` };
+  }
   activeSession = { id: sessionId, name: name || '', url: targetURL };
   persistSettings({ active: true, sessionId, sessionName: activeSession.name, url: targetURL });
   await broadcastStart(sessionId);
@@ -87,42 +108,63 @@ async function attachSession(sessionId, name, url) {
 }
 
 async function broadcastStart(sessionId) {
-  // Notify all tabs to start recording
+  // Notify all tabs to start recording. Cross-origin recording is by design:
+  // tabs that cannot receive the message are logged, not filtered out.
   const tabs = await chrome.tabs.query({});
   for (const tab of tabs) {
-    chrome.tabs.sendMessage(tab.id, { type: 'START_RECORDING', sessionId }).catch(() => {});
+    chrome.tabs.sendMessage(tab.id, { type: 'START_RECORDING', sessionId }).catch(() => {
+      console.warn(`Recording: content script not present in tab ${tab.id} (${tab.url || 'unknown url'}), skipped`);
+    });
   }
 }
 
 async function stopRecording() {
-  if (activeSession && activeSession.id) {
+  const session = activeSession;
+  activeSession = null;
+  persistSettings({ active: false });
+  // Broadcast STOP_RECORDING first so content scripts flush their pending
+  // events, wait for the flush to reach the backend, THEN mark the session
+  // completed — otherwise the flush races the "completed" status.
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    chrome.tabs.sendMessage(tab.id, { type: 'STOP_RECORDING' }).catch(() => {});
+  }
+  if (session && session.id) {
+    await sleep(STOP_FLUSH_WAIT_MS);
     try {
-      await fetch(`${baseUrl}/api/v1/recording-sessions/${activeSession.id}`, {
+      await fetch(`${baseUrl}/api/v1/recording-sessions/${session.id}`, {
         method: 'PATCH',
         headers: jsonHeaders(),
         body: JSON.stringify({ status: 'completed' })
       });
     } catch (e) { /* best effort */ }
   }
-  activeSession = null;
-  persistSettings({ active: false });
-  const tabs = await chrome.tabs.query({});
-  for (const tab of tabs) {
-    chrome.tabs.sendMessage(tab.id, { type: 'STOP_RECORDING' }).catch(() => {});
-  }
 }
 
 async function flushEventsToBackend(sessionId, events) {
   if (!sessionId || events.length === 0) return;
   for (const ev of events) {
-    try {
-      await fetch(`${baseUrl}/api/v1/recording-sessions/${sessionId}/events`, {
-        method: 'POST',
-        headers: jsonHeaders(),
-        body: JSON.stringify(ev)
-      });
-    } catch (e) {
-      console.warn('Failed to send event:', e);
+    // Retry each failed POST once after a short delay.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await fetch(`${baseUrl}/api/v1/recording-sessions/${sessionId}/events`, {
+          method: 'POST',
+          headers: jsonHeaders(),
+          body: JSON.stringify(ev)
+        });
+        if (response.ok) break;
+        if (attempt === 0) {
+          await sleep(POST_RETRY_DELAY_MS);
+          continue;
+        }
+        console.warn('Failed to send event:', response.status, response.statusText);
+      } catch (e) {
+        if (attempt === 0) {
+          await sleep(POST_RETRY_DELAY_MS);
+          continue;
+        }
+        console.warn('Failed to send event:', e);
+      }
     }
   }
 }
@@ -131,6 +173,9 @@ async function listSessions() {
   const response = await fetch(`${baseUrl}/api/v1/recording-sessions`, {
     headers: authHeaders()
   });
+  // Surface auth failures so the popup can prompt for the API key instead of
+  // silently showing an empty list.
+  if (response.status === 401) return { error: 'unauthorized' };
   if (!response.ok) return [];
   return response.json();
 }
@@ -172,8 +217,12 @@ function normalizeHTTPURL(rawURL, label) {
   return parsed.toString();
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function respondAsync(sendResponse, fn) {
   fn()
-    .then((result) => sendResponse(result))
-    .catch((e) => sendResponse({ ok: false, error: e.message || String(e) }));
+    .then((result) => { try { sendResponse(result); } catch (e) {} })
+    .catch((e) => { try { sendResponse({ ok: false, error: e.message || String(e) }); } catch (e2) {} });
 }

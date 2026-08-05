@@ -18,6 +18,7 @@ export default function DashboardPage() {
   const [risks, setRisks] = useState<RiskItem[]>([]);
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
 
@@ -27,8 +28,9 @@ export default function DashboardPage() {
         setRuns(r || []); 
         setRisks(ri || []); 
         setRecs(re || []); 
+        setLoadError(null);
       })
-      .catch(() => {})
+      .catch((e) => setLoadError(e instanceof Error ? e.message : "Gagal memuat data"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -98,6 +100,17 @@ export default function DashboardPage() {
     return <div className="space-y-6"><LoadingSkeleton rows={6} /></div>;
   }
 
+  if (loadError && runs.length === 0) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex items-center justify-between gap-3" role="alert">
+          <p className="text-sm text-red-700">Gagal memuat data: {loadError}</p>
+          <Button variant="secondary" size="sm" onClick={() => window.location.reload()}>Muat Ulang</Button>
+        </div>
+      </div>
+    );
+  }
+
   if (total === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
@@ -148,12 +161,12 @@ export default function DashboardPage() {
         </div>
       }
     >
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-4 right-4 z-50 px-4 py-3 rounded-lg bg-red-50 border border-red-200 shadow-md animate-slide-in">
-          <p className="text-sm font-medium text-red-700">{toast}</p>
-        </div>
-      )}
+	      {/* Toast */}
+	      {toast && (
+	        <div role="status" aria-live="polite" className="fixed top-4 right-4 z-50 px-4 py-3 rounded-lg bg-red-50 border border-red-200 shadow-md animate-slide-in">
+	          <p className="text-sm font-medium text-red-700">{toast}</p>
+	        </div>
+	      )}
 
       {/* Stats Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -245,38 +258,44 @@ export default function DashboardPage() {
       <Section title="Recent Runs" action={<Link href="/runs" className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)]">View all →</Link>}>
         <TableContainer>
           <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-[var(--border-default)]">
-                <Th>Run Name</Th>
-                <Th>Status</Th>
-                <Th>Coverage</Th>
-                <Th>Duration</Th>
-                <Th>Started</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentRuns.map((r) => (
-                <Tr key={r.id} onClick={() => window.location.href = `/runs/${r.id}`} hover>
-                  <Td className="font-medium">
-                    <span className="truncate block max-w-[200px]">{r.requirements || "Untitled"}</span>
-                  </Td>
-                  <Td><StatusBadge state={r.state} /></Td>
-                  <Td>
-                    {r.run_result ? (
-                      <span className="text-xs text-[var(--text-muted)]">
-                        {r.run_result.passed}/{r.run_result.total}
-                      </span>
-                    ) : "-"}
-                  </Td>
-                  <Td className="text-xs text-[var(--text-muted)]">
-                    {r.run_result?.duration_ms ? formatDurationMs(r.run_result.duration_ms) : "-"}
-                  </Td>
-                  <Td className="text-[var(--text-muted)] text-xs">
-                    {formatDate(r.created_at)}
-                  </Td>
-                </Tr>
-              ))}
-            </tbody>
+	            <thead>
+	              <tr className="border-b border-[var(--border-default)]">
+	                <Th>Run Name</Th>
+	                <Th>Status</Th>
+	                <Th>Coverage</Th>
+	                <Th>Duration</Th>
+	                <Th>Started</Th>
+	                <Th align="right">Actions</Th>
+	              </tr>
+	            </thead>
+	            <tbody>
+	              {recentRuns.map((r) => (
+	                <Tr key={r.id} hover>
+	                  <Td className="font-medium">
+	                    <Link href={`/runs/${r.id}`} className="block truncate max-w-[200px] hover:text-[var(--accent)]">
+	                      {r.requirements || "Untitled"}
+	                    </Link>
+	                  </Td>
+	                  <Td><StatusBadge state={r.state} /></Td>
+	                  <Td>
+	                    {r.run_result ? (
+	                      <span className="text-xs text-[var(--text-muted)]">
+	                        {r.run_result.passed}/{r.run_result.total}
+	                      </span>
+	                    ) : "-"}
+	                  </Td>
+	                  <Td className="text-xs text-[var(--text-muted)]">
+	                    {r.run_result?.duration_ms ? formatDurationMs(r.run_result.duration_ms) : "-"}
+	                  </Td>
+	                  <Td className="text-[var(--text-muted)] text-xs">
+	                    {formatDate(r.created_at)}
+	                  </Td>
+	                  <Td align="right">
+	                    <Link href={`/runs/${r.id}`} className="text-[var(--accent)] hover:text-[var(--accent-hover)] text-xs font-medium">View</Link>
+	                  </Td>
+	                </Tr>
+	              ))}
+	            </tbody>
           </table>
         </TableContainer>
       </Section>

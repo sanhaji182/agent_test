@@ -88,6 +88,12 @@ function updateUI(status) {
 async function loadSessions() {
   try {
     const sessions = await chrome.runtime.sendMessage({ type: 'LIST_SESSIONS' });
+    if (sessions && sessions.error) {
+      sessionListDiv.innerHTML = sessions.error === 'unauthorized'
+        ? '<p class="empty">Unauthorized — cek API key di Settings</p>'
+        : '<p class="empty">Could not load sessions</p>';
+      return;
+    }
     if (!sessions || sessions.length === 0) {
       sessionListDiv.innerHTML = '<p class="empty">No sessions yet. Start recording!</p>';
       return;

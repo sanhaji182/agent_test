@@ -30,6 +30,16 @@ func (s *Server) apiKeyAuth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// Scoped API keys (dibuat via /api/v1/keys, prefiks gta_) — supaya
+		// extension recorder & klien lain bisa pakai key sendiri, bukan cuma
+		// API_KEY global. Role dari key dibawa ke context (RequireRole).
+		if key != "" && s.keyStore != nil {
+			if role, _, _, ok := s.keyStore.Validate(key); ok {
+				ctx := auth.WithClaims(r.Context(), &auth.Claims{UserID: "api-key", Email: "api-key", Role: string(role)})
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+		}
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 	})
 }

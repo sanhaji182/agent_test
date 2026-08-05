@@ -1,47 +1,61 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Section, EmptyState, LoadingSkeleton } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
 import { TableContainer, Th, Td, Tr } from "@/components/ui/table";
-import { Video, PlayCircle, Trash2, Search, Download, Eye, Plus } from "lucide-react";
+import { Video, Trash2, Search, Eye, Plus, PlayCircle } from "lucide-react";
 
-import { getRecordings, type Recording } from "@/lib/api";
+import { listRecordingSessions, deleteRecordingSession, type RecordingSession } from "@/lib/api";
 
 export default function RecordingsPage() {
-  const [recordings, setRecordings] = useState<Recording[]>([]);
+  const [sessions, setSessions] = useState<RecordingSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    getRecordings()
-      .then(setRecordings)
-      .catch(console.error)
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    listRecordingSessions()
+      .then(setSessions)
+      .catch((e) => setError(e instanceof Error ? e.message : "Gagal memuat rekaman"))
       .finally(() => setLoading(false));
   }, []);
 
-  const filteredRecordings = recordings.filter(rec => {
-    if (filterStatus !== "all" && rec.status !== filterStatus) return false;
-    if (query && !rec.test_name.toLowerCase().includes(query.toLowerCase())) return false;
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const filtered = sessions.filter((s) => {
+    if (filterStatus !== "all" && s.status !== filterStatus) return false;
+    if (query && !`${s.name} ${s.base_url || ""}`.toLowerCase().includes(query.toLowerCase())) return false;
     return true;
   });
 
   const getCounts = () => ({
-    all: recordings.length,
-    recording: recordings.filter(r => r.status === "recording").length,
-    completed: recordings.filter(r => r.status === "completed").length,
-    archived: recordings.filter(r => r.status === "archived").length,
+    all: sessions.length,
+    recording: sessions.filter((s) => s.status === "recording").length,
+    completed: sessions.filter((s) => s.status === "completed").length,
+    archived: sessions.filter((s) => s.status === "archived").length,
   });
 
-  const getDurationSec = (rec: Recording): number => {
-    if (!rec.start_time || !rec.end_time) return 0;
-    const start = new Date(rec.start_time).getTime();
-    const end = new Date(rec.end_time).getTime();
-    return Math.max(0, Math.round((end - start) / 1000));
+  const handleDelete = async (id: string, name: string) => {
+    if (!window.confirm(`Hapus sesi rekaman "${name}" beserta semua event-nya? Tindakan ini tidak bisa dibatalkan.`)) return;
+    setDeletingId(id);
+    try {
+      await deleteRecordingSession(id);
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Gagal menghapus sesi");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   if (loading) return <LoadingSkeleton rows={6} />;
@@ -51,12 +65,12 @@ export default function RecordingsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Recordings</h1>
-          <p className="text-sm text-[var(--text-muted)] mt-1">Browser recordings and test generation sessions</p>
+          <p className="text-sm text-[var(--text-muted)] mt-1">Sesi rekaman browser — hasil rekam bisa jadi test case deterministik</p>
         </div>
-        <Link href="/create">
+        <Link href="/create?method=record">
           <Button>
             <Plus className="w-4 h-4 mr-2" />
             New Recording
@@ -64,19 +78,28 @@ export default function RecordingsPage() {
         </Link>
       </div>
 
-      {/* Filters */}
+      {/* Error state */}
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex items-center justify-between gap-3" role="alert">
+          <p className="text-sm text-red-700">{error}</p>
+          <Button variant="secondary" size="sm" onClick={load}>Muat Ulang</Button>
+        </div>
+      )}
+
+      {/* Search & Filter */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
           <Input
-            placeholder="Search recordings..."
+            aria-label="Cari rekaman"
+            type="search"
+            placeholder="Cari rekaman..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pl-9"
           />
         </div>
 
-        {/* Status Filter - Modern Segment Control */}
         <div className="inline-flex rounded-lg border border-[var(--border-default)] p-0.5 bg-white">
           {[
             { value: "all", label: "All" },
@@ -87,28 +110,27 @@ export default function RecordingsPage() {
             <button
               key={f.value}
               onClick={() => setFilterStatus(f.value)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                filterStatus === f.value
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-gray-50"
-              }`}
+              className={filterStatus === f.value ? "px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white" : "px-3 py-1.5 text-xs font-medium rounded-md text-[var(--text-secondary)] hover:bg-gray-50"}
             >
-              {f.label} ({counts[f.value as keyof typeof counts]})
+              {f.label} ({f.value === "all" ? counts.all : counts[f.value as keyof typeof counts]})
             </button>
           ))}
         </div>
       </div>
 
       {/* Recordings List */}
-      {filteredRecordings.length === 0 ? (
-        <Section title="No recordings found">
-          <EmptyState 
+      {filtered.length === 0 ? (
+        <Section title={query ? "Tidak ada rekaman yang cocok" : "Belum ada rekaman"}>
+          <EmptyState
             icon={<Video className="w-8 h-8" />}
-            title={!query ? "No recordings yet" : "No matching recordings"}
-            description={!query ? "Start recording your browser interactions to generate automated tests." : "Try adjusting your search criteria."}
+            title={!query ? "Belum ada sesi rekaman" : "Tidak ada yang cocok"}
+            description={!query ? "Klik 'New Recording' untuk merekam interaksi di browser dan mengubahnya jadi test case." : "Coba ubah kata kunci pencarian."}
             action={!query && (
-              <Link href="/create">
-                <Button>New Recording</Button>
+              <Link href="/create?method=record">
+                <Button>
+                  <PlayCircle className="w-4 h-4 mr-2" />
+                  Mulai Rekam
+                </Button>
               </Link>
             )}
           />
@@ -118,42 +140,48 @@ export default function RecordingsPage() {
           <table className="w-full text-left">
             <thead className="bg-gray-50 border-b border-[var(--border-default)]">
               <tr>
-                <Th>Name</Th>
+                <Th>Nama</Th>
                 <Th>Status</Th>
-                <Th>Events</Th>
-                <Th>Duration</Th>
-                <Th>Date</Th>
-                <Th align="right">Actions</Th>
+                <Th>Target</Th>
+                <Th>Dibuat</Th>
+                <Th align="right">Aksi</Th>
               </tr>
             </thead>
             <tbody>
-              {filteredRecordings.map((rec) => (
-                <Tr key={rec.id} hover>
+              {filtered.map((s) => (
+                <Tr key={s.id} hover>
                   <Td className="font-medium">
-                    <span className="block truncate max-w-[180px]">{rec.test_name}</span>
-                    <span className="text-xs text-[var(--text-muted)]">{rec.step_name || ""}</span>
+                    <span className="block truncate max-w-[200px]">{s.name || "Tanpa nama"}</span>
+                    <span className="text-xs text-[var(--text-muted)] font-mono">{s.id.slice(0, 8)}</span>
                   </Td>
                   <Td>
-                    <Badge 
-                      variant={rec.status === "recording" ? "warning" : rec.status === "completed" ? "success" : "default"}
+                    <Badge
+                      variant={s.status === "recording" ? "warning" : s.status === "completed" ? "success" : "default"}
                       size="sm"
                     >
-                      {rec.status}
+                      {s.status}
                     </Badge>
                   </Td>
-                  <Td className="text-sm text-[var(--text-muted)]">—</Td>
-                  <Td className="text-sm text-[var(--text-muted)]">{formatDuration(getDurationSec(rec))}</Td>
-                  <Td className="text-sm text-[var(--text-muted)] whitespace-nowrap">{formatDate(rec.start_time)}</Td>
+                  <Td className="text-sm text-[var(--text-muted)] truncate max-w-[200px]">
+                    {s.base_url || s.project_path || "—"}
+                  </Td>
+                  <Td className="text-sm text-[var(--text-muted)] whitespace-nowrap">
+                    {new Date(s.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </Td>
                   <Td align="right" className="space-x-2">
-                    <Link href={`/recordings/${rec.id}`}>
-                      <Button variant="ghost" size="sm">
+                    <Link href={`/recordings/${s.id}`}>
+                      <Button variant="ghost" size="sm" aria-label={`Lihat ${s.name || "sesi"}`}>
                         <Eye className="w-3.5 h-3.5" />
                       </Button>
                     </Link>
-                    <Button variant="ghost" size="sm">
-                      <Download className="w-3.5 h-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Hapus ${s.name || "sesi"}`}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      disabled={deletingId === s.id}
+                      onClick={() => handleDelete(s.id, s.name)}
+                    >
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>
                   </Td>
@@ -165,23 +193,4 @@ export default function RecordingsPage() {
       )}
     </div>
   );
-}
-
-function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}m ${secs}s`;
-}
-
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffHour = Math.floor(diffMs / 3600000);
-  const diffDay = Math.floor(diffMs / 86400000);
-  
-  if (diffHour < 24) return `${diffHour}h ago`;
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
