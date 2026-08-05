@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-go-golems/gotest-agent/internal/agent"
@@ -83,6 +84,9 @@ func (s *Server) handleAddRecordingEvent(w http.ResponseWriter, r *http.Request)
 		URL           string                 `json:"url,omitempty"`
 		Metadata      map[string]interface{} `json:"metadata,omitempty"`
 		SequenceOrder *int                   `json:"sequence_order,omitempty"`
+		// Timestamp dari extension (ISO8601) — dipakai smart-wait saat convert
+		// ke test case. Kosong = backend isi waktu sekarang.
+		Timestamp *time.Time `json:"timestamp,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid JSON body")
@@ -99,6 +103,9 @@ func (s *Server) handleAddRecordingEvent(w http.ResponseWriter, r *http.Request)
 		Value:     body.Value,
 		URL:       body.URL,
 		Metadata:  body.Metadata,
+		// Timestamp asli dari rekaman (extension) — AddEvent hanya mengisi
+		// waktu sekarang bila kosong. Basis smart-wait antar event.
+		Timestamp: derefTime(body.Timestamp),
 	})
 	writeJSON(w, http.StatusCreated, ev)
 }
@@ -292,7 +299,27 @@ func recordingsEventsToBrowserActions(sess *recordings.Session, events []recordi
 		actions = append(actions, agent.BrowserAction{Action: "goto", URL: base})
 		actions = append(actions, agent.BrowserAction{Action: "wait", Ms: 1000})
 	}
+	// Smart-wait: sisipkan wait dari jeda waktu nyata antar event (timestamp),
+	// supaya replay mengikuti ritme pengguna asli — halaman lambat tidak bikin
+	// aksi berikutnya gagal. Jeda kecil (<600ms) diabaikan; jeda besar dibatasi.
+	var lastTS time.Time
+	hasLastTS := false
 	for _, ev := range events {
+		// Sisipkan wait dari jeda waktu nyata antar event (timestamp),
+		if hasLastTS && !ev.Timestamp.IsZero() {
+			gap := ev.Timestamp.Sub(lastTS)
+			if gap > 600*time.Millisecond {
+				ms := int(gap / time.Millisecond)
+				if ms > 4000 {
+					ms = 4000
+				}
+				actions = append(actions, agent.BrowserAction{Action: "wait", Ms: ms})
+			}
+		}
+		if !ev.Timestamp.IsZero() {
+			lastTS = ev.Timestamp
+			hasLastTS = true
+		}
 		switch ev.EventType {
 		case recordings.EventClick:
 			if ev.Selector != "" {
@@ -305,6 +332,8 @@ func recordingsEventsToBrowserActions(sess *recordings.Session, events []recordi
 		case recordings.EventNavigate:
 			if ev.URL != "" {
 				actions = append(actions, agent.BrowserAction{Action: "goto", URL: ev.URL})
+				// Navigasi butuh waktu halaman stabil — selalu beri jeda.
+				actions = append(actions, agent.BrowserAction{Action: "wait", Ms: 1500})
 			}
 		case recordings.EventSelect:
 			if ev.Selector != "" {
@@ -400,4 +429,13 @@ func (s *Server) handleUpdateRecordingSession(w http.ResponseWriter, r *http.Req
 	})
 	updated, _ := s.recordings.GetSession(id)
 	writeJSON(w, http.StatusOK, updated)
+}
+
+// derefTime mengembalikan nilai time.Time dari pointer, atau zero time bila nil
+// (AddEvent akan mengisinya dengan waktu sekarang).
+func derefTime(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
 }

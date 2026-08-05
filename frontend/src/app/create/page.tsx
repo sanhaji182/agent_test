@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   createRun,
+  createAPIKey,
   createRecordingSession,
   createTestCaseFromRecording,
   deleteRecordingSession,
@@ -79,10 +80,63 @@ export default function CreatePage() {
   const [stoppingSession, setStoppingSession] = useState(false);
   const [testCase, setTestCase] = useState<TestCase | null>(null);
 
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+	  const [submitting, setSubmitting] = useState(false);
+	  const [error, setError] = useState<string | null>(null);
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+	  // Recorder setup: deteksi extension, salin URL backend, buat API key.
+	  const [extDetected, setExtDetected] = useState(false);
+	  const [copiedUrl, setCopiedUrl] = useState(false);
+	  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+	  const [keyCopied, setKeyCopied] = useState(false);
+	  const [genKeyErr, setGenKeyErr] = useState<string | null>(null);
+	  const backendUrl = (typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080") : "http://localhost:8080");
+
+	  // Deteksi extension via marker DOM (data-gotest-recorder) — poll tiap 2s
+	  // selama langkah Rekam aktif.
+	  useEffect(() => {
+	    if (method !== "record") return;
+	    const check = () => {
+	      if (typeof document !== "undefined") {
+	        setExtDetected(document.documentElement.dataset.gotestRecorder === "1");
+	      }
+	    };
+	    check();
+	    const t = setInterval(check, 2000);
+	    return () => clearInterval(t);
+	  }, [method]);
+
+	  const copyText = async (text: string, kind: "url" | "key") => {
+	    try {
+	      await navigator.clipboard.writeText(text);
+	      if (kind === "url") { setCopiedUrl(true); setTimeout(() => setCopiedUrl(false), 2000); }
+	      else { setKeyCopied(true); setTimeout(() => setKeyCopied(false), 2000); }
+	    } catch {
+	      // fallback
+	      const ta = document.createElement("textarea");
+	      ta.value = text; document.body.appendChild(ta); ta.select();
+	      document.execCommand("copy"); document.body.removeChild(ta);
+	      if (kind === "url") { setCopiedUrl(true); setTimeout(() => setCopiedUrl(false), 2000); }
+	      else { setKeyCopied(true); setTimeout(() => setKeyCopied(false), 2000); }
+	    }
+	  };
+
+	  const handleGenKey = async () => {
+	    setGenKeyErr(null);
+	    setGeneratedKey(null);
+	    try {
+	      const res = await createAPIKey("recorder-extension", "viewer");
+	      if (res.key) {
+	        setGeneratedKey(res.key);
+	        copyText(res.key, "key");
+	      } else {
+	        setGenKeyErr("Key tidak kembali dari server — cek kembali atau pakai API_KEY utama.");
+	      }
+	    } catch (e) {
+	      setGenKeyErr(e instanceof Error ? e.message : "Gagal membuat API key (perlu akses admin).");
+	    }
+	  };
+
+	  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const handleChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -424,19 +478,50 @@ export default function CreatePage() {
               </div>
             )}
 
-            {/* Record path: recording panel */}
-            {method === "record" && (
-              <div className="space-y-4">
-                {/* Install guide */}
-                <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-subtle)] p-3">
-                  <p className="text-xs font-semibold text-[var(--text-primary)] mb-1.5">Cara install extension:</p>
-                  <ol className="text-xs text-[var(--text-secondary)] space-y-1 list-decimal ml-4">
-                    <li>Buka <code className="font-mono text-[11px] bg-white px-1 py-0.5 rounded border border-[var(--border-default)]">chrome://extensions</code></li>
-                    <li>Aktifkan <strong>Developer mode</strong></li>
-                    <li>Load unpacked → folder <code className="font-mono text-[11px] bg-white px-1 py-0.5 rounded border border-[var(--border-default)]">chrome-extension/</code></li>
-                    <li>Klik icon GoTest Agent di toolbar</li>
-                  </ol>
-                </div>
+	            {/* Record path: recording panel */}
+	            {method === "record" && (
+	              <div className="space-y-4">
+	                {/* Deteksi extension */}
+	                <div className={`rounded-lg border p-3 flex items-center gap-3 ${extDetected ? "border-[var(--success)]/30 bg-[var(--success-bg)]" : "border-[var(--warning)]/30 bg-[var(--warning-bg)]"}`} role="status" aria-live="polite">
+	                  <CheckCircle2 className={`w-5 h-5 shrink-0 ${extDetected ? "text-[var(--success)]" : "text-[var(--warning)]"}`} />
+	                  <div className="text-xs">
+	                    {extDetected ? (
+	                      <p className="font-semibold text-[var(--success)]">Ekstensi GoTest Recorder terdeteksi ✓</p>
+	                    ) : (
+	                      <>
+	                        <p className="font-semibold text-[var(--warning)]">Ekstensi belum terpasang</p>
+	                        <p className="text-[var(--text-secondary)] mt-0.5">Pasang dulu (sekali saja), lalu muat ulang halaman ini.</p>
+	                      </>
+	                    )}
+	                  </div>
+	                </div>
+
+	                {/* Setup: panduan + salin URL + buat key */}
+	                <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-subtle)] p-3 space-y-3">
+	                  <p className="text-xs font-semibold text-[var(--text-primary)]">Setup ekstensi (sekali saja):</p>
+	                  <ol className="text-xs text-[var(--text-secondary)] space-y-1.5 list-decimal ml-4">
+	                    <li>Buka <code className="font-mono text-[11px] bg-white px-1 py-0.5 rounded border border-[var(--border-default)]">chrome://extensions</code></li>
+	                    <li>Aktifkan <strong>Developer mode</strong> (pojok kanan atas)</li>
+	                    <li>Klik <strong>Load unpacked</strong> → pilih folder <code className="font-mono text-[11px] bg-white px-1 py-0.5 rounded border border-[var(--border-default)]">chrome-extension/</code></li>
+	                    <li>Buka popup ekstensi → isi Backend URL &amp; API key di bawah → <strong>Save Settings</strong></li>
+	                    <li>Muat ulang halaman ini — indikator di atas berubah jadi ✓</li>
+	                  </ol>
+	                  <div className="flex flex-wrap gap-2 pt-1">
+	                    <Button type="button" variant="secondary" size="sm" onClick={() => copyText(backendUrl, "url")}>
+	                      {copiedUrl ? "✓ Tersalin" : "Salin Backend URL"}
+	                    </Button>
+	                    <Button type="button" variant="secondary" size="sm" onClick={handleGenKey}>
+	                      {generatedKey ? "Key dibuat — tersalin ✓" : "Buat & Salin API Key"}
+	                    </Button>
+	                  </div>
+	                  {genKeyErr && <p className="text-xs text-[var(--danger)]">{genKeyErr}</p>}
+	                  {generatedKey && (
+	                    <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+	                      Key <code className="font-mono bg-white px-1 py-0.5 rounded border border-[var(--border-default)]">{generatedKey.slice(0, 12)}…</code> sudah disalin —
+	                      tempel ke field <strong>API Key</strong> di popup ekstensi. Key hanya ditampilkan sekali.
+	                    </p>
+	                  )}
+	                </div>
 
                 {!session ? (
                   <Button

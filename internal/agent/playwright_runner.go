@@ -27,6 +27,11 @@ type PlaywrightRunner struct {
 	Viewport      *ViewportPreset
 	TestData      map[string]string // parameterized test data (template key → value)
 	AllowedHosts  []string          // explicit browser egress allowlist for local/private targets
+	// ReplayMode menandakan eksekusi rekam-putar deterministik (test case dari
+	// recorder). Saat aktif, aksi interaksi menunggu elemen terlihat dulu
+	// (best-effort) supaya replay tahan terhadap halaman yang lambat — mirip
+	// smart-wait Katalon — tanpa mengubah perilaku run AI biasa.
+	ReplayMode bool
 }
 
 // ViewportPreset defines browser viewport dimensions for responsive testing.
@@ -376,6 +381,19 @@ func (r *PlaywrightRunner) runParallel(ctx context.Context, browser playwright.B
 func (r *PlaywrightRunner) executeAction(ctx context.Context, page playwright.Page, a *BrowserAction) error {
 	// Template expansion: replace {{key}} with test data values
 	r.expandTemplate(a)
+
+	// Replay mode (record & playback): tunggu elemen terlihat sebelum interaksi
+	// supaya replay tahan halaman lambat — best-effort, gagal = lanjut (error
+	// asli dari aksi tetap muncul).
+	if r.ReplayMode && a.Selector != "" {
+		switch a.Action {
+		case "click", "fill", "hover", "select", "press":
+			_ = page.Locator(a.Selector).First().WaitFor(playwright.LocatorWaitForOptions{
+				State:   playwright.WaitForSelectorStateVisible,
+				Timeout: playwright.Float(8000),
+			})
+		}
+	}
 
 	var err error
 	switch a.Action {

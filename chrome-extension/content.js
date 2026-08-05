@@ -2,6 +2,13 @@
 (function () {
   'use strict';
 
+  // Marker supaya dashboard/wizard bisa mendeteksi bahwa extension terpasang:
+  // halaman membaca document.documentElement.dataset.gotestRecorder === "1".
+  // (Content script ter-inject di <all_urls>, termasuk halaman dashboard.)
+  try {
+    document.documentElement.setAttribute('data-gotest-recorder', '1');
+  } catch (e) { /* ignore */ }
+
   const SETTINGS_KEY = 'gotest_recorder_settings';
   const NAV_STORAGE_KEY = 'gotest_recorder_last_url';
 

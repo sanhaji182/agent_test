@@ -28,6 +28,9 @@ type SteelRunner struct {
 	TestData      map[string]string
 	AllowedHosts  []string
 	Parallel      bool
+	// ReplayMode diteruskan ke PlaywrightRunner lokal — smart-wait saat
+	// rekam-putar deterministik (lihat PlaywrightRunner.ReplayMode).
+	ReplayMode bool
 }
 
 // NewSteelRunner creates a runner that uses Steel Browser cloud for execution.
@@ -123,6 +126,7 @@ func (r *SteelRunner) Run(ctx context.Context, testFiles []TestFile, projectURL 
 		llm:           r.llm,
 		TestData:      r.TestData,
 		AllowedHosts:  r.AllowedHosts,
+		ReplayMode:    r.ReplayMode,
 	}
 
 	totalActions := 0
@@ -214,6 +218,7 @@ func (r *SteelRunner) runParallel(ctx context.Context, browser playwright.Browse
 		llm:           r.llm,
 		TestData:      r.TestData,
 		AllowedHosts:  r.AllowedHosts,
+		ReplayMode:    r.ReplayMode,
 	}
 
 	for idx, tf := range testFiles {

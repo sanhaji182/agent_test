@@ -871,6 +871,7 @@ func (s *Server) executeDeterministicTestCase(ctx context.Context, run *agent.Te
 	pwRunner = agent.NewPlaywrightRunner("/tmp/agent_test/videos", nil)
 	pwRunner.ScreenshotDir = "/data/screenshots"
 	pwRunner.WithAllowedHosts(s.cfg.BrowserAllowedHosts)
+	pwRunner.ReplayMode = true // smart-wait ala Katalon saat rekam-putar
 	if run.Viewport != "" {
 		pwRunner.WithViewport(run.Viewport)
 	}
@@ -879,6 +880,7 @@ func (s *Server) executeDeterministicTestCase(ctx context.Context, run *agent.Te
 		steelRunner := agent.NewSteelRunner(s.steel, nil)
 		steelRunner.ScreenshotDir = "/data/screenshots"
 		steelRunner.WithAllowedHosts(s.cfg.BrowserAllowedHosts)
+		steelRunner.ReplayMode = true
 		if run.Parallel {
 			steelRunner.WithParallel(true)
 		}
