@@ -149,7 +149,7 @@ export default function RecordingDetailPage() {
   };
 
   const handleDelete = async () => {
-    if (!confirm("Delete this recording session and all its events? This cannot be undone.")) return;
+    if (!confirm("Hapus sesi rekaman ini beserta semua event-nya? Tindakan ini tidak bisa dibatalkan.")) return;
     try {
       await deleteRecordingSession(id);
       router.push("/recordings");
@@ -183,10 +183,10 @@ export default function RecordingDetailPage() {
           href="/recordings"
           className="inline-flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
         >
-          <ArrowLeft className="w-3 h-3" /> Back to recordings
+          <ArrowLeft className="w-3 h-3" /> Kembali ke rekaman
         </Link>
         <div className="rounded-xl border border-[var(--danger)]/20 bg-[var(--danger-bg)] p-5 text-sm text-[var(--danger)]">
-          {error || "Session not found"}
+          {error || "Sesi tidak ditemukan"}
         </div>
       </div>
     );
@@ -202,7 +202,7 @@ export default function RecordingDetailPage() {
           href="/recordings"
           className="inline-flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
         >
-          <ArrowLeft className="w-3 h-3" /> Back to recordings
+          <ArrowLeft className="w-3 h-3" /> Kembali ke rekaman
         </Link>
         <button
           onClick={handleDelete}
@@ -238,7 +238,7 @@ export default function RecordingDetailPage() {
 	            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-xs font-semibold hover:bg-[var(--accent-hover)] disabled:opacity-50 transition-colors shadow-sm"
 	          >
 	            <Sparkles className={cn("w-3.5 h-3.5", generating && "animate-pulse")} />
-	            {generating ? "Generating..." : "Generate Test"}
+	            {generating ? "Membuat…" : "Buat Test"}
 	          </button>
 	        </div>
 
@@ -251,11 +251,11 @@ export default function RecordingDetailPage() {
 	            title="Simpan hasil rekam sebagai test case deterministik — bisa di-run ulang persis tanpa AI"
 	          >
 	            <CheckCircle2 className="w-3.5 h-3.5" />
-	            {savingCase ? "Menyimpan..." : savedCase ? "Tersimpan sebagai Test Case" : "Save as Test Case"}
+	            {savingCase ? "Menyimpan…" : savedCase ? "Tersimpan sebagai Test Case" : "Simpan sebagai Test Case"}
 	          </button>
 	          {savedCase && (
 	            <Link href="/tests" className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors">
-	              Buka Test Library →
+	              Buka Perpustakaan Test →
 	            </Link>
 	          )}
 	          {saveCaseError && (
@@ -276,7 +276,7 @@ export default function RecordingDetailPage() {
               minute: "2-digit",
             })}
           />
-          <Meta label="Session ID" value={session.id.slice(0, 8)} mono />
+          <Meta label="ID Sesi" value={session.id.slice(0, 8)} mono />
         </div>
       </div>
 
@@ -286,7 +286,7 @@ export default function RecordingDetailPage() {
           <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border)]">
             <div className="flex items-center gap-2">
               <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">
-                Generated Test
+                Test yang Dihasilkan
               </h2>
               {testMeta && (
                 <span className="text-[10px] text-[var(--text-muted)] bg-[var(--bg-subtle)] px-2 py-0.5 rounded-full font-mono">
@@ -307,7 +307,7 @@ export default function RecordingDetailPage() {
                 ) : (
                   <>
                     <Copy className="w-3.5 h-3.5" />
-                    Copy code
+                    Salin kode
                   </>
                 )}
               </button>
@@ -341,8 +341,8 @@ export default function RecordingDetailPage() {
           <div className="p-5">
             <EmptyState
               icon={<MousePointerClick className="w-5 h-5" />}
-              title="No events recorded"
-              description="Start recording browser interactions to see events appear here."
+              title="Belum ada event"
+              description="Mulai rekam interaksi browser untuk melihat event muncul di sini."
             />
           </div>
         ) : (

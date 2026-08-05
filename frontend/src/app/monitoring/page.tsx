@@ -89,21 +89,21 @@ export default function MonitoringPage() {
 
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Test Pass Rate" value={passRate} positive={metrics != null && metrics.pass_rate >= 90} danger={metrics != null && metrics.pass_rate < 50} />
+        <StatCard label="Test Tingkat Berhasil" value={passRate} positive={metrics != null && metrics.pass_rate >= 90} danger={metrics != null && metrics.pass_rate < 50} />
         <StatCard label="Avg Run Duration" value={avgDuration} color="blue" />
         <StatCard label="Active Runs" value={String(summary?.active_runs ?? 0)} color="blue" />
-        <StatCard label="Failed Tests" value={String(metrics?.total_failed ?? 0)} danger={(metrics?.total_failed ?? 0) > 0} />
+        <StatCard label="Failed Test" value={String(metrics?.total_failed ?? 0)} danger={(metrics?.total_failed ?? 0) > 0} />
       </div>
 
       {/* Secondary counts */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard label="Total Runs" value={String(metrics?.total_runs ?? 0)} />
-        <StatCard label="Tests Passed" value={String(metrics?.total_passed ?? 0)} positive={(metrics?.total_passed ?? 0) > 0} />
+        <StatCard label="Test Passed" value={String(metrics?.total_passed ?? 0)} positive={(metrics?.total_passed ?? 0) > 0} />
         <StatCard label="Completed Runs" value={String(summary?.completed_runs ?? 0)} />
       </div>
 
-      {/* Pass Rate Trend */}
-      <Section title="Pass Rate Trend">
+      {/* Tingkat Berhasil Trend */}
+      <Section title="Tingkat Berhasil Trend">
         {trend.length === 0 ? (
           <EmptyState
             icon={<Activity className="w-8 h-8" />}
@@ -141,10 +141,10 @@ export default function MonitoringPage() {
               <thead className="bg-gray-50 border-b border-[var(--border-default)]">
                 <tr>
                   <Th>List</Th>
-                  <Th>Tests</Th>
-                  <Th>Pass Rate</Th>
-                  <Th>Last Status</Th>
-                  <Th>Last Run</Th>
+                  <Th>Test</Th>
+                  <Th>Tingkat Berhasil</Th>
+                  <Th>Status Terakhir</Th>
+                  <Th>Run Terakhir</Th>
                 </tr>
               </thead>
               <tbody>
@@ -189,7 +189,7 @@ export default function MonitoringPage() {
 
         {/* Risk & Flaky */}
         <div className="space-y-6">
-          <Section title="At-Risk Tests">
+          <Section title="At-Risk Test">
             {risks.length === 0 ? (
               <EmptyState
                 icon={<CheckCircle2 className="w-8 h-8" />}
@@ -211,7 +211,7 @@ export default function MonitoringPage() {
             )}
           </Section>
 
-          <Section title="Flaky Tests">
+          <Section title="Flaky Test">
             {flaky.length === 0 ? (
               <EmptyState
                 icon={<CheckCircle2 className="w-8 h-8" />}

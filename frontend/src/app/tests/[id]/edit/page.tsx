@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Section, EmptyState, LoadingSkeleton } from "@/components/ui/section";
 import {
   ArrowLeft,
@@ -82,6 +83,58 @@ const actionIcons: Record<string, React.ElementType> = {
   assert: CheckCircle2,
   screenshot: Monitor,
 };
+
+// Label ramah pengguna (non-teknis) untuk setiap tipe aksi.
+const actionLabels: Record<string, string> = {
+  goto: "Buka halaman",
+  fill: "Isi kolom",
+  click: "Klik",
+  scroll: "Gulir halaman",
+  wait: "Tunggu",
+  hover: "Arahkan kursor",
+  select: "Pilih opsi",
+  press: "Tekan tombol",
+  assert: "Periksa",
+  screenshot: "Ambil screenshot",
+};
+
+// Label ramah untuk tipe periksa (assert).
+const assertLabels: Record<string, string> = {
+  visible: "Elemen terlihat",
+  hidden: "Elemen tersembunyi",
+  text_contains: "Mengandung teks",
+  url_contains: "URL mengandung",
+  title_contains: "Judul halaman mengandung",
+  count: "Jumlah elemen",
+  attribute: "Atribut elemen",
+};
+
+// Deskripsi singkat bahasa manusia untuk sebuah aksi.
+function describeAction(action: BrowserAction): string {
+  const label = actionLabels[action.action] || action.action;
+  switch (action.action) {
+    case "goto":
+      return `Buka halaman ${action.url || ""}`;
+    case "fill":
+      return `Isi ${action.selector || "elemen"} dengan "${action.value || ""}"`;
+    case "click":
+      return `Klik ${action.selector || "elemen"}`;
+    case "scroll":
+      return "Gulir halaman ke bawah";
+    case "wait":
+      return `Tunggu ${((action.ms ?? 0) / 1000).toFixed(1)} detik`;
+    case "hover":
+      return `Arahkan kursor ke ${action.selector || "elemen"}`;
+    case "select":
+      return `Pilih "${action.value || ""}" dari ${action.selector || "elemen"}`;
+    case "press":
+      return `Tekan tombol ${action.key || ""}`;
+    case "assert":
+      return `Periksa: ${assertLabels[action.assert || "visible"] || action.assert}${action.text ? ` "${action.text}"` : ""}${action.selector ? ` di ${action.selector}` : ""}`;
+    default:
+      return label;
+  }
+}
 
 function defaultAction(action: string): BrowserAction {
   switch (action) {
@@ -281,7 +334,7 @@ export default function EditTestCasePage() {
           href="/tests"
           className="inline-flex items-center gap-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" /> Kembali ke Test Library
+          <ArrowLeft className="w-4 h-4" /> Kembali ke Perpustakaan Test
         </Link>
         <div className="rounded-[var(--radius)] border border-[var(--danger)]/30 bg-[var(--danger-bg)] px-4 py-3 text-sm text-[var(--danger)]">
           {loadError}
@@ -297,7 +350,7 @@ export default function EditTestCasePage() {
         href="/tests"
         className="inline-flex items-center gap-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
       >
-        <ArrowLeft className="w-4 h-4" /> Kembali ke Test Library
+        <ArrowLeft className="w-4 h-4" /> Kembali ke Perpustakaan Test
       </Link>
 
       {/* Header */}
@@ -317,10 +370,10 @@ export default function EditTestCasePage() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="secondary" onClick={handleSaveAndRun} isLoading={saveRunning} disabled={saving}>
-            <Play className="w-4 h-4" /> Save &amp; Run
+            <Play className="w-4 h-4" /> Simpan &amp; Jalankan
           </Button>
           <Button onClick={handleSave} isLoading={saving} disabled={saveRunning}>
-            <Save className="w-4 h-4" /> Save
+            <Save className="w-4 h-4" /> Simpan
           </Button>
         </div>
       </div>
@@ -348,15 +401,15 @@ export default function EditTestCasePage() {
           />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-[var(--text-primary)] mb-1.5">Priority</label>
+              <label className="block text-sm font-medium text-[var(--text-primary)] mb-1.5">Prioritas</label>
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value)}
                 className="w-full h-10 px-3 bg-white border border-[var(--border-default)] rounded-md text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 transition-colors duration-150"
               >
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
+                <option value="high">Tinggi</option>
+                <option value="medium">Sedang</option>
+                <option value="low">Rendah</option>
               </select>
             </div>
             <Input
@@ -407,57 +460,65 @@ export default function EditTestCasePage() {
         </div>
       </Section>
 
-      {/* Section 3 — Aksi Browser (Deterministic) */}
-      <Section
-        title="Aksi Browser (Deterministic)"
-        action={
-          actions !== null && (
-            <Button variant="ghost" size="sm" onClick={addAction}>
-              <Plus className="w-4 h-4" /> Tambah Aksi
-            </Button>
-          )
-        }
-      >
-        {actions === null ? (
-          <EmptyState
-            icon={<Monitor className="w-6 h-6" />}
-            title="Test case ini belum punya aksi deterministik."
-            description="Aksi deterministik adalah rekaman browser action yang bisa di-run ulang persis tanpa AI."
-          />
-        ) : (
-          <div className="space-y-3">
-            <p className="text-xs text-[var(--text-muted)] flex items-start gap-1.5 leading-relaxed">
-              <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0 text-[var(--success)]" />
-              Aksi ini dijalankan persis seperti yang tertera saat test di-run ulang (tanpa AI).
-            </p>
-            {actions.map((action, i) => (
-              <ActionCard
-                key={i}
-                index={i}
-                total={actions.length}
-                action={action}
-                onChange={(patch) => updateAction(i, patch)}
-                onChangeType={(type) => setActionType(i, type)}
-                onMove={(dir) => moveAction(i, dir)}
-                onRemove={() => removeAction(i)}
-              />
-            ))}
-            {actions.length === 0 && (
-              <p className="text-sm text-[var(--text-muted)] py-2">Belum ada aksi. Klik &quot;Tambah Aksi&quot; untuk menambah.</p>
-            )}
-          </div>
-        )}
-      </Section>
+	      {/* Section 3 — Aksi Browser (Deterministic) — dibungkus Advanced supaya
+	          istilah teknis tidak menghadang user non-teknis di jalur utama. */}
+	      <details className="group rounded-[var(--radius)] border border-[var(--border)] bg-white overflow-hidden">
+	        <summary className="flex items-center justify-between px-5 py-3.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+	          <div className="flex items-center gap-2">
+	            <ChevronDown className="w-4 h-4 text-[var(--text-muted)] transition-transform group-open:rotate-180" />
+	            <span className="text-[13px] font-semibold text-[var(--text-primary)]">Langkah detail (Lanjutan)</span>
+	            {actions !== null && actions.length > 0 && (
+	              <Badge variant="success" size="sm">{actions.length} aksi</Badge>
+	            )}
+	          </div>
+	          {actions !== null && (
+	            <Button variant="ghost" size="sm" onClick={(e) => { e.preventDefault(); e.stopPropagation(); addAction(); }}>
+	              <Plus className="w-4 h-4" /> Tambah Aksi
+	            </Button>
+	          )}
+	        </summary>
+	        <div className="px-5 pb-5">
+	          {actions === null ? (
+	            <EmptyState
+	              icon={<Monitor className="w-6 h-6" />}
+	              title="Test case ini belum punya aksi detail."
+	              description="Aksi detail adalah langkah persis yang direkam — bisa di-run ulang tanpa AI. Umumnya cukup isi 'Langkah Test' di atas; bagian ini untuk penyesuaian lanjutan."
+	            />
+	          ) : (
+	            <div className="space-y-3">
+	              <p className="text-xs text-[var(--text-muted)] flex items-start gap-1.5 leading-relaxed">
+	                <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0 text-[var(--success)]" />
+	                Ini langkah persis yang dijalankan saat test di-run ulang. Setiap kartu = satu aksi; label sudah memakai bahasa sehari-hari.
+	              </p>
+	              {actions.map((action, i) => (
+	                <ActionCard
+	                  key={i}
+	                  index={i}
+	                  total={actions.length}
+	                  action={action}
+	                  onChange={(patch) => updateAction(i, patch)}
+	                  onChangeType={(type) => setActionType(i, type)}
+	                  onMove={(dir) => moveAction(i, dir)}
+	                  onRemove={() => removeAction(i)}
+	                />
+	              ))}
+	              {actions.length === 0 && (
+	                <p className="text-sm text-[var(--text-muted)] py-2">Belum ada aksi. Klik &quot;Tambah Aksi&quot; untuk menambah.</p>
+	              )}
+	            </div>
+	          )}
+	        </div>
+	      </details>
 
       {/* Bottom actions */}
       <div className="flex items-center justify-end gap-2 pb-6">
         <Button variant="secondary" onClick={handleSaveAndRun} isLoading={saveRunning} disabled={saving}>
-          <Play className="w-4 h-4" /> Save &amp; Run
+          <Play className="w-4 h-4" /> Simpan &amp; Jalankan
         </Button>
-        <Button onClick={handleSave} isLoading={saving} disabled={saveRunning}>
-          <Save className="w-4 h-4" /> Save
-        </Button>
-      </div>
+	        <Button onClick={handleSave} isLoading={saving} disabled={saveRunning}>
+	          <Save className="w-4 h-4" /> Simpan
+	        </Button>
+	      </div>
     </div>
   );
 }
@@ -519,142 +580,146 @@ function ActionCard({
   const Icon = actionIcons[action.action] || MousePointerClick;
   const a = action.action;
 
-  return (
-    <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-subtle)]/50 p-3.5">
-      {/* Card header: icon + type select + controls */}
-      <div className="flex items-center gap-2 mb-3">
-        <span className="w-7 h-7 shrink-0 rounded-[var(--radius-sm)] bg-[var(--accent-bg)] border border-[var(--accent)]/15 flex items-center justify-center text-[var(--accent)]">
-          <Icon className="w-3.5 h-3.5" />
-        </span>
-        <select
-          value={a}
-          onChange={(e) => onChangeType(e.target.value)}
-          className="h-9 px-2.5 bg-white border border-[var(--border-default)] rounded-md text-[13px] font-medium text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 transition-colors duration-150 capitalize"
-        >
-          {ACTION_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-        <div className="flex items-center gap-0.5 ml-auto shrink-0">
-          <IconBtn onClick={() => onMove(-1)} disabled={index === 0} title="Pindah ke atas">
-            <ChevronUp className="w-4 h-4" />
-          </IconBtn>
-          <IconBtn onClick={() => onMove(1)} disabled={index === total - 1} title="Pindah ke bawah">
-            <ChevronDown className="w-4 h-4" />
-          </IconBtn>
-          <IconBtn onClick={onRemove} danger title="Hapus aksi">
-            <Trash2 className="w-4 h-4" />
-          </IconBtn>
-        </div>
-      </div>
+	  return (
+	    <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-subtle)]/50 p-3.5">
+	      {/* Card header: icon + type select + controls */}
+	      <div className="flex items-center gap-2 mb-2">
+	        <span className="w-7 h-7 shrink-0 rounded-[var(--radius-sm)] bg-[var(--accent-bg)] border border-[var(--accent)]/15 flex items-center justify-center text-[var(--accent)]">
+	          <Icon className="w-3.5 h-3.5" />
+	        </span>
+	        <select
+	          value={a}
+	          onChange={(e) => onChangeType(e.target.value)}
+	          aria-label="Tipe aksi"
+	          className="h-9 px-2.5 bg-white border border-[var(--border-default)] rounded-md text-[13px] font-medium text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 transition-colors duration-150"
+	        >
+	          {ACTION_TYPES.map((t) => (
+	            <option key={t} value={t}>
+	              {actionLabels[t] || t}
+	            </option>
+	          ))}
+	        </select>
+	        <div className="flex items-center gap-0.5 ml-auto shrink-0">
+	          <IconBtn onClick={() => onMove(-1)} disabled={index === 0} title="Pindah ke atas">
+	            <ChevronUp className="w-4 h-4" />
+	          </IconBtn>
+	          <IconBtn onClick={() => onMove(1)} disabled={index === total - 1} title="Pindah ke bawah">
+	            <ChevronDown className="w-4 h-4" />
+	          </IconBtn>
+	          <IconBtn onClick={onRemove} danger title="Hapus aksi">
+	            <Trash2 className="w-4 h-4" />
+	          </IconBtn>
+	        </div>
+	      </div>
 
-      {/* Fields based on action type */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {a === "goto" && (
-          <div className="sm:col-span-2">
-            <label className={fieldLabel}>URL</label>
-            <input
-              className={fieldInput}
-              value={action.url || ""}
-              onChange={(e) => onChange({ url: e.target.value })}
-              placeholder="https://example.com/login"
-            />
-          </div>
-        )}
+	      {/* Deskripsi ramah: apa yang dilakukan aksi ini (bahasa manusia) */}
+	      <p className="text-[13px] text-[var(--text-primary)] mb-3">{describeAction(action)}</p>
 
-        {(a === "fill" || a === "click" || a === "hover" || a === "select" || a === "assert") && (
-          <div className={a === "click" || a === "hover" ? "sm:col-span-2" : ""}>
-            <label className={fieldLabel}>Selector</label>
-            <input
-              className={fieldInput}
-              value={action.selector || ""}
-              onChange={(e) => onChange({ selector: e.target.value })}
-              placeholder="css=..., #id, [data-testid=...]"
-            />
-          </div>
-        )}
+	      {/* Fields based on action type */}
+	      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+	        {a === "goto" && (
+	          <div className="sm:col-span-2">
+	            <label className={fieldLabel}>Alamat halaman (URL)</label>
+	            <input
+	              className={fieldInput}
+	              value={action.url || ""}
+	              onChange={(e) => onChange({ url: e.target.value })}
+	              placeholder="https://example.com/login"
+	            />
+	          </div>
+	        )}
 
-        {(a === "fill" || a === "select") && (
-          <div>
-            <label className={fieldLabel}>Value</label>
-            <input
-              className={fieldInput}
-              value={action.value || ""}
-              onChange={(e) => onChange({ value: e.target.value })}
-              placeholder={a === "select" ? "Option value" : "Text to fill"}
-            />
-          </div>
-        )}
+	        {(a === "fill" || a === "click" || a === "hover" || a === "select" || a === "assert") && (
+	          <div className={a === "click" || a === "hover" ? "sm:col-span-2" : ""}>
+	            <label className={fieldLabel}>Elemen di halaman</label>
+	            <input
+	              className={fieldInput}
+	              value={action.selector || ""}
+	              onChange={(e) => onChange({ selector: e.target.value })}
+	              placeholder="cth: #login-button, .menu, [data-testid=...]"
+	            />
+	          </div>
+	        )}
 
-        {a === "press" && (
-          <div>
-            <label className={fieldLabel}>Key</label>
-            <input
-              className={fieldInput}
-              value={action.key || ""}
-              onChange={(e) => onChange({ key: e.target.value })}
-              placeholder="Enter, Tab, Escape..."
-            />
-          </div>
-        )}
+	        {(a === "fill" || a === "select") && (
+	          <div>
+	            <label className={fieldLabel}>{a === "select" ? "Opsi yang dipilih" : "Nilai yang diisi"}</label>
+	            <input
+	              className={fieldInput}
+	              value={action.value || ""}
+	              onChange={(e) => onChange({ value: e.target.value })}
+	              placeholder={a === "select" ? "cth: gold" : "cth: user@mail.com"}
+	            />
+	          </div>
+	        )}
 
-        {a === "wait" && (
-          <div>
-            <label className={fieldLabel}>Duration (ms)</label>
-            <input
-              type="number"
-              min={0}
-              className={fieldInput}
-              value={action.ms ?? 0}
-              onChange={(e) => onChange({ ms: Number(e.target.value) || 0 })}
-              placeholder="1000"
-            />
-          </div>
-        )}
+	        {a === "press" && (
+	          <div>
+	            <label className={fieldLabel}>Tombol</label>
+	            <input
+	              className={fieldInput}
+	              value={action.key || ""}
+	              onChange={(e) => onChange({ key: e.target.value })}
+	              placeholder="Enter, Tab, Escape..."
+	            />
+	          </div>
+	        )}
 
-        {a === "scroll" && (
-          <div>
-            <label className={fieldLabel}>Scroll Y (px)</label>
-            <input
-              type="number"
-              className={fieldInput}
-              value={action.y ?? 0}
-              onChange={(e) => onChange({ y: Number(e.target.value) || 0 })}
-              placeholder="500"
-            />
-          </div>
-        )}
+	        {a === "wait" && (
+	          <div>
+	            <label className={fieldLabel}>Durasi tunggu (detik)</label>
+	            <input
+	              type="number"
+	              min={0}
+	              className={fieldInput}
+	              value={Math.round((action.ms ?? 0) / 1000)}
+	              onChange={(e) => onChange({ ms: (Number(e.target.value) || 0) * 1000 })}
+	              placeholder="1"
+	            />
+	          </div>
+	        )}
 
-        {a === "assert" && (
-          <>
-            <div>
-              <label className={fieldLabel}>Assert Type</label>
-              <select
-                className={fieldInput}
-                value={action.assert || "visible"}
-                onChange={(e) => onChange({ assert: e.target.value })}
-              >
-                {ASSERT_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t.replace(/_/g, " ")}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="sm:col-span-2">
-              <label className={fieldLabel}>Text</label>
-              <input
-                className={fieldInput}
-                value={action.text || ""}
-                onChange={(e) => onChange({ text: e.target.value })}
-                placeholder="Expected text / value"
-              />
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
+	        {a === "scroll" && (
+	          <div>
+	            <label className={fieldLabel}>Jarak gulir (px)</label>
+	            <input
+	              type="number"
+	              className={fieldInput}
+	              value={action.y ?? 0}
+	              onChange={(e) => onChange({ y: Number(e.target.value) || 0 })}
+	              placeholder="500"
+	            />
+	          </div>
+	        )}
+
+	        {a === "assert" && (
+	          <>
+	            <div>
+	              <label className={fieldLabel}>Jenis periksa</label>
+	              <select
+	                className={fieldInput}
+	                value={action.assert || "visible"}
+	                onChange={(e) => onChange({ assert: e.target.value })}
+	              >
+	                {ASSERT_TYPES.map((t) => (
+	                  <option key={t} value={t}>
+	                    {assertLabels[t] || t}
+	                  </option>
+	                ))}
+	              </select>
+	            </div>
+	            <div className="sm:col-span-2">
+	              <label className={fieldLabel}>Teks yang diharapkan</label>
+	              <input
+	                className={fieldInput}
+	                value={action.text || ""}
+	                onChange={(e) => onChange({ text: e.target.value })}
+	                placeholder="cth: Berhasil masuk"
+	              />
+	            </div>
+	          </>
+	        )}
+	      </div>
+	    </div>
+	  );
+	}

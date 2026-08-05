@@ -27,17 +27,17 @@ export default function ReleasesPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-semibold tracking-tight mb-1">Releases</h1>
-        <p className="text-sm text-[var(--text-muted)] mt-1">Track test suite versions and deployment history</p>
+        <h1 className="text-xl font-semibold tracking-tight mb-1">Rilis</h1>
+        <p className="text-sm text-[var(--text-muted)] mt-1">Lacak versi test suite dan riwayat deployment</p>
       </div>
 
-      {/* Release History */}
-      <Section title="Release History">
+      {/* Riwayat Rilis */}
+      <Section title="Riwayat Rilis">
         {releases.length === 0 ? (
           <EmptyState 
             icon={<Tag className="w-8 h-8" />}
-            title="No releases yet"
-            description="Test releases are automatically created when tests are deployed to production."
+            title="Belum ada rilis"
+            description="Rilis test dibuat otomatis saat test di-deploy ke produksi."
           />
         ) : (
           <div className="space-y-4">
@@ -50,9 +50,9 @@ export default function ReleasesPage() {
 
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatBox label="Total Releases" value={releases.length.toString()} />
-        <StatBox label="Runs in Latest Release" value={releases[0]?.run_ids?.length?.toString() || "0"} positive />
-        <StatBox label="Latest Status" value={releases[0]?.status || "-"} />
+        <StatBox label="Total Rilis" value={releases.length.toString()} />
+        <StatBox label="Run di Rilis Terbaru" value={releases[0]?.run_ids?.length?.toString() || "0"} positive />
+        <StatBox label="Status Terbaru" value={releases[0]?.status || "-"} />
       </div>
     </div>
   );
@@ -70,7 +70,7 @@ function ReleaseCard({ release, isFirst }: { release: Release; isFirst: boolean 
             <div className="flex items-center gap-2 mb-1">
               <h3 className="text-base font-semibold text-[var(--text-primary)]">{release.name}</h3>
               {isFirst && (
-                <Badge variant="success" size="sm">Current</Badge>
+                <Badge variant="success" size="sm">Saat Ini</Badge>
               )}
             </div>
             <p className="text-sm text-[var(--text-secondary)]">{release.version}{release.status ? ` · ${release.status}` : ""}</p>

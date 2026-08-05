@@ -14,6 +14,13 @@ import { cn } from "@/lib/utils";
 type Group = "all" | "active" | "passed" | "failed";
 type Sort = "newest" | "oldest" | "status" | "name";
 
+const GROUP_LABELS: Record<Group, string> = {
+  all: "Semua",
+  active: "Aktif",
+  passed: "Lulus",
+  failed: "Gagal",
+};
+
 export default function RunsPage() {
   const [runs, setRuns] = useState<TestRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,7 +93,7 @@ export default function RunsPage() {
   if (error) {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-6">
-        <h2 className="text-sm font-semibold text-red-700 mb-2">Error loading runs</h2>
+        <h2 className="text-sm font-semibold text-red-700 mb-2">Gagal memuat run</h2>
         <p className="text-sm text-red-600">{error}</p>
       </div>
     );
@@ -97,8 +104,8 @@ export default function RunsPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Test Runs</h1>
-          <p className="text-sm text-[var(--text-muted)] mt-1">Browse and inspect test execution history</p>
+          <h1 className="text-xl font-semibold tracking-tight">Run</h1>
+          <p className="text-sm text-[var(--text-muted)] mt-1">Lihat dan periksa riwayat eksekusi test</p>
         </div>
       </div>
 
@@ -107,7 +114,7 @@ export default function RunsPage() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
           <Input
-            placeholder="Search by ID, state, or requirements..."
+            placeholder="Cari berdasarkan ID, status, atau requirements..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pl-9"
@@ -116,21 +123,21 @@ export default function RunsPage() {
         
         {/* Status Filters - Modern Segment Control */}
         <div className="inline-flex rounded-lg border border-[var(--border-default)] p-0.5 bg-white">
-          {(["all", "active", "passed", "failed"] as Group[]).map((g) => (
-            <button
-              key={g}
-              onClick={() => setGroup(g)}
-              className={cn(
-                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
-                group === g 
-                  ? "bg-blue-600 text-white shadow-sm" 
-                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-gray-50"
-              )}
-            >
-              {g.charAt(0).toUpperCase() + g.slice(1)}
-              <span className={cn("ml-1.5", group === g ? "text-blue-200" : "text-[var(--text-muted)]")}>({counts[g]})</span>
-            </button>
-          ))}
+	          {(["all", "active", "passed", "failed"] as Group[]).map((g) => (
+	            <button
+	              key={g}
+	              onClick={() => setGroup(g)}
+	              className={cn(
+	                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+	                group === g 
+	                  ? "bg-blue-600 text-white shadow-sm" 
+	                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-gray-50"
+	              )}
+	            >
+	              {GROUP_LABELS[g]}
+	              <span className={cn("ml-1.5", group === g ? "text-blue-200" : "text-[var(--text-muted)]")}>({counts[g]})</span>
+	            </button>
+	          ))}
         </div>
       </div>
 
@@ -140,10 +147,10 @@ export default function RunsPage() {
           <EmptyState 
             icon={<Inbox className="w-6 h-6" />} 
             title={query ? "No matching runs" : "No runs found"} 
-            description={query ? "Try adjusting your search criteria." : "Create your first test run to start monitoring executions."}
+            description={query ? "Coba ubah kriteria pencarian." : "Buat test run pertamamu untuk mulai memantau eksekusi."}
             action={!query && runs.length === 0 ? (
               <Link href="/create">
-                <Button>Create First Test</Button>
+                <Button>Buat Test Pertama</Button>
               </Link>
             ) : undefined}
           />
@@ -154,12 +161,12 @@ export default function RunsPage() {
             <thead className="bg-gray-50 border-b border-[var(--border-default)]">
 	              <tr>
 	                <Th>Status</Th>
-	                <Th>Run Name / ID</Th>
+	                <Th>Nama Run / ID</Th>
 	                <Th>Model</Th>
-	                <Th>Coverage</Th>
-	                <Th>Duration</Th>
-	                <Th>Started</Th>
-	                <Th align="right">Actions</Th>
+	                <Th>Cakupan</Th>
+	                <Th>Durasi</Th>
+	                <Th>Dimulai</Th>
+	                <Th align="right">Aksi</Th>
 	              </tr>
             </thead>
             <tbody>
@@ -172,7 +179,7 @@ export default function RunsPage() {
                 >
                   <Td><StatusBadge state={r.state} size="sm" /></Td>
 	                  <Td className="font-medium">
-	                    <span className="block truncate max-w-[200px]">{r.requirements || "Untitled test"}</span>
+	                    <span className="block truncate max-w-[200px]">{r.requirements || "Test tanpa judul"}</span>
 	                    <span className="text-xs text-[var(--text-muted)] font-mono">{r.id.slice(0, 8)}</span>
 	                  </Td>
 	                  <Td>
@@ -200,7 +207,7 @@ export default function RunsPage() {
                   </Td>
                   <Td className="text-sm text-[var(--text-muted)]">
                     {r.run_result?.duration_ms 
-                      ? formatDuration(r.run_result.duration_ms) 
+                      ? formatDurasi(r.run_result.duration_ms) 
                       : "-"}
                   </Td>
                   <Td className="text-sm text-[var(--text-muted)] whitespace-nowrap">
@@ -208,7 +215,7 @@ export default function RunsPage() {
                   </Td>
                   <Td>
                     <Link href={`/runs/${r.id}`} className="text-blue-600 hover:text-blue-700 text-xs font-medium text-right">
-                      View details
+                      Lihat detail
                     </Link>
                   </Td>
                 </Tr>
@@ -279,7 +286,7 @@ function Button({ children, variant = "primary" }: { children: React.ReactNode; 
   );
 }
 
-function formatDuration(ms: number): string {
+function formatDurasi(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   const mins = Math.floor(ms / 60000);
@@ -295,10 +302,10 @@ function formatDate(dateStr: string): string {
   const diffHour = Math.floor(diffMs / 3600000);
   const diffDay = Math.floor(diffMs / 86400000);
   
-  if (diffMin < 1) return "Just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHour < 24) return `${diffHour}h ago`;
-  if (diffDay < 7) return `${diffDay}d ago`;
+  if (diffMin < 1) return "Baru saja";
+  if (diffMin < 60) return `${diffMin}mnt lalu`;
+  if (diffHour < 24) return `${diffHour}jam lalu`;
+  if (diffDay < 7) return `${diffDay}hari lalu`;
   
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }

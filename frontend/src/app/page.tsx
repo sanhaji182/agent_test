@@ -48,7 +48,7 @@ export default function DashboardPage() {
         }
         if (data.failed) {
           const label = data.metadata?.test || data.message?.slice(0, 60) || data.run_id?.slice(0, 8);
-          setToast(`Test failed: ${label}`);
+	          setToast(`Test gagal: ${label}`);
           setTimeout(() => setToast(null), 5000);
         }
       });
@@ -85,11 +85,11 @@ export default function DashboardPage() {
       await seedDemoData();
       const r = await getRuns();
       setRuns(r || []);
-      setToast("Demo data loaded");
+		      setToast("Data demo dimuat");
       setTimeout(() => setToast(null), 4000);
     } catch (e) {
       console.error(e);
-      setToast("Failed to load demo data");
+		      setToast("Gagal memuat data demo");
       setTimeout(() => setToast(null), 4000);
     } finally {
       setSeeding(false);
@@ -114,52 +114,52 @@ export default function DashboardPage() {
   if (total === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <h1 className="text-2xl font-semibold tracking-tight mb-2">No tests yet</h1>
-        <p className="text-sm text-[var(--text-muted)] max-w-sm leading-relaxed mb-6">
-          Start testing by creating your first test run. The AI will analyze your codebase and generate comprehensive test coverage.
-        </p>
-        <div className="flex items-center gap-3">
-          <Link href="/create">
-            <Button>Create First Test</Button>
-          </Link>
-          <Link href="/create?method=record">
-            <Button variant="secondary">
-              <Video className="w-4 h-4 mr-2" /> Record Test
-            </Button>
-          </Link>
-          <Button variant="secondary" onClick={handleSeedDemo} disabled={seeding}>
-            <Sparkles className="w-4 h-4 mr-2" />
-            {seeding ? "Loading…" : "Load Demo Data"}
-          </Button>
-        </div>
+	        <h1 className="text-2xl font-semibold tracking-tight mb-2">Belum ada test</h1>
+	        <p className="text-sm text-[var(--text-muted)] max-w-sm leading-relaxed mb-6">
+	          Mulai dengan membuat test run pertamamu. AI akan menganalisis codebase-mu dan membuat cakupan test yang menyeluruh.
+	        </p>
+	        <div className="flex items-center gap-3">
+	          <Link href="/create">
+	            <Button>Buat Test Pertama</Button>
+	          </Link>
+	          <Link href="/create?method=record">
+	            <Button variant="secondary">
+	              <Video className="w-4 h-4 mr-2" /> Rekam Test
+	            </Button>
+	          </Link>
+	          <Button variant="secondary" onClick={handleSeedDemo} disabled={seeding}>
+	            <Sparkles className="w-4 h-4 mr-2" />
+	            {seeding ? "Memuat…" : "Muat Data Demo"}
+	          </Button>
+	        </div>
       </div>
     );
 	  }
 
 	  return (
 	    <PageLayout
-	      title="Dashboard"
-      description={
-        hasActive 
-          ? `${activeCount} test${activeCount === 1 ? ' run' : 's'} currently executing`
-          : 'Overview of your test execution history'
-      }
-      action={
-        <div className="flex items-center gap-2">
-          <Link href="/create?method=record">
-            <Button variant="secondary">
-              <Video className="w-4 h-4 mr-2" /> Record Test
-            </Button>
-          </Link>
-          <Button variant="secondary" onClick={handleSeedDemo} disabled={seeding}>
-            <Sparkles className="w-4 h-4 mr-2" />
-            {seeding ? "Loading…" : "Load Demo Data"}
-          </Button>
-          <Link href="/create">
-            <Button><PlayCircle className="w-4 h-4" /> New Run</Button>
-          </Link>
-        </div>
-      }
+	      title="Ringkasan"
+	      description={
+	        hasActive 
+	          ? `${activeCount} run sedang berjalan`
+	          : 'Ringkasan riwayat eksekusi test kamu'
+	      }
+	      action={
+	        <div className="flex items-center gap-2">
+	          <Link href="/create?method=record">
+	            <Button variant="secondary">
+	              <Video className="w-4 h-4 mr-2" /> Rekam Test
+	            </Button>
+	          </Link>
+	          <Button variant="secondary" onClick={handleSeedDemo} disabled={seeding}>
+	            <Sparkles className="w-4 h-4 mr-2" />
+	            {seeding ? "Memuat…" : "Muat Data Demo"}
+	          </Button>
+	          <Link href="/create">
+	            <Button><PlayCircle className="w-4 h-4" /> Jalankan Test Baru</Button>
+	          </Link>
+	        </div>
+	      }
     >
 	      {/* Toast */}
 	      {toast && (
@@ -169,32 +169,32 @@ export default function DashboardPage() {
 	      )}
 
       {/* Stats Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatBox value={total.toString()} label="Total Runs" />
-        <StatBox value={`${passRate}%`} label="Pass Rate" success={passRate >= 80} />
-        <StatBox value={failed.toString()} label="Failures" danger={failed > 0} />
-        <StatBox value={activeCount.toString()} label="Running" color={activeCount > 0 ? "blue" : "gray"} />
-      </div>
+	      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+	        <StatBox value={total.toString()} label="Total Run" />
+	        <StatBox value={`${passRate}%`} label="Tingkat Berhasil" success={passRate >= 80} />
+	        <StatBox value={failed.toString()} label="Gagal" danger={failed > 0} />
+	        <StatBox value={activeCount.toString()} label="Berjalan" color={activeCount > 0 ? "blue" : "gray"} />
+	      </div>
 
       {/* Active Runs Table */}
       {hasActive && (
-        <Section title="Running Tests">
-          <TableContainer>
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-[var(--border-default)]">
-                  <Th>Run Name</Th>
-                  <Th>Status</Th>
-                  <Th>Progress</Th>
-                  <Th>Started</Th>
-                  <Th align="right">Actions</Th>
-                </tr>
+	        <Section title="Test Berjalan">
+	          <TableContainer>
+	            <table className="w-full text-left">
+	              <thead>
+	                <tr className="border-b border-[var(--border-default)]">
+	                  <Th>Nama Run</Th>
+	                  <Th>Status</Th>
+	                  <Th>Progres</Th>
+	                  <Th>Dimulai</Th>
+	                  <Th align="right">Aksi</Th>
+	                </tr>
               </thead>
               <tbody>
                 {activeRunsList.map((r) => (
                   <Tr key={r.id} onClick={() => window.location.href = `/runs/${r.id}`} hover>
                     <Td className="font-medium">
-                      <span className="truncate block max-w-[200px]">{r.requirements || "Untitled"}</span>
+                      <span className="truncate block max-w-[200px]">{r.requirements || "Tanpa judul"}</span>
                     </Td>
                     <Td>
                       <StatusBadge state={r.state} />
@@ -206,7 +206,7 @@ export default function DashboardPage() {
                       {formatDate(r.created_at)}
                     </Td>
                     <Td align="right">
-                      <Link href={`/runs/${r.id}`} className="text-[var(--accent)] hover:text-[var(--accent-hover)] text-xs font-medium">View</Link>
+                      <Link href={`/runs/${r.id}`} className="text-[var(--accent)] hover:text-[var(--accent-hover)] text-xs font-medium">Lihat</Link>
                     </Td>
                   </Tr>
                 ))}
@@ -218,7 +218,7 @@ export default function DashboardPage() {
 
       {/* Failed Runs */}
       {hasFailed && (
-        <Section title="Recent Failures" action={<Link href="/runs?filter=failed" className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)]">All failures →</Link>}>
+	        <Section title="Kegagalan Terbaru" action={<Link href="/runs?filter=failed" className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)]">Semua kegagalan →</Link>}>
           <div className="space-y-2">
             {runs.filter((r) => r.state === "failed").slice(0, 3).map((r) => (
               <FailedRunCard key={r.id} run={r} />
@@ -229,9 +229,9 @@ export default function DashboardPage() {
 
       {/* Two Columns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section title="Recommended Actions" action={<Link href="/risk" className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)]">See all →</Link>}>
-          {recs.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)]">No actions needed.</p>
+	        <Section title="Saran" action={<Link href="/risk" className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)]">Lihat semua →</Link>}>
+	          {recs.length === 0 ? (
+	            <p className="text-sm text-[var(--text-muted)]">Tidak ada saran saat ini.</p>
           ) : (
             <div className="space-y-2">
               {recs.slice(0, 4).map((rec, i) => (
@@ -241,9 +241,9 @@ export default function DashboardPage() {
           )}
         </Section>
 
-        <Section title="Highest Risk Areas" action={<Link href="/risk" className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)]">Analyze →</Link>}>
-          {risks.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)]">No elevated risks detected.</p>
+	        <Section title="Area Berisiko Tinggi" action={<Link href="/risk" className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)]">Analisis →</Link>}>
+	          {risks.length === 0 ? (
+	            <p className="text-sm text-[var(--text-muted)]">Tidak ada risiko yang terdeteksi.</p>
           ) : (
             <div className="space-y-2">
               {risks.slice(0, 4).map((risk, i) => (
@@ -255,17 +255,17 @@ export default function DashboardPage() {
       </div>
 
       {/* Recent Runs Table */}
-      <Section title="Recent Runs" action={<Link href="/runs" className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)]">View all →</Link>}>
-        <TableContainer>
-          <table className="w-full text-left">
+	      <Section title="Run Terbaru" action={<Link href="/runs" className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)]">Lihat semua →</Link>}>
+	        <TableContainer>
+	          <table className="w-full text-left">
 	            <thead>
 	              <tr className="border-b border-[var(--border-default)]">
-	                <Th>Run Name</Th>
+	                <Th>Nama Run</Th>
 	                <Th>Status</Th>
-	                <Th>Coverage</Th>
-	                <Th>Duration</Th>
-	                <Th>Started</Th>
-	                <Th align="right">Actions</Th>
+	                <Th>Cakupan</Th>
+	                <Th>Durasi</Th>
+	                <Th>Dimulai</Th>
+	                <Th align="right">Aksi</Th>
 	              </tr>
 	            </thead>
 	            <tbody>
@@ -273,7 +273,7 @@ export default function DashboardPage() {
 	                <Tr key={r.id} hover>
 	                  <Td className="font-medium">
 	                    <Link href={`/runs/${r.id}`} className="block truncate max-w-[200px] hover:text-[var(--accent)]">
-	                      {r.requirements || "Untitled"}
+	                      {r.requirements || "Tanpa judul"}
 	                    </Link>
 	                  </Td>
 	                  <Td><StatusBadge state={r.state} /></Td>
@@ -291,7 +291,7 @@ export default function DashboardPage() {
 	                    {formatDate(r.created_at)}
 	                  </Td>
 	                  <Td align="right">
-	                    <Link href={`/runs/${r.id}`} className="text-[var(--accent)] hover:text-[var(--accent-hover)] text-xs font-medium">View</Link>
+	                    <Link href={`/runs/${r.id}`} className="text-[var(--accent)] hover:text-[var(--accent-hover)] text-xs font-medium">Lihat</Link>
 	                  </Td>
 	                </Tr>
 	              ))}

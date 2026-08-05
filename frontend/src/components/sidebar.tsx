@@ -20,20 +20,20 @@ interface NavItem {
 }
 
 const coreNav: NavItem[] = [
-  { href: "/", label: "Overview", icon: LayoutDashboard },
-  { href: "/projects", label: "Projects", icon: Home },
-  { href: "/tests", label: "Tests", icon: FileText },
-  { href: "/runs", label: "Runs", icon: PlayCircle },
-  { href: "/recordings", label: "Recordings", icon: Video },
-  { href: "/risk", label: "Risk Analysis", icon: Shield },
+  { href: "/", label: "Ringkasan", icon: LayoutDashboard },
+  { href: "/projects", label: "Proyek", icon: Home },
+  { href: "/tests", label: "Test", icon: FileText },
+  { href: "/runs", label: "Run", icon: PlayCircle },
+  { href: "/recordings", label: "Rekaman", icon: Video },
+  { href: "/risk", label: "Analisis Risiko", icon: Shield },
   { href: "/monitoring", label: "Monitoring", icon: Calendar },
-  { href: "/releases", label: "Releases", icon: Layers },
-  { href: "/reviews", label: "Reviews", icon: ClipboardCheck },
-  { href: "/alerts", label: "Alerts", icon: Bell },
-  { href: "/exports", label: "Exports", icon: Download },
-  { href: "/docs", label: "Documentation", icon: BookOpen },
-  { href: "/settings", label: "Settings", icon: Settings },
-  { href: "/users", label: "Users", icon: Users, adminOnly: true },
+  { href: "/releases", label: "Rilis", icon: Layers },
+  { href: "/reviews", label: "Review", icon: ClipboardCheck },
+  { href: "/alerts", label: "Alert", icon: Bell },
+  { href: "/exports", label: "Ekspor", icon: Download },
+  { href: "/docs", label: "Dokumentasi", icon: BookOpen },
+  { href: "/settings", label: "Pengaturan", icon: Settings },
+  { href: "/users", label: "Pengguna", icon: Users, adminOnly: true },
 ];
 
 export function Sidebar() {
@@ -119,8 +119,8 @@ export function Sidebar() {
             collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2.5"
           )}
         >
-          <KeyRound className={cn("w-[18px] h-[18px] flex-shrink-0", collapsed && "mx-auto")} />
-          {!collapsed && <span>Sign out</span>}
+	          <KeyRound className={cn("w-[18px] h-[18px] flex-shrink-0", collapsed && "mx-auto")} />
+	          {!collapsed && <span>Keluar</span>}
         </button>
       </div>
     </aside>

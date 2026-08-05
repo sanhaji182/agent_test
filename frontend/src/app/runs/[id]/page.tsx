@@ -46,7 +46,7 @@ export default function RunConsolePage() {
   const [visualResult, setVisualResult] = useState<VisualRegressionResult | null>(null);
   const [codeExport, setCodeExport] = useState<ExportCodeResult | null>(null);
   const [exportLanguage, setExportLanguage] = useState("playwright");
-  const [advancedLoading, setAdvancedLoading] = useState<string | null>(null);
+  const [advancedLoading, setLanjutanLoading] = useState<string | null>(null);
 
   useEffect(() => {
     let unsub: (() => void) | undefined;
@@ -100,7 +100,7 @@ export default function RunConsolePage() {
   };
 
   const handleAudit = async () => {
-    setAdvancedLoading("audit");
+    setLanjutanLoading("audit");
     try {
       const result = await runAudit(id);
       setAuditResult(result);
@@ -110,31 +110,31 @@ export default function RunConsolePage() {
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setAdvancedLoading(null);
+      setLanjutanLoading(null);
     }
   };
 
   const handleExploratory = async () => {
-    setAdvancedLoading("exploratory");
+    setLanjutanLoading("exploratory");
     try {
       const result = await runExploratory(id);
       setExploratoryResult(result);
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setAdvancedLoading(null);
+      setLanjutanLoading(null);
     }
   };
 
   const handleExportCode = async () => {
-    setAdvancedLoading("export");
+    setLanjutanLoading("export");
     try {
       const result = await exportCode(id, exportLanguage);
       setCodeExport(result);
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setAdvancedLoading(null);
+      setLanjutanLoading(null);
     }
   };
 
@@ -147,7 +147,7 @@ export default function RunConsolePage() {
   return (
     <div className="space-y-5">
       <Link href="/runs" className="inline-flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
-        <ArrowLeft className="w-3 h-3" /> Back to suites
+        <ArrowLeft className="w-3 h-3" /> Kembali ke Run
       </Link>
 
       {/* Summary bar */}
@@ -179,7 +179,7 @@ export default function RunConsolePage() {
 	          <Meta label="Type" value={(run.test_type || "ui").toUpperCase()} />
 	          <Meta label="Mode" value={run.mode || "simple"} />
 	          <Meta label="Auth" value={run.auth_type || "none"} />
-	          <Meta label="Plan Source" value={run.feature_map?.source || (run.prd ? "prd" : "requirements")} />
+	          <Meta label="Sumber Rencana" value={run.feature_map?.source || (run.prd ? "prd" : "requirements")} />
 	        </div>
 	        {run.llm_model && (
 	          <div className="mt-3 inline-flex flex-wrap items-center gap-2">
@@ -212,7 +212,7 @@ export default function RunConsolePage() {
 
       {run.error && (
         <div className="rounded-xl border border-[var(--danger)]/20 bg-[var(--danger-bg)] p-4">
-          <p className="text-xs font-semibold text-[var(--danger)] mb-1">Execution Error</p>
+          <p className="text-xs font-semibold text-[var(--danger)] mb-1">Kesalahan Eksekusi</p>
           <pre className="text-[11px] text-[var(--danger)]/80 whitespace-pre-wrap">{run.error}</pre>
         </div>
       )}
@@ -222,16 +222,16 @@ export default function RunConsolePage() {
         <Tabs tabs={[
           { id: "report", label: "Report", content: <ReportView run={run} /> },
           { id: "video", label: "Video", content: <VideoPlayer run={run} events={liveEvents} /> },
-          { id: "events", label: "Live Events", count: liveEvents.length, content: <EventsView events={liveEvents} /> },
-          { id: "steps", label: "Steps", count: stepCount(run), content: <StepsView run={run} /> },
-          { id: "features", label: "Feature Map", count: run.feature_map?.features?.length, content: <FeatureMapView run={run} /> },
-          { id: "files", label: "Files", count: run.test_files?.length, content: <FilesView run={run} /> },
-          { id: "recordings", label: "Recordings", count: recordings.length, content: <RecordingsView recordings={recordings} /> },
-          { id: "shots", label: "Screenshots", count: run.screenshots?.length, content: <ScreenshotStrip screenshots={run.screenshots} /> },
-          { id: "failures", label: "Failures", count: result?.failures?.length, content: <FailuresView run={run} /> },
-          { id: "analysis", label: "Analysis", content: <AnalysisView analysis={analysis} loading={analyzing} onAnalyze={handleAnalyze} /> },
+          { id: "events", label: "Event Langsung", count: liveEvents.length, content: <EventsView events={liveEvents} /> },
+          { id: "steps", label: "Langkah", count: stepCount(run), content: <StepsView run={run} /> },
+          { id: "features", label: "Peta Fitur", count: run.feature_map?.features?.length, content: <FeatureMapView run={run} /> },
+          { id: "files", label: "File", count: run.test_files?.length, content: <FileView run={run} /> },
+          { id: "recordings", label: "Rekaman", count: recordings.length, content: <RecordingsView recordings={recordings} /> },
+          { id: "shots", label: "Screenshot", count: run.screenshots?.length, content: <ScreenshotStrip screenshots={run.screenshots} /> },
+          { id: "failures", label: "Kegagalan", count: result?.failures?.length, content: <FailuresView run={run} /> },
+          { id: "analysis", label: "Analisis", content: <AnalysisView analysis={analysis} loading={analyzing} onAnalyze={handleAnalyze} /> },
           { id: "visual", label: "Visual", count: visuals.length, content: <VisualView artifacts={visuals} /> },
-          { id: "advanced", label: "Advanced", content: <AdvancedView
+          { id: "advanced", label: "Lanjutan", content: <LanjutanView
             auditResult={auditResult}
             exploratoryResult={exploratoryResult}
             performanceResult={performanceResult}
@@ -285,17 +285,17 @@ function ReportView({ run }: { run: TestRun }) {
           onClick={() => download(exportUrl(run.id), `run-${idShort}.json`)}
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors"
         >
-          <Download className="w-3.5 h-3.5" /> Export JSON
+          <Download className="w-3.5 h-3.5" /> Ekspor JSON
         </button>
         <button
           onClick={() => download(exportJunitUrl(run.id), `run-${idShort}.xml`)}
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors"
         >
-          <Download className="w-3.5 h-3.5" /> Export JUnit XML
+          <Download className="w-3.5 h-3.5" /> Ekspor JUnit XML
         </button>
       </div>
       <p className="text-xs text-[var(--text-muted)]">
-        Report HTML berisi ringkasan hasil, daftar kegagalan, test plan, dan test files. Export JUnit XML untuk integrasi CI/CD.
+        Report HTML berisi ringkasan hasil, daftar kegagalan, test plan, dan test files. Ekspor JUnit XML untuk integrasi CI/CD.
       </p>
       <div className="border border-[var(--border)] rounded-lg overflow-hidden bg-white">
         <iframe src={reportUrl(run.id)} title="Test Report" className="w-full h-[560px]" />
@@ -310,7 +310,7 @@ function AnalysisView({ analysis, loading, onAnalyze }: { analysis: FailureAnaly
       <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-5">
         <button onClick={onAnalyze} disabled={loading} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[var(--radius-sm)] bg-[var(--accent)] text-white text-[12px] font-semibold hover:bg-[var(--accent-hover)] disabled:opacity-60">
           <Sparkles className="w-3.5 h-3.5" />
-          {loading ? "Analyzing" : "Analyze failure"}
+          {loading ? "Analyzing" : "Analisis Kegagalan"}
         </button>
       </div>
     );
@@ -324,11 +324,11 @@ function AnalysisView({ analysis, loading, onAnalyze }: { analysis: FailureAnaly
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Likely Cause</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Kemungkinan Penyebab</p>
             <p className="text-[12px] text-[var(--text-secondary)] mt-1">{analysis.likely_cause}</p>
           </div>
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Next Action</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Langkah Berikutnya</p>
             <p className="text-[12px] text-[var(--text-secondary)] mt-1">{analysis.next_action}</p>
           </div>
         </div>
@@ -372,7 +372,7 @@ function stepCount(run: TestRun): number {
 function FeatureMapView({ run }: { run: TestRun }) {
   const features = run.feature_map?.features || [];
   if (features.length === 0) {
-    return <EmptyState icon={<GitBranch className="w-6 h-6" />} title="No feature map" description="Upload or paste a PRD when creating a run to derive feature and use-case coverage." />;
+    return <EmptyState icon={<GitBranch className="w-6 h-6" />} title="Belum ada peta fitur" description="Upload or paste a PRD when creating a run to derive feature and use-case coverage." />;
   }
   return (
     <div className="space-y-4">
@@ -424,7 +424,7 @@ function ContextBlock({ label, value }: { label: string; value: string }) {
 // Live events timeline
 function EventsView({ events }: { events: RunEvent[] }) {
   if (events.length === 0) {
-    return <EmptyState icon={<Radio className="w-6 h-6" />} title="No events yet" description="Events appear as the run executes. Subscribe to see live updates." />;
+    return <EmptyState icon={<Radio className="w-6 h-6" />} title="Belum ada event" description="Events appear as the run executes. Subscribe to see live updates." />;
   }
   return (
     <div className="space-y-1 max-h-96 overflow-y-auto">
@@ -457,10 +457,10 @@ function EventDot({ type }: { type: string }) {
   return <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${colors[type] || "bg-[var(--text-muted)]"}`} />;
 }
 
-// Recordings view
+// Rekaman view
 function RecordingsView({ recordings }: { recordings: Recording[] }) {
   if (recordings.length === 0) {
-    return <EmptyState icon={<Film className="w-6 h-6" />} title="No recordings" description="Recordings are created when screenshots are captured during execution." />;
+    return <EmptyState icon={<Film className="w-6 h-6" />} title="Belum ada rekaman" description="Rekaman dibuat saat screenshot diambil selama eksekusi." />;
   }
   const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
   return (
@@ -483,10 +483,10 @@ function RecordingsView({ recordings }: { recordings: Recording[] }) {
   );
 }
 
-// Steps view
+// Langkah view
 function StepsView({ run }: { run: TestRun }) {
   const scenarios = run.test_plan?.scenarios || [];
-  if (scenarios.length === 0) return <EmptyState icon={<ListChecks className="w-6 h-6" />} title="No steps yet" description="Steps appear once the test plan is generated." />;
+  if (scenarios.length === 0) return <EmptyState icon={<ListChecks className="w-6 h-6" />} title="Belum ada langkah" description="Langkah appear once the test plan is generated." />;
   return (
     <div className="space-y-4">
       {run.test_plan?.summary && <p className="text-sm text-[var(--text-secondary)]">{run.test_plan.summary}</p>}
@@ -510,9 +510,9 @@ function StepsView({ run }: { run: TestRun }) {
   );
 }
 
-function FilesView({ run }: { run: TestRun }) {
+function FileView({ run }: { run: TestRun }) {
   const files = run.test_files || [];
-  if (files.length === 0) return <EmptyState icon={<FileCode className="w-6 h-6" />} title="No files generated" />;
+  if (files.length === 0) return <EmptyState icon={<FileCode className="w-6 h-6" />} title="Belum ada file yang dibuat" />;
   return (
     <div className="space-y-2">
       {files.map((f, i) => (
@@ -529,7 +529,7 @@ function FilesView({ run }: { run: TestRun }) {
 
 function FailuresView({ run }: { run: TestRun }) {
   const failures = run.run_result?.failures || [];
-  if (failures.length === 0) return <EmptyState icon={<CheckCircle2 className="w-6 h-6" />} title="No failures" description="All tests passed or the run hasn't completed." />;
+  if (failures.length === 0) return <EmptyState icon={<CheckCircle2 className="w-6 h-6" />} title="Tidak ada kegagalan" description="All tests passed or the run hasn't completed." />;
   const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
   return (
     <div className="space-y-3">
@@ -542,7 +542,7 @@ function FailuresView({ run }: { run: TestRun }) {
               <pre className="text-[11px] text-[var(--danger)]/80 mt-1 whitespace-pre-wrap break-all">{f.message}</pre>
               {f.screenshot_url && (
                 <a href={f.screenshot_url.startsWith("http") ? f.screenshot_url : `${API}${f.screenshot_url}`} target="_blank" className="inline-flex items-center gap-1 text-[11px] text-[var(--accent)] mt-2 hover:underline">
-                  <ImageIcon className="w-3 h-3" /> View screenshot
+                  <ImageIcon className="w-3 h-3" /> Lihat screenshot
                 </a>
               )}
             </div>
@@ -588,8 +588,8 @@ function VideoPlayer({ run, events: runEvents }: { run: TestRun; events: RunEven
     return (
       <EmptyState
         icon={<Film className="w-6 h-6" />}
-        title="No video recording"
-        description="Video recordings are captured automatically during browser test execution. Run a test with Steel Browser to generate a recording."
+        title="Tidak ada rekaman video"
+        description="Rekaman video diambil otomatis saat eksekusi test browser."
       />
     );
   }
@@ -611,8 +611,8 @@ function VideoPlayer({ run, events: runEvents }: { run: TestRun; events: RunEven
     return (
       <EmptyState
         icon={<Film className="w-6 h-6" />}
-        title="Recording failed"
-        description="The video recording could not be completed. This does not affect test results."
+        title="Rekaman gagal"
+        description="Rekaman video tidak dapat diselesaikan. Ini tidak memengaruhi hasil test."
       />
     );
   }
@@ -716,7 +716,7 @@ function VideoPlayer({ run, events: runEvents }: { run: TestRun; events: RunEven
       <div className="flex items-center gap-4 text-[11px] text-[var(--text-muted)]">
         {duration > 0 && <span>{currentTime.toFixed(1)}s / {duration.toFixed(1)}s</span>}
         {stepMarkers.length > 0 && <span className="text-[var(--text-muted)]">{stepMarkers.length} steps ({stepMarkers[0]?.precise ? "precise" : "approximate"})</span>}
-        <a href={videoSrc} download className="ml-auto text-[var(--accent)] hover:underline">Download video</a>
+        <a href={videoSrc} download className="ml-auto text-[var(--accent)] hover:underline">Unduh video</a>
       </div>
     </div>
   );
@@ -724,7 +724,7 @@ function VideoPlayer({ run, events: runEvents }: { run: TestRun; events: RunEven
 
 function VisualView({ artifacts }: { artifacts: VisualArtifact[] }) {
   if (artifacts.length === 0) {
-    return <EmptyState icon={<Eye className="w-6 h-6" />} title="No visual artifacts" description="Visual artifacts are created when screenshots are captured. Enable visual regression for baseline comparisons." />;
+    return <EmptyState icon={<Eye className="w-6 h-6" />} title="Belum ada artefak visual" description="Artefak visual dibuat saat screenshot diambil saat eksekusi." />;
   }
   const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
   const resolveUrl = (u?: string) => u && (u.startsWith("http") ? u : `${API}${u}`);
@@ -759,7 +759,7 @@ function VisualView({ artifacts }: { artifacts: VisualArtifact[] }) {
               )}
             </div>
             <div className="rounded-md border border-[var(--border)] bg-[var(--bg-subtle)] p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">Current</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">Saat Ini</p>
               {a.current_url ? (
                 <a href={resolveUrl(a.current_url)} target="_blank" className="block aspect-video rounded border border-[var(--border)] overflow-hidden">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -778,7 +778,7 @@ function VisualView({ artifacts }: { artifacts: VisualArtifact[] }) {
   );
 }
 
-function AdvancedView({
+function LanjutanView({
   auditResult,
   exploratoryResult,
   performanceResult,

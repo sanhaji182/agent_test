@@ -66,8 +66,8 @@ export default function ReviewsPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-semibold tracking-tight mb-1">Test Reviews</h1>
-        <p className="text-sm text-[var(--text-muted)] mt-1">Review and approve AI-generated test cases before deployment</p>
+        <h1 className="text-xl font-semibold tracking-tight mb-1">Review Test</h1>
+        <p className="text-sm text-[var(--text-muted)] mt-1">Review dan setujui test case hasil AI sebelum di-deploy</p>
       </div>
 
       {/* Error Message */}
@@ -80,9 +80,9 @@ export default function ReviewsPage() {
       {/* Filters - Modern Segment Control */}
       <div className="inline-flex rounded-lg border border-[var(--border-default)] p-0.5 bg-white">
         {[
-          { value: "pending", label: "Pending" },
-          { value: "approved", label: "Approved" },
-          { value: "rejected", label: "Rejected" },
+          { value: "pending", label: "Menunggu" },
+          { value: "approved", label: "Disetujui" },
+          { value: "rejected", label: "Ditolak" },
         ].map((f) => (
           <button
             key={f.value}
@@ -100,11 +100,11 @@ export default function ReviewsPage() {
 
       {/* Reviews List */}
       {filteredReviews.length === 0 ? (
-        <Section title="No reviews found">
+        <Section title="Tidak ada review">
           <EmptyState
             icon={<ClipboardCheck className="w-8 h-8" />}
-            title={!filter || filter === "pending" ? "No pending reviews" : `No ${filter} reviews`}
-            description={!filter || filter === "pending" ? "All test cases have been reviewed." : "No reviews with this status."}
+            title={!filter || filter === "pending" ? "Tidak ada review yang menunggu" : `No ${filter} reviews`}
+            description={!filter || filter === "pending" ? "Semua test case sudah di-review." : "No reviews with this status."}
           />
         </Section>
       ) : (
@@ -113,11 +113,11 @@ export default function ReviewsPage() {
             <thead className="bg-gray-50 border-b border-[var(--border-default)]">
               <tr>
                 <Th>Review</Th>
-                <Th>Type</Th>
+                <Th>Tipe</Th>
                 <Th>Status</Th>
                 <Th>Reviewer</Th>
-                <Th>Date</Th>
-                <Th align="right">Actions</Th>
+                <Th>Tanggal</Th>
+                <Th align="right">Aksi</Th>
               </tr>
             </thead>
             <tbody>
@@ -127,7 +127,7 @@ export default function ReviewsPage() {
                     <span>Run {review.run_id.slice(0, 8)}</span>
                   </Td>
                   <Td className="text-sm text-[var(--text-muted)]">
-                    {formatType(review.type)}
+                    {formatTipe(review.type)}
                   </Td>
                   <Td>
                     <StatusBadge status={review.status} />
@@ -148,7 +148,7 @@ export default function ReviewsPage() {
                           onClick={() => handleApprove(review.id)}
                         >
                           <Check className="w-3.5 h-3.5 mr-1" />
-                          Approve
+                          Setujui
                         </Button>
                         <Button
                           variant="ghost"
@@ -158,13 +158,13 @@ export default function ReviewsPage() {
                           onClick={() => handleReject(review.id)}
                         >
                           <XCircle className="w-3.5 h-3.5" />
-                          Reject
+                          Tolak
                         </Button>
                       </>
                     )}
                     <Link href={`/reviews/${review.id}`}>
                       <Button variant="ghost" size="sm">
-                        View Details <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                        Lihat Detail <ArrowRight className="w-3.5 h-3.5 ml-1" />
                       </Button>
                     </Link>
                   </Td>
@@ -183,21 +183,21 @@ function StatusBadge({ status }: { status: string }) {
     return (
       <Badge variant="success" size="sm">
         <Check className="w-3 h-3 mr-1" />
-        Approved
+        Disetujui
       </Badge>
     );
   } else if (status === "rejected") {
     return (
       <Badge variant="danger" size="sm">
         <XCircle className="w-3 h-3 mr-1" />
-        Rejected
+        Ditolak
       </Badge>
     );
   } else {
     return (
       <Badge variant="warning" size="sm">
         <Clock className="w-3 h-3 mr-1" />
-        Pending
+        Menunggu
       </Badge>
     );
   }
@@ -207,7 +207,7 @@ function getCount(list: Review[], status: string): number {
   return list.filter(r => r.status === status).length;
 }
 
-function formatType(type: string): string {
+function formatTipe(type: string): string {
   return type.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
 }
 

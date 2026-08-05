@@ -41,12 +41,12 @@ export default function SuitesPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight mb-1">Test Suites</h1>
+          <h1 className="text-xl font-semibold tracking-tight mb-1">Test Suite</h1>
           <p className="text-sm text-[var(--text-muted)] mt-1">Organized collections of related test cases</p>
         </div>
         <Button onClick={() => setShowModal(true)}>
           <Plus className="w-4 h-4 mr-2" />
-          New Suite
+          Suite Baru
         </Button>
       </div>
 
@@ -54,7 +54,7 @@ export default function SuitesPage() {
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
         <Input
-          placeholder="Search suites..."
+          placeholder="Cari suite..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="pl-9"
@@ -63,15 +63,15 @@ export default function SuitesPage() {
 
       {/* Suites Grid */}
       {filteredSuites.length === 0 ? (
-        <Section title="No test suites found">
+        <Section title="Tidak ada test suite">
           <EmptyState 
             icon={<Layers className="w-8 h-8" />}
-            title={!query ? "No test suites yet" : "No matching suites"}
-            description={!query ? "Create your first test suite to organize your tests." : "Try adjusting your search criteria."}
+            title={!query ? "Belum ada test suite" : "Tidak ada suite yang cocok"}
+            description={!query ? "Buat test suite pertamamu untuk mengatur test." : "Coba ubah kriteria pencarian."}
             action={!query && (
               <Button onClick={() => setShowModal(true)}>
                 <Plus className="w-4 h-4 mr-2" />
-                Create Suite
+                Buat Suite
               </Button>
             )}
           />
@@ -81,11 +81,11 @@ export default function SuitesPage() {
           <table className="w-full text-left">
             <thead className="bg-gray-50 border-b border-[var(--border-default)]">
               <tr>
-                <Th>Suite Name</Th>
+                <Th>Nama Suite</Th>
                 <Th>Status</Th>
-                <Th>Tests</Th>
-                <Th>Last Run</Th>
-                <Th align="right">Actions</Th>
+                <Th>Test</Th>
+                <Th>Run Terakhir</Th>
+                <Th align="right">Aksi</Th>
               </tr>
             </thead>
             <tbody>
@@ -109,7 +109,7 @@ export default function SuitesPage() {
                       </Button>
                     </Link>
                     <Link href={`/suites/${suite.id}`}>
-                      <Button variant="ghost" size="sm">Details</Button>
+                      <Button variant="ghost" size="sm">Detail</Button>
                     </Link>
                   </Td>
                 </Tr>
@@ -119,7 +119,7 @@ export default function SuitesPage() {
         </TableContainer>
       )}
 
-      {/* Create Suite Modal */}
+      {/* Buat Suite Modal */}
       {showModal && (
         <SuiteModal
           onClose={() => setShowModal(false)}
@@ -189,7 +189,7 @@ function SuiteModal({ onClose, onCreated }: { onClose: () => void; onCreated: ()
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="suite-name" className="block text-sm font-medium text-[var(--text-primary)] mb-1.5">
-              Suite Name <span className="text-red-500">*</span>
+              Nama Suite <span className="text-red-500">*</span>
             </label>
             <Input
               id="suite-name"
@@ -220,7 +220,7 @@ function SuiteModal({ onClose, onCreated }: { onClose: () => void; onCreated: ()
             )}
             <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={!name.trim() || submitting}>
-              {submitting ? "Creating…" : "Create Suite"}
+              {submitting ? "Creating…" : "Buat Suite"}
             </Button>
           </div>
         </form>

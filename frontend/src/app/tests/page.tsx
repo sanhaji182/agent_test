@@ -97,7 +97,7 @@ export default function TestLibraryPage() {
 	  const approveProposal = async (proposal: ChangeProposal) => {
 	    setApprovingId(proposal.id);
 	    try {
-	      const res = await approveChangeProposal(proposal.id, { reviewer: "self-hosted", comment: "Approved from Test Library" });
+	      const res = await approveChangeProposal(proposal.id, { reviewer: "self-hosted", comment: "Approved from Perpustakaan Test" });
 	      setTests((prev) => prev.map((test) => test.id === res.test_case.id ? res.test_case : test));
 	      setSelected(res.test_case);
 	      setProposals((prev) => prev.map((item) => item.id === res.proposal.id ? res.proposal : item));
@@ -112,7 +112,7 @@ export default function TestLibraryPage() {
 	  const rejectProposal = async (proposal: ChangeProposal) => {
 	    setApprovingId(proposal.id);
 	    try {
-	      const rejected = await rejectChangeProposal(proposal.id, { reviewer: "self-hosted", comment: "Declined from Test Library" });
+	      const rejected = await rejectChangeProposal(proposal.id, { reviewer: "self-hosted", comment: "Declined from Perpustakaan Test" });
 	      setProposals((prev) => prev.map((item) => item.id === rejected.id ? rejected : item));
 	    } catch (e) {
 	      setRunError(e instanceof Error ? e.message : "Gagal menolak proposal");
@@ -126,19 +126,19 @@ export default function TestLibraryPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex item-start justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Test Library</h1>
-          <p className="text-sm text-[var(--text-muted)] mt-1">Approved test cases ready for execution</p>
+          <h1 className="text-xl font-semibold tracking-tight">Perpustakaan Test</h1>
+          <p className="text-sm text-[var(--text-muted)] mt-1">Test case yang sudah disetujui dan siap dijalankan</p>
         </div>
 	        <Link href="/create">
-	          <Button>New Test</Button>
+	          <Button>Test Baru</Button>
 	        </Link>
 	      </div>
 
 	      {/* Load error state — bedakan dari "belum ada data" */}
 	      {loadError && (
-	        <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex items-center justify-between gap-3" role="alert">
+	        <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex item-center justify-between gap-3" role="alert">
 	          <p className="text-sm text-red-700">Gagal memuat test case: {loadError}</p>
 	          <Button variant="secondary" size="sm" onClick={() => window.location.reload()}>Muat Ulang</Button>
 	        </div>
@@ -152,8 +152,8 @@ export default function TestLibraryPage() {
 	      {/* Tab Controls - Modern Segmented Control */}
       <div className="inline-flex rounded-lg border border-[var(--border-default)] p-0.5 bg-white">
         {[
-          { value: "ui", label: "UI Tests" },
-          { value: "api", label: "API Tests" },
+          { value: "ui", label: "Test UI" },
+          { value: "api", label: "Test API" },
         ].map((tab) => (
           <button
             key={tab.value}
@@ -174,7 +174,7 @@ export default function TestLibraryPage() {
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
         <Input
-          placeholder="Search by name, feature, priority, or tag..."
+          placeholder="Cari berdasarkan nama, fitur, prioritas, atau tag..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="pl-9"
@@ -184,12 +184,12 @@ export default function TestLibraryPage() {
       {/* Maintenance Panel - Collapsible Style */}
       {maintenance.length > 0 && (
         <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
+          <div className="flex item-center justify-between mb-3">
+            <div className="flex item-center gap-2">
               <AlertTriangle className="w-4 h-4 text-yellow-700" />
-              <h2 className="text-sm font-semibold text-yellow-800">Maintenance Needed</h2>
+              <h2 className="text-sm font-semibold text-yellow-800">Perlu Perawatan</h2>
             </div>
-            <Badge variant="warning">{maintenance.length} items</Badge>
+            <Badge variant="warning">{maintenance.length} item</Badge>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {maintenance.slice(0, 4).map((item) => (
@@ -204,9 +204,9 @@ export default function TestLibraryPage() {
         <table className="w-full text-left">
           <thead className="bg-gray-50 border-b border-[var(--border-default)]">
             <tr>
-              <Th>Name</Th>
-              <Th>Priority</Th>
-              <Th align="right">Actions</Th>
+              <Th>Nama</Th>
+              <Th>Prioritas</Th>
+              <Th align="right">Aksi</Th>
             </tr>
           </thead>
           <tbody>
@@ -215,8 +215,8 @@ export default function TestLibraryPage() {
                 <Td colSpan={3}>
                   <EmptyState 
                     icon={<Sparkles className="w-6 h-6" />}
-                    title={!query ? "No tests yet" : "No matching tests"}
-                    description={!query ? "Generate your first test to populate the library." : "Try adjusting your search criteria."}
+                    title={!query ? "Belum ada test" : "Tidak ada test yang cocok"}
+                    description={!query ? "Buat test pertamamu untuk mengisi perpustakaan." : "Coba ubah kriteria pencarian."}
                   />
                 </Td>
               </Tr>
@@ -227,13 +227,13 @@ export default function TestLibraryPage() {
                   <Tr key={test.id} hover>
                     <Td className="font-medium">
                       <span className="block truncate max-w-[180px]">{test.title}</span>
-                      <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                      <span className="inline-flex item-center gap-1.5 text-xs text-[var(--text-muted)]">
                         {deterministic && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--success-bg)] border border-[var(--success)]/20 text-[10px] font-semibold text-[var(--success)]" title="Test case ini bisa di-run ulang secara deterministik tanpa AI — persis seperti rekam-putar Katalon">
+                          <span className="inline-flex item-center gap-1 px-1.5 py-0.5 rounded bg-[var(--success-bg)] border border-[var(--success)]/20 text-[10px] font-semibold text-[var(--success)]" title="Test case ini bisa di-run ulang secara deterministik tanpa AI — persis seperti rekam-putar Katalon">
                             <CheckCircle2 className="w-3 h-3" /> Deterministic
                           </span>
                         )}
-                        {test.steps?.length > 0 && <span>{test.steps.length} steps</span>}
+                        {test.steps?.length > 0 && <span>{test.steps.length} langkah</span>}
                         {test.feature && <span>· {test.feature}</span>}
                       </span>
                     </Td>
@@ -262,13 +262,13 @@ export default function TestLibraryPage() {
 
       {/* Refinement Modal */}
       {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 z-50 flex item-center justify-center bg-black/50">
           <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 p-6">
-            <h3 className="text-lg font-semibold mb-4">Refine Test Case</h3>
+            <h3 className="text-lg font-semibold mb-4">Sempurnakan Test Case</h3>
             <p className="text-sm text-[var(--text-muted)] mb-4">{selected.title}</p>
             
             <Input
-              placeholder="Describe what changes you'd like to make..."
+              placeholder="Jelaskan perubahan yang kamu inginkan..."
               value={refinePrompt}
               onChange={(e) => setRefinePrompt(e.target.value)}
               autoFocus
@@ -281,14 +281,14 @@ export default function TestLibraryPage() {
                 isLoading={refining}
                 disabled={!refinePrompt.trim()}
               >
-                Generate Changes
+                Buat Perubahan
               </Button>
             </div>
 
             {/* Proposals */}
             {proposals.length > 0 && (
               <div className="mt-4 pt-4 border-t">
-                <h4 className="text-sm font-semibold mb-3">Generated Proposals:</h4>
+                <h4 className="text-sm font-semibold mb-3">Proposal yang dihasilkan:</h4>
                 {proposals.map((proposal) => (
                   <div key={proposal.id} className="p-3 rounded-lg bg-gray-50 mb-2">
                     <p className="text-sm font-medium mb-2">{proposal.rationale}</p>
@@ -325,7 +325,7 @@ function PriorityBadge({ priority }: { priority: string }) {
   };
   
   return (
-    <span className={cn("inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize", colors[priority] || "bg-gray-100 text-gray-700")}>
+    <span className={cn("inline-flex item-center px-2 py-0.5 rounded text-xs font-medium capitalize", colors[priority] || "bg-gray-100 text-gray-700")}>
       {priority}
     </span>
   );
@@ -343,7 +343,7 @@ function MaintenanceItemCard({ item }: { item: MaintenanceItem }) {
       "p-3 rounded-lg border text-sm",
       severityColors[item.severity] || severityColors.low
     )}>
-      <div className="flex items-start justify-between mb-1">
+      <div className="flex item-start justify-between mb-1">
         <span className="font-medium truncate flex-1">{item.title}</span>
         <Badge variant={item.severity === "high" ? "danger" : item.severity === "medium" ? "warning" : "default"} size="sm">
           {item.severity}
