@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   ArrowUpDown,
@@ -85,6 +86,7 @@ export default function CreatePage() {
 
 	  // Recorder setup: deteksi extension, salin URL backend, buat API key.
 	  const [extDetected, setExtDetected] = useState(false);
+	  const [extOverride, setExtOverride] = useState(false); // user yakin extension terpasang walau tak terdeteksi
 	  const [copiedUrl, setCopiedUrl] = useState(false);
 	  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
 	  const [keyCopied, setKeyCopied] = useState(false);
@@ -227,6 +229,12 @@ export default function CreatePage() {
 	    if (!formData.project_path.trim()) {
 	      setError("Isi dulu URL aplikasi di langkah Target sebelum mulai merekam.");
 	      setStep(0);
+	      return;
+	    }
+	    // Peringatan: extension tidak terdeteksi → sesi tidak akan menerima event.
+	    // Jangan hard-block: user mungkin merekam dari browser lain / tab lain.
+	    if (!extDetected && !extOverride) {
+	      setError("Ekstensi GoTest Recorder belum terdeteksi di browser ini. Pasang dulu (lihat panduan di atas), lalu muat ulang halaman. Kalau kamu yakin sudah terpasang (mis. merekam dari browser lain), centang \"Lanjutkan tanpa deteksi\".");
 	      return;
 	    }
 	    setStartingSession(true);
@@ -481,20 +489,33 @@ export default function CreatePage() {
 	            {/* Record path: recording panel */}
 	            {method === "record" && (
 	              <div className="space-y-4">
-	                {/* Deteksi extension */}
-	                <div className={`rounded-lg border p-3 flex items-center gap-3 ${extDetected ? "border-[var(--success)]/30 bg-[var(--success-bg)]" : "border-[var(--warning)]/30 bg-[var(--warning-bg)]"}`} role="status" aria-live="polite">
-	                  <CheckCircle2 className={`w-5 h-5 shrink-0 ${extDetected ? "text-[var(--success)]" : "text-[var(--warning)]"}`} />
-	                  <div className="text-xs">
-	                    {extDetected ? (
-	                      <p className="font-semibold text-[var(--success)]">Ekstensi GoTest Recorder terdeteksi ✓</p>
-	                    ) : (
-	                      <>
-	                        <p className="font-semibold text-[var(--warning)]">Ekstensi belum terpasang</p>
-	                        <p className="text-[var(--text-secondary)] mt-0.5">Pasang dulu (sekali saja), lalu muat ulang halaman ini.</p>
-	                      </>
-	                    )}
-	                  </div>
+	            {/* Deteksi extension */}
+	            <div className={`rounded-lg border p-3 ${extDetected ? "border-[var(--success)]/30 bg-[var(--success-bg)]" : "border-[var(--warning)]/30 bg-[var(--warning-bg)]"}`} role="status" aria-live="polite">
+	              <div className="flex items-center gap-3">
+	                <CheckCircle2 className={`w-5 h-5 shrink-0 ${extDetected ? "text-[var(--success)]" : "text-[var(--warning)]"}`} />
+	                <div className="text-xs">
+	                  {extDetected ? (
+	                    <p className="font-semibold text-[var(--success)]">Ekstensi GoTest Recorder terdeteksi ✓</p>
+	                  ) : (
+	                    <>
+	                      <p className="font-semibold text-[var(--warning)]">⚠️ Ekstensi belum terpasang di browser ini</p>
+	                      <p className="text-[var(--text-secondary)] mt-0.5">Tanpa ekstensi, sesi rekam tidak akan menerima event apa pun. Pasang dulu (sekali saja) lewat panduan di bawah, lalu muat ulang halaman ini.</p>
+	                    </>
+	                  )}
 	                </div>
+	              </div>
+	              {!extDetected && (
+	                <label className="flex items-center gap-2 mt-2.5 pt-2.5 border-t border-[var(--warning)]/15 text-xs text-[var(--text-secondary)] cursor-pointer">
+	                  <input
+	                    type="checkbox"
+	                    checked={extOverride}
+	                    onChange={(e) => setExtOverride(e.target.checked)}
+	                    className="accent-[var(--warning)]"
+	                  />
+	                  Saya yakin extension sudah terpasang (mis. merekam dari browser/tab lain) — lanjutkan tanpa deteksi.
+	                </label>
+	              )}
+	            </div>
 
 	                {/* Setup: panduan + salin URL + buat key */}
 	                <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-subtle)] p-3 space-y-3">
@@ -523,17 +544,25 @@ export default function CreatePage() {
 	                  )}
 	                </div>
 
-                {!session ? (
-                  <Button
-                    type="button"
-                    onClick={handleStartSession}
-                    isLoading={startingSession}
-                    disabled={startingSession}
-                  >
-                    <Video className="w-4 h-4" />
-                    {startingSession ? "Membuat sesi…" : "Mulai Sesi Rekam"}
-                  </Button>
-                ) : (
+	                {!session ? (
+	                  <div className="space-y-2">
+	                    {!extDetected && !extOverride && (
+	                      <p className="text-xs text-[var(--warning)] flex items-center gap-1.5">
+	                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+	                        Extension belum terdeteksi — tombol di bawah mungkin membuat sesi yang tidak menerima event.
+	                      </p>
+	                    )}
+	                    <Button
+	                      type="button"
+	                      onClick={handleStartSession}
+	                      isLoading={startingSession}
+	                      disabled={startingSession}
+	                    >
+	                      <Video className="w-4 h-4" />
+	                      {startingSession ? "Membuat sesi…" : "Mulai Sesi Rekam"}
+	                    </Button>
+	                  </div>
+	                ) : (
                   <div className="space-y-3">
                     {/* Session status */}
                     <div className="flex items-center justify-between">

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Section, EmptyState, LoadingSkeleton } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
 import { TableContainer, Th, Td, Tr } from "@/components/ui/table";
-import { Video, Trash2, Search, Eye, Plus, PlayCircle } from "lucide-react";
+import { Video, Trash2, Search, Eye, Plus, PlayCircle, AlertTriangle } from "lucide-react";
 
 import { listRecordingSessions, deleteRecordingSession, type RecordingSession } from "@/lib/api";
 
@@ -18,6 +18,15 @@ export default function RecordingsPage() {
   const [query, setQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [extDetected, setExtDetected] = useState(false);
+
+  // Deteksi extension GoTest Recorder via marker DOM.
+  useEffect(() => {
+    const check = () => setExtDetected(document.documentElement.dataset.gotestRecorder === "1");
+    check();
+    const t = setInterval(check, 3000);
+    return () => clearInterval(t);
+  }, []);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -64,19 +73,35 @@ export default function RecordingsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Recordings</h1>
-          <p className="text-sm text-[var(--text-muted)] mt-1">Sesi rekaman browser — hasil rekam bisa jadi test case deterministik</p>
-        </div>
-        <Link href="/create?method=record">
-          <Button>
-            <Plus className="w-4 h-4 mr-2" />
-            New Recording
-          </Button>
-        </Link>
-      </div>
+	      {/* Header */}
+	      <div className="flex flex-wrap items-start justify-between gap-3">
+	        <div>
+	          <h1 className="text-xl font-semibold tracking-tight">Recordings</h1>
+	          <p className="text-sm text-[var(--text-muted)] mt-1">Sesi rekaman browser — hasil rekam bisa jadi test case deterministik</p>
+	        </div>
+	        <Link href="/create?method=record">
+	          <Button>
+	            <Plus className="w-4 h-4 mr-2" />
+	            New Recording
+	          </Button>
+	        </Link>
+	      </div>
+
+	      {/* Peringatan: extension belum terpasang */}
+	      {!extDetected && !error && (
+	        <div className="rounded-lg border border-[var(--warning)]/30 bg-[var(--warning-bg)] p-4 flex flex-wrap items-center justify-between gap-3" role="status" aria-live="polite">
+	          <div className="flex items-start gap-2.5">
+	            <AlertTriangle className="w-4 h-4 text-[var(--warning)] shrink-0 mt-0.5" />
+	            <div className="text-xs">
+	              <p className="font-semibold text-[var(--warning)]">Ekstensi GoTest Recorder belum terpasang di browser ini</p>
+	              <p className="text-[var(--text-secondary)] mt-0.5">Tanpa ekstensi, tombol "New Recording" tetap membuat sesi, tapi tidak akan menerima event. Pasang dulu lewat panduan di halaman Rekam (sekali saja).</p>
+	            </div>
+	          </div>
+	          <Link href="/create?method=record">
+	            <Button variant="secondary" size="sm">Lihat Panduan Pasang</Button>
+	          </Link>
+	        </div>
+	      )}
 
       {/* Error state */}
       {error && (
