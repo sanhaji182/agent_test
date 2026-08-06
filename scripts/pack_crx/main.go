@@ -32,7 +32,12 @@ const (
 
 // --- protobuf wire encoding (minimal, cukup untuk struktur CRX3) ---
 
-func pbTag(field int, wireType int) []byte { return []byte{byte(field<<3 | wireType)} }
+// pbTag membuat tag protobuf (field number + wire type) sebagai varint.
+// Field 10000 (signed_header_data) butuh varint multi-byte — tag satu byte
+// hanya cukup untuk field < 32. Bug lama di sini yang bikin "CRX header invalid".
+func pbTag(field int, wireType int) []byte {
+	return pbVarint(uint64(field<<3 | wireType))
+}
 
 func pbBytes(field int, data []byte) []byte {
 	var b bytes.Buffer
@@ -52,11 +57,22 @@ func pbVarint(v uint64) []byte {
 	return b.Bytes()
 }
 
-// signedData = SignedData{ crx_id = field1, sha256_with_context = field2 }
-func encodeSignedData(crxID, hash []byte) []byte {
+// signedData = SignedData{ crx_id = field1 } — SignedData hanya punya satu field
+// (crx_id). Tidak ada sha256_with_context di sini (lihat crx3.proto Chromium).
+func encodeSignedData(crxID []byte) []byte {
+	return pbBytes(1, crxID)
+}
+
+// signedInput = "CRX3 SignedData\x00" + uint32LE(len(signedHeaderData)) +
+// signedHeaderData + archive. Ini yang ditandatangani oleh semua proof
+// (spesifikasi crx3.proto).
+func signedInput(signedHeaderData, archive []byte) []byte {
 	var b bytes.Buffer
-	b.Write(pbBytes(1, crxID))
-	b.Write(pbBytes(2, hash))
+	b.WriteString("CRX3 SignedData")
+	b.WriteByte(0)
+	binary.Write(&b, binary.LittleEndian, uint32(len(signedHeaderData)))
+	b.Write(signedHeaderData)
+	b.Write(archive)
 	return b.Bytes()
 }
 
@@ -172,13 +188,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Context untuk SHA256: "CRX3 SignedData" (spesifikasi crx3 Chromium).
-	context := []byte("CRX3 SignedData")
-	hasher := sha256.New()
-	hasher.Write(context)
-	hasher.Write(zipBytes)
-	zipHash := hasher.Sum(nil)
-
 	pubDER, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pub:", err)
@@ -189,10 +198,12 @@ func main() {
 	idHash := sha256.Sum256(pubDER)
 	crxID := idHash[:16]
 
-	signedData := encodeSignedData(crxID, zipHash)
+	signedData := encodeSignedData(crxID)
 
-	// Signature RSASSA-PKCS1-v1_5 SHA256 atas signed_data.
-	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sha256Sum(signedData))
+	// Signature RSASSA-PKCS1-v1_5 SHA256 atas input yang ditentukan spesifikasi:
+	// "CRX3 SignedData\x00" + signed_header_size + signed_header_data + archive.
+	proofInput := signedInput(signedData, zipBytes)
+	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sha256Sum(proofInput))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "sign:", err)
 		os.Exit(1)
@@ -244,16 +255,15 @@ func verifyCRX(data []byte) error {
 	zipBytes := data[12+hdrLen:]
 
 	// Ekstrak signed_header_data (field 10000) & proof (field 2) dari header.
-	proof := parseHeaderField(hdr, 2)
-	signedData := parseHeaderField(hdr, 10000)
+	proof := parseField(hdr, 2)
+	signedData := parseField(hdr, 10000)
 	if len(proof) == 0 || len(signedData) == 0 {
 		return fmt.Errorf("header tidak lengkap")
 	}
-	pubDER := parseMsgField(proof, 1)
-	sig := parseMsgField(proof, 2)
-	crxID := parseMsgField(signedData, 1)
-	zipHash := parseMsgField(signedData, 2)
-	if len(pubDER) == 0 || len(sig) == 0 || len(crxID) == 0 || len(zipHash) == 0 {
+	pubDER := parseField(proof, 1)
+	sig := parseField(proof, 2)
+	crxID := parseField(signedData, 1)
+	if len(pubDER) == 0 || len(sig) == 0 || len(crxID) == 0 {
 		return fmt.Errorf("field header tidak lengkap")
 	}
 
@@ -265,18 +275,13 @@ func verifyCRX(data []byte) error {
 	if !ok {
 		return fmt.Errorf("bukan RSA")
 	}
-	if err := rsa.VerifyPKCS1v15(rsaPub, crypto.SHA256, sha256Sum(signedData), sig); err != nil {
+	// Verifikasi signature atas input spesifikasi (bukan sekadar signed_header_data).
+	proofInput := signedInput(signedData, zipBytes)
+	if err := rsa.VerifyPKCS1v15(rsaPub, crypto.SHA256, sha256Sum(proofInput), sig); err != nil {
 		return fmt.Errorf("signature tidak valid: %w", err)
 	}
 
-	context := []byte("CRX3 SignedData")
-	h := sha256.New()
-	h.Write(context)
-	h.Write(zipBytes)
-	if !bytes.Equal(h.Sum(nil), zipHash) {
-		return fmt.Errorf("hash zip tidak cocok")
-	}
-	// ID cocok?
+	// ID cocok dengan public key?
 	idHash := sha256.Sum256(pubDER)
 	if !bytes.Equal(idHash[:16], crxID) {
 		return fmt.Errorf("extension id tidak cocok dengan public key")
@@ -292,39 +297,73 @@ func verifyCRX(data []byte) error {
 	return nil
 }
 
-// parseHeaderField mengambil isi field `field` (length-delimited) dari message.
-func parseHeaderField(msg []byte, field int) []byte {
-	tag := byte(field<<3 | 2)
-	for i := 0; i+1 < len(msg); {
-		t := msg[i]
-		i++
-		if t == 0 {
-			continue
+// readVarint membaca varint dari msg, memajukan pointer i.
+func readVarint(msg []byte, i *int) (uint64, bool) {
+	var v uint64
+	shift := uint(0)
+	for *i < len(msg) {
+		b := msg[*i]
+		*i++
+		v |= uint64(b&0x7f) << shift
+		if b&0x80 == 0 {
+			return v, true
 		}
-		// decode varint length
-		length := uint64(0)
-		shift := uint(0)
-		for i < len(msg) {
-			b := msg[i]
-			i++
-			length |= uint64(b&0x7f) << shift
-			if b&0x80 == 0 {
-				break
-			}
-			shift += 7
+		shift += 7
+		if shift > 63 {
+			return 0, false
 		}
-		if t == tag {
-			if int(i)+int(length) > len(msg) {
+	}
+	return 0, false
+}
+
+// parseField mengambil isi field `target` (wire type 2, length-delimited) dari
+// message protobuf. Field number dibaca sebagai varint (multi-byte).
+func parseField(msg []byte, target int) []byte {
+	i := 0
+	for i < len(msg) {
+		tag, ok := readVarint(msg, &i)
+		if !ok {
+			return nil
+		}
+		fieldNum := int(tag >> 3)
+		wire := int(tag & 7)
+		if fieldNum == target && wire == 2 {
+			length, ok := readVarint(msg, &i)
+			if !ok || int(length) > len(msg)-i {
 				return nil
 			}
 			return msg[i : i+int(length)]
 		}
-		i += int(length)
+		// Skip field sesuai wire type.
+		switch wire {
+		case 0: // varint
+			if _, ok := readVarint(msg, &i); !ok {
+				return nil
+			}
+		case 1: // 64-bit
+			i += 8
+		case 2: // length-delimited
+			length, ok := readVarint(msg, &i)
+			if !ok || int(length) > len(msg)-i {
+				return nil
+			}
+			i += int(length)
+		case 5: // 32-bit
+			i += 4
+		default:
+			return nil
+		}
 	}
 	return nil
 }
 
+// parseHeaderField mengambil isi field `field` dari message (wrapper lama, kini
+// memakai parser varint yang benar).
+func parseHeaderField(msg []byte, field int) []byte {
+	return parseField(msg, field)
+}
+
 // parseMsgField sama seperti parseHeaderField (untuk message proof/signed).
 func parseMsgField(msg []byte, field int) []byte {
-	return parseHeaderField(msg, field)
+	return parseField(msg, field)
 }
