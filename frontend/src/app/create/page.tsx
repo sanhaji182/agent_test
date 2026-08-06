@@ -23,7 +23,6 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
-  Archive,
   ArrowLeft,
   ArrowRight,
   ArrowUpDown,
@@ -524,34 +523,22 @@ export default function CreatePage() {
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <p className="text-xs font-semibold text-[var(--text-primary)]">Install — cara termudah:</p>
                     <div className="flex gap-2 flex-wrap">
-                      <a href="/extensions/gotest-recorder.crx" download>
-                        <Button type="button" variant="primary" size="sm">
-                          <Download className="w-3.5 h-3.5" /> Unduh Extension (.crx)
-                        </Button>
-                      </a>
                       <a href="/extensions/gotest-recorder.zip" download>
-                        <Button type="button" variant="secondary" size="sm">
-                          <Archive className="w-3.5 h-3.5" /> Unduh .zip (alternatif)
+                        <Button type="button" variant="primary" size="sm">
+                          <Download className="w-3.5 h-3.5" /> Unduh Extension (.zip)
                         </Button>
                       </a>
                     </div>
                   </div>
                   <ol className="text-xs text-[var(--text-secondary)] space-y-1.5 list-decimal ml-4">
-                    <li>Klik <strong>Unduh Extension (.crx)</strong> di atas</li>
+                    <li>Klik <strong>Unduh Extension (.zip)</strong> di atas</li>
+                    <li>Ekstrak file-nya (klik kanan → <strong>Extract All</strong>) — ingat lokasi foldernya</li>
                     <li>Buka <code className="font-mono text-[11px] bg-white px-1 py-0.5 rounded border border-[var(--border-default)]">chrome://extensions</code></li>
                     <li>Aktifkan <strong>Developer mode</strong> (pojok kanan atas)</li>
-                    <li><strong>Seret file .crx</strong> ke halaman itu → klik <strong>Add extension</strong></li>
+                    <li>Klik <strong>Load unpacked</strong> → pilih folder hasil ekstrak (yang berisi <code className="font-mono text-[11px]">manifest.json</code>)</li>
                     <li>Buka popup ekstensi → isi Backend URL &amp; API key di bawah → <strong>Save Settings</strong></li>
                     <li>Muat ulang halaman ini — indikator di atas berubah jadi ✓</li>
                   </ol>
-                  <details className="text-xs text-[var(--text-muted)]">
-                    <summary className="cursor-pointer font-medium text-[var(--text-secondary)]">Cara lain: pakai .zip (Load unpacked)</summary>
-                    <ol className="mt-2 space-y-1 list-decimal ml-4">
-                      <li>Unduh <strong>.zip</strong> di atas, lalu ekstrak (klik kanan → Extract All)</li>
-                      <li>Buka <code className="font-mono">chrome://extensions</code> → Developer mode</li>
-                      <li>Klik <strong>Load unpacked</strong> → pilih folder hasil ekstrak</li>
-                    </ol>
-                  </details>
                   <div className="flex flex-wrap gap-2 pt-1">
                     <Button type="button" variant="secondary" size="sm" onClick={() => copyText(backendUrl, "url")}>
                       {copiedUrl ? "✓ Tersalin" : "Salin Backend URL"}
