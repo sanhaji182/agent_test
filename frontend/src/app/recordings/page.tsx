@@ -98,9 +98,9 @@ export default function RecordingsPage() {
 	            </div>
 	          </div>
 	          <div className="flex flex-wrap gap-2">
-	            <a href="/extensions/gotest-recorder.zip" download>
+	            <a href="/extensions/gotest-recorder.crx" download>
 	              <Button variant="secondary" size="sm">
-	                <Download className="w-3.5 h-3.5 mr-1" /> Unduh Extension (.zip)
+	                <Download className="w-3.5 h-3.5 mr-1" /> Unduh Extension (.crx)
 	              </Button>
 	            </a>
 	            <Link href="/create?method=record">

@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
+  Archive,
   ArrowLeft,
   ArrowRight,
   ArrowUpDown,
@@ -487,92 +488,106 @@ export default function CreatePage() {
               </div>
             )}
 
-	            {/* Record path: recording panel */}
-	            {method === "record" && (
-	              <div className="space-y-4">
-	            {/* Deteksi extension */}
-	            <div className={`rounded-lg border p-3 ${extDetected ? "border-[var(--success)]/30 bg-[var(--success-bg)]" : "border-[var(--warning)]/30 bg-[var(--warning-bg)]"}`} role="status" aria-live="polite">
-	              <div className="flex items-center gap-3">
-	                <CheckCircle2 className={`w-5 h-5 shrink-0 ${extDetected ? "text-[var(--success)]" : "text-[var(--warning)]"}`} />
-	                <div className="text-xs">
-	                  {extDetected ? (
-	                    <p className="font-semibold text-[var(--success)]">Ekstensi GoTest Recorder terdeteksi ✓</p>
-	                  ) : (
-	                    <>
-	                      <p className="font-semibold text-[var(--warning)]">⚠️ Ekstensi belum terpasang di browser ini</p>
-	                      <p className="text-[var(--text-secondary)] mt-0.5">Tanpa ekstensi, sesi rekam tidak akan menerima event apa pun. Pasang dulu (sekali saja) lewat panduan di bawah, lalu muat ulang halaman ini.</p>
-	                    </>
-	                  )}
-	                </div>
-	              </div>
-	              {!extDetected && (
-	                <label className="flex items-center gap-2 mt-2.5 pt-2.5 border-t border-[var(--warning)]/15 text-xs text-[var(--text-secondary)] cursor-pointer">
-	                  <input
-	                    type="checkbox"
-	                    checked={extOverride}
-	                    onChange={(e) => setExtOverride(e.target.checked)}
-	                    className="accent-[var(--warning)]"
-	                  />
-	                  Saya yakin extension sudah terpasang (mis. merekam dari browser/tab lain) — lanjutkan tanpa deteksi.
-	                </label>
-	              )}
-	            </div>
+	                        {/* Record path: recording panel */}
+            {method === "record" && (
+              <div className="space-y-4">
+                {/* Deteksi extension */}
+                <div className={`rounded-lg border p-3 ${extDetected ? "border-[var(--success)]/30 bg-[var(--success-bg)]" : "border-[var(--warning)]/30 bg-[var(--warning-bg)]"}`} role="status" aria-live="polite">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle2 className={`w-5 h-5 shrink-0 ${extDetected ? "text-[var(--success)]" : "text-[var(--warning)]"}`} />
+                    <div className="text-xs">
+                      {extDetected ? (
+                        <p className="font-semibold text-[var(--success)]">Ekstensi GoTest Recorder terdeteksi ✓</p>
+                      ) : (
+                        <>
+                          <p className="font-semibold text-[var(--warning)]">⚠️ Ekstensi belum terpasang di browser ini</p>
+                          <p className="text-[var(--text-secondary)] mt-0.5">Tanpa ekstensi, sesi rekam tidak akan menerima event apa pun. Pasang dulu (sekali saja) lewat panduan di bawah, lalu muat ulang halaman ini.</p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {!extDetected && (
+                    <label className="flex items-center gap-2 mt-2.5 pt-2.5 border-t border-[var(--warning)]/15 text-xs text-[var(--text-secondary)] cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={extOverride}
+                        onChange={(e) => setExtOverride(e.target.checked)}
+                        className="accent-[var(--warning)]"
+                      />
+                      Saya yakin extension sudah terpasang (mis. merekam dari browser/tab lain) — lanjutkan tanpa deteksi.
+                    </label>
+                  )}
+                </div>
 
-	                {/* Setup: unduh + panduan + salin URL + buat key */}
-	                <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-subtle)] p-3 space-y-3">
-	                  <div className="flex items-center justify-between gap-2">
-	                    <p className="text-xs font-semibold text-[var(--text-primary)]">Cara termudah — unduh &amp; pasang:</p>
-	                    <a href="/extensions/gotest-recorder.zip" download>
-	                      <Button type="button" variant="primary" size="sm">
-	                        <Download className="w-3.5 h-3.5" /> Unduh Extension (.zip)
-	                      </Button>
-	                    </a>
-	                  </div>
-	                  <ol className="text-xs text-[var(--text-secondary)] space-y-1.5 list-decimal ml-4">
-	                    <li>Klik <strong>Unduh Extension</strong> di atas (file .zip)</li>
-	                    <li>Ekstrak file-nya (klik kanan → <strong>Extract All</strong>) — ingat lokasi foldernya</li>
-	                    <li>Buka <code className="font-mono text-[11px] bg-white px-1 py-0.5 rounded border border-[var(--border-default)]">chrome://extensions</code></li>
-	                    <li>Aktifkan <strong>Developer mode</strong> (pojok kanan atas)</li>
-	                    <li>Klik <strong>Load unpacked</strong> → pilih folder hasil ekstrak (yang berisi <code className="font-mono text-[11px]">manifest.json</code>)</li>
-	                    <li>Buka popup ekstensi → isi Backend URL &amp; API key di bawah → <strong>Save Settings</strong></li>
-	                    <li>Muat ulang halaman ini — indikator di atas berubah jadi ✓</li>
-	                  </ol>
-	                  <div className="flex flex-wrap gap-2 pt-1">
-	                    <Button type="button" variant="secondary" size="sm" onClick={() => copyText(backendUrl, "url")}>
-	                      {copiedUrl ? "✓ Tersalin" : "Salin Backend URL"}
-	                    </Button>
-	                    <Button type="button" variant="secondary" size="sm" onClick={handleGenKey}>
-	                      {generatedKey ? "Key dibuat — tersalin ✓" : "Buat & Salin API Key"}
-	                    </Button>
-	                  </div>
-	                  {genKeyErr && <p className="text-xs text-[var(--danger)]">{genKeyErr}</p>}
-	                  {generatedKey && (
-	                    <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-	                      Key <code className="font-mono bg-white px-1 py-0.5 rounded border border-[var(--border-default)]">{generatedKey.slice(0, 12)}…</code> sudah disalin —
-	                      tempel ke field <strong>API Key</strong> di popup ekstensi. Key hanya ditampilkan sekali.
-	                    </p>
-	                  )}
-	                </div>
+                {/* Setup: unduh + panduan + salin URL + buat key */}
+                <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-subtle)] p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <p className="text-xs font-semibold text-[var(--text-primary)]">Install — cara termudah:</p>
+                    <div className="flex gap-2 flex-wrap">
+                      <a href="/extensions/gotest-recorder.crx" download>
+                        <Button type="button" variant="primary" size="sm">
+                          <Download className="w-3.5 h-3.5" /> Unduh Extension (.crx)
+                        </Button>
+                      </a>
+                      <a href="/extensions/gotest-recorder.zip" download>
+                        <Button type="button" variant="secondary" size="sm">
+                          <Archive className="w-3.5 h-3.5" /> Unduh .zip (alternatif)
+                        </Button>
+                      </a>
+                    </div>
+                  </div>
+                  <ol className="text-xs text-[var(--text-secondary)] space-y-1.5 list-decimal ml-4">
+                    <li>Klik <strong>Unduh Extension (.crx)</strong> di atas</li>
+                    <li>Buka <code className="font-mono text-[11px] bg-white px-1 py-0.5 rounded border border-[var(--border-default)]">chrome://extensions</code></li>
+                    <li>Aktifkan <strong>Developer mode</strong> (pojok kanan atas)</li>
+                    <li><strong>Seret file .crx</strong> ke halaman itu → klik <strong>Add extension</strong></li>
+                    <li>Buka popup ekstensi → isi Backend URL &amp; API key di bawah → <strong>Save Settings</strong></li>
+                    <li>Muat ulang halaman ini — indikator di atas berubah jadi ✓</li>
+                  </ol>
+                  <details className="text-xs text-[var(--text-muted)]">
+                    <summary className="cursor-pointer font-medium text-[var(--text-secondary)]">Cara lain: pakai .zip (Load unpacked)</summary>
+                    <ol className="mt-2 space-y-1 list-decimal ml-4">
+                      <li>Unduh <strong>.zip</strong> di atas, lalu ekstrak (klik kanan → Extract All)</li>
+                      <li>Buka <code className="font-mono">chrome://extensions</code> → Developer mode</li>
+                      <li>Klik <strong>Load unpacked</strong> → pilih folder hasil ekstrak</li>
+                    </ol>
+                  </details>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <Button type="button" variant="secondary" size="sm" onClick={() => copyText(backendUrl, "url")}>
+                      {copiedUrl ? "✓ Tersalin" : "Salin Backend URL"}
+                    </Button>
+                    <Button type="button" variant="secondary" size="sm" onClick={handleGenKey}>
+                      {generatedKey ? "Key dibuat — tersalin ✓" : "Buat & Salin API Key"}
+                    </Button>
+                  </div>
+                  {genKeyErr && <p className="text-xs text-[var(--danger)]">{genKeyErr}</p>}
+                  {generatedKey && (
+                    <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                      Key <code className="font-mono bg-white px-1 py-0.5 rounded border border-[var(--border-default)]">{generatedKey.slice(0, 12)}…</code> sudah disalin —
+                      tempel ke field <strong>API Key</strong> di popup ekstensi. Key hanya ditampilkan sekali.
+                    </p>
+                  )}
+                </div>
 
-	                {!session ? (
-	                  <div className="space-y-2">
-	                    {!extDetected && !extOverride && (
-	                      <p className="text-xs text-[var(--warning)] flex items-center gap-1.5">
-	                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-	                        Extension belum terdeteksi — tombol di bawah mungkin membuat sesi yang tidak menerima event.
-	                      </p>
-	                    )}
-	                    <Button
-	                      type="button"
-	                      onClick={handleStartSession}
-	                      isLoading={startingSession}
-	                      disabled={startingSession}
-	                    >
-	                      <Video className="w-4 h-4" />
-	                      {startingSession ? "Membuat sesi…" : "Mulai Sesi Rekam"}
-	                    </Button>
-	                  </div>
-	                ) : (
+                {!session ? (
+                  <div className="space-y-2">
+                    {!extDetected && !extOverride && (
+                      <p className="text-xs text-[var(--warning)] flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        Extension belum terdeteksi — tombol di bawah mungkin membuat sesi yang tidak menerima event.
+                      </p>
+                    )}
+                    <Button
+                      type="button"
+                      onClick={handleStartSession}
+                      isLoading={startingSession}
+                      disabled={startingSession}
+                    >
+                      <Video className="w-4 h-4" />
+                      {startingSession ? "Membuat sesi…" : "Mulai Sesi Rekam"}
+                    </Button>
+                  </div>
+                ) : (
                   <div className="space-y-3">
                     {/* Session status */}
                     <div className="flex items-center justify-between">
@@ -619,9 +634,9 @@ export default function CreatePage() {
                       </div>
                     )}
 
-	                    <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-	                      Buka extension (icon GoTest Agent di toolbar), klik <strong>Attach</strong> pada sesi ini di daftar "Recent Sessions", lalu klik-klik di aplikasi target seperti biasa. Event akan muncul di sini secara live.
-	                    </p>
+                    <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                      Buka extension (icon GoTest Agent di toolbar), klik <strong>Attach</strong> pada sesi ini di daftar "Recent Sessions", lalu klik-klik di aplikasi target seperti biasa. Event akan muncul di sini secara live.
+                    </p>
 
                     {/* Recording actions */}
                     {!testCase ? (
@@ -664,7 +679,7 @@ export default function CreatePage() {
               </div>
             )}
 
-            {/* Error */}
+{/* Error */}
             {error && (
               <div className="rounded-lg bg-red-50 border border-red-200 p-3">
                 <p className="text-sm text-red-700">{error}</p>
