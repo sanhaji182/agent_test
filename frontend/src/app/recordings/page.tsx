@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Section, EmptyState, LoadingSkeleton } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
 import { TableContainer, Th, Td, Tr } from "@/components/ui/table";
-import { Video, Trash2, Search, Eye, Plus, PlayCircle, AlertTriangle } from "lucide-react";
+import { Video, Trash2, Search, Eye, Plus, PlayCircle, AlertTriangle, Download } from "lucide-react";
 
 import { listRecordingSessions, deleteRecordingSession, type RecordingSession } from "@/lib/api";
 
@@ -94,12 +94,19 @@ export default function RecordingsPage() {
 	            <AlertTriangle className="w-4 h-4 text-[var(--warning)] shrink-0 mt-0.5" />
 	            <div className="text-xs">
 	              <p className="font-semibold text-[var(--warning)]">Ekstensi GoTest Recorder belum terpasang di browser ini</p>
-	              <p className="text-[var(--text-secondary)] mt-0.5">Tanpa ekstensi, tombol "New Recording" tetap membuat sesi, tapi tidak akan menerima event. Pasang dulu lewat panduan di halaman Rekam (sekali saja).</p>
+	              <p className="text-[var(--text-secondary)] mt-0.5">Unduh &amp; pasang dulu (sekali saja) supaya rekaman bisa menerima event. Tanpa ekstensi, sesi rekam tidak berfungsi.</p>
 	            </div>
 	          </div>
-	          <Link href="/create?method=record">
-	            <Button variant="secondary" size="sm">Lihat Panduan Pasang</Button>
-	          </Link>
+	          <div className="flex flex-wrap gap-2">
+	            <a href="/extensions/gotest-recorder.zip" download>
+	              <Button variant="secondary" size="sm">
+	                <Download className="w-3.5 h-3.5 mr-1" /> Unduh Extension (.zip)
+	              </Button>
+	            </a>
+	            <Link href="/create?method=record">
+	              <Button variant="ghost" size="sm">Lihat Panduan</Button>
+	            </Link>
+	          </div>
 	        </div>
 	      )}
 

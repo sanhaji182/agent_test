@@ -29,6 +29,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Circle,
+  Download,
   Globe,
   MousePointerClick,
   Navigation,
@@ -517,13 +518,22 @@ export default function CreatePage() {
 	              )}
 	            </div>
 
-	                {/* Setup: panduan + salin URL + buat key */}
+	                {/* Setup: unduh + panduan + salin URL + buat key */}
 	                <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-subtle)] p-3 space-y-3">
-	                  <p className="text-xs font-semibold text-[var(--text-primary)]">Setup ekstensi (sekali saja):</p>
+	                  <div className="flex items-center justify-between gap-2">
+	                    <p className="text-xs font-semibold text-[var(--text-primary)]">Cara termudah — unduh &amp; pasang:</p>
+	                    <a href="/extensions/gotest-recorder.zip" download>
+	                      <Button type="button" variant="primary" size="sm">
+	                        <Download className="w-3.5 h-3.5" /> Unduh Extension (.zip)
+	                      </Button>
+	                    </a>
+	                  </div>
 	                  <ol className="text-xs text-[var(--text-secondary)] space-y-1.5 list-decimal ml-4">
+	                    <li>Klik <strong>Unduh Extension</strong> di atas (file .zip)</li>
+	                    <li>Ekstrak file-nya (klik kanan → <strong>Extract All</strong>) — ingat lokasi foldernya</li>
 	                    <li>Buka <code className="font-mono text-[11px] bg-white px-1 py-0.5 rounded border border-[var(--border-default)]">chrome://extensions</code></li>
 	                    <li>Aktifkan <strong>Developer mode</strong> (pojok kanan atas)</li>
-	                    <li>Klik <strong>Load unpacked</strong> → pilih folder <code className="font-mono text-[11px] bg-white px-1 py-0.5 rounded border border-[var(--border-default)]">chrome-extension/</code></li>
+	                    <li>Klik <strong>Load unpacked</strong> → pilih folder hasil ekstrak (yang berisi <code className="font-mono text-[11px]">manifest.json</code>)</li>
 	                    <li>Buka popup ekstensi → isi Backend URL &amp; API key di bawah → <strong>Save Settings</strong></li>
 	                    <li>Muat ulang halaman ini — indikator di atas berubah jadi ✓</li>
 	                  </ol>

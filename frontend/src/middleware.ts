@@ -24,6 +24,7 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Jalankan untuk semua path kecuali asset Next.js, favicon, dan halaman login.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|login).*)"],
+  // Jalankan untuk semua path kecuali asset Next.js, favicon, halaman login,
+  // dan unduhan extension recorder (public — user perlu download sebelum login).
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|login|extensions).*)"],
 };
